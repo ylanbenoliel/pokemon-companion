@@ -43,6 +43,7 @@ def _card_from_json(raw: str) -> Card:
         rules=data.get("rules", []),
         image_url=data.get("image_url"),
         image_local_path=data.get("image_local_path"),
+        national_pokedex_numbers=data.get("national_pokedex_numbers", []),
     )
 
 

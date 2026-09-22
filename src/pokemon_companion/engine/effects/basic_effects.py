@@ -5,8 +5,8 @@ inglês, não estruturado — cada efeito precisa ser cadastrado manualmente
 aqui, por (id da carta, nome do ataque). Cartas sem entrada aplicam apenas
 o dano base (`Attack.base_damage`).
 
-O exemplo abaixo cobre o ataque "Golpe Forte" do Charmander mockado usado em
-`demo_data.py`/CLI: cara -> descarta 1 energia do defensor, além do dano
+O exemplo abaixo cobre o ataque "Brasa" do Charmander mockado usado em
+`demo_data.py`: cara -> descarta 1 energia do defensor, além do dano
 normal já aplicado por `rules.apply_action` antes de chamar este efeito.
 """
 
@@ -21,8 +21,8 @@ if TYPE_CHECKING:
     from pokemon_companion.engine.game_state import GameState, PlayerId, PokemonInPlay
 
 
-@register("basic-charmander", "Golpe Forte")
-def _charmander_golpe_forte(
+@register("demo-charmander", "Brasa")
+def _charmander_brasa(
     state: GameState,
     attacker_id: PlayerId,
     attacker: PokemonInPlay,

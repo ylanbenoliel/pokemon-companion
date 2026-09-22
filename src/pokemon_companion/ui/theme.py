@@ -1,35 +1,36 @@
-"""Tema visual da UI: paleta por tipo de energia e o QSS da aplicação,
-inspirado no estilo colorido/arredondado do Pokémon TCG Pocket (fundo em
-degradê, painéis de carta claros e arredondados, badges de status)."""
+"""Paleta visual do tabuleiro: cores por tipo de energia (tons vivos, no
+espírito do Pokémon TCG Pocket), cores de destaque e a fonte da UI."""
 
 from __future__ import annotations
 
+from PyQt6.QtGui import QColor, QFont
+
 ENERGY_COLORS: dict[str, str] = {
-    "Grass": "#4caf50",
-    "Fire": "#ff7043",
-    "Water": "#42a5f5",
-    "Lightning": "#ffca28",
-    "Psychic": "#ab47bc",
-    "Fighting": "#8d6e63",
-    "Darkness": "#546e7a",
-    "Metal": "#90a4ae",
-    "Fairy": "#f06292",
-    "Dragon": "#7e57c2",
-    "Colorless": "#bdbdbd",
+    "Grass": "#3fae49",
+    "Fire": "#f0512e",
+    "Water": "#2f8fe0",
+    "Lightning": "#f5c211",
+    "Psychic": "#a45ec9",
+    "Fighting": "#c0733c",
+    "Darkness": "#3f4c5c",
+    "Metal": "#8f9ba6",
+    "Fairy": "#e56aa6",
+    "Dragon": "#b08a2e",
+    "Colorless": "#cfcfc4",
 }
 
-ENERGY_EMOJI: dict[str, str] = {
-    "Grass": "🌿",
-    "Fire": "🔥",
-    "Water": "💧",
-    "Lightning": "⚡",
-    "Psychic": "🔮",
-    "Fighting": "🥊",
-    "Darkness": "🌑",
-    "Metal": "⚙",
-    "Fairy": "🎀",
-    "Dragon": "🐉",
-    "Colorless": "⭐",
+ENERGY_NAMES_PT: dict[str, str] = {
+    "Grass": "Planta",
+    "Fire": "Fogo",
+    "Water": "Água",
+    "Lightning": "Elétrica",
+    "Psychic": "Psíquica",
+    "Fighting": "Luta",
+    "Darkness": "Escuridão",
+    "Metal": "Metal",
+    "Fairy": "Fada",
+    "Dragon": "Dragão",
+    "Colorless": "Incolor",
 }
 
 STATUS_LABELS: dict[str, str] = {
@@ -40,153 +41,47 @@ STATUS_LABELS: dict[str, str] = {
     "BURNED": "QUEIMADO",
 }
 
+STATUS_COLORS: dict[str, str] = {
+    "ASLEEP": "#5c6bc0",
+    "CONFUSED": "#ec407a",
+    "PARALYZED": "#e0b400",
+    "POISONED": "#8e24aa",
+    "BURNED": "#e64a19",
+}
 
-def energy_color(energy_type: str) -> str:
-    return ENERGY_COLORS.get(energy_type, ENERGY_COLORS["Colorless"])
+GOLD = QColor("#ffcb45")
+PLAYABLE_GLOW = QColor("#5dfc8d")
+DAMAGE_RED = QColor("#ff4d57")
+HEAL_GREEN = QColor("#4cd964")
+MAT_TOP = QColor("#15294d")
+MAT_BOTTOM = QColor("#0b1730")
+ZONE_FILL = QColor(255, 255, 255, 18)
+ZONE_STROKE = QColor(255, 255, 255, 60)
+TEXT_DARK = QColor("#1f2933")
+
+_FONT_FAMILIES = ["Avenir Next", "Segoe UI", "Helvetica Neue", "Roboto", "Arial"]
 
 
-def energy_emoji(energy_type: str) -> str:
-    return ENERGY_EMOJI.get(energy_type, ENERGY_EMOJI["Colorless"])
+def energy_color(energy_type: str) -> QColor:
+    return QColor(ENERGY_COLORS.get(energy_type, ENERGY_COLORS["Colorless"]))
 
 
-def hp_bar_color(current: int, maximum: int) -> str:
+def primary_type(types: list[str]) -> str:
+    return types[0] if types else "Colorless"
+
+
+def hp_color(current: int, maximum: int) -> QColor:
     ratio = current / maximum if maximum else 0.0
     if ratio > 0.5:
-        return "#66bb6a"
-    if ratio > 0.2:
-        return "#ffca28"
-    return "#ef5350"
+        return QColor("#4cd964")
+    if ratio > 0.25:
+        return QColor("#ffc233")
+    return QColor("#ff4d57")
 
 
-_ENERGY_BORDER_RULES = "\n".join(
-    f'QFrame#pokemonCard[energyType="{energy_type}"] {{ border-color: {color}; }}'
-    for energy_type, color in ENERGY_COLORS.items()
-)
-
-APP_STYLESHEET = f"""
-QWidget#rootBackground {{
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-        stop:0 #2b1055, stop:0.5 #4a148c, stop:1 #6a1b9a);
-}}
-
-QLabel#appTitle {{
-    color: #ffffff;
-    font-size: 19px;
-    font-weight: 800;
-    letter-spacing: 2px;
-    padding: 6px 2px 2px 2px;
-}}
-
-QLabel#sectionTitle {{
-    color: #ffffff;
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 1px;
-}}
-
-QLabel#prizesLabel {{
-    color: #f5f5f5;
-    font-size: 11px;
-}}
-
-QFrame#pokemonCard {{
-    background-color: rgba(255, 255, 255, 0.96);
-    border-radius: 12px;
-    border: 3px solid #cfd8dc;
-}}
-QFrame#pokemonCard[empty="true"] {{
-    background-color: rgba(255, 255, 255, 0.12);
-    border: 2px dashed rgba(255, 255, 255, 0.35);
-}}
-{_ENERGY_BORDER_RULES}
-QFrame#pokemonCard[targetable="true"] {{
-    border: 3px solid #ffca28;
-}}
-
-/* A cor/peso do nome (#cardName) é definida diretamente em
-   pokemon_card_widget.py, não aqui — um seletor QSS descendente
-   `[empty="true"] QLabel#cardName` não se reavalia de forma confiável
-   quando só o QFrame pai é repolido, deixando o texto preso na cor do
-   estado anterior. */
-
-QFrame#handCard {{
-    background-color: rgba(255, 255, 255, 0.96);
-    border-radius: 10px;
-    border: 2px solid #cfd8dc;
-}}
-QFrame#handCard:hover {{
-    border: 2px solid #ffca28;
-}}
-
-QScrollArea#handView {{
-    background: transparent;
-    border: none;
-}}
-QScrollArea#handView > QWidget > QWidget {{
-    background: transparent;
-}}
-
-QProgressBar#hpBar {{
-    border: none;
-    border-radius: 6px;
-    background-color: #eceff1;
-    text-align: center;
-    font-size: 9px;
-    font-weight: 700;
-    color: #263238;
-}}
-QProgressBar#hpBar::chunk {{
-    border-radius: 6px;
-}}
-
-QLabel#statusBadge {{
-    background-color: #d81b60;
-    color: white;
-    border-radius: 8px;
-    padding: 1px 4px;
-    font-size: 9px;
-    font-weight: 700;
-}}
-
-QListWidget#actionList {{
-    background-color: rgba(255, 255, 255, 0.94);
-    border-radius: 10px;
-    padding: 4px;
-    font-size: 13px;
-    color: #263238;
-}}
-QListWidget#actionList::item {{
-    border-radius: 8px;
-    padding: 8px 10px;
-    margin: 2px;
-}}
-QListWidget#actionList::item:selected {{
-    background-color: #ffca28;
-    color: #263238;
-}}
-
-QPushButton#playButton {{
-    background-color: #29b6f6;
-    color: white;
-    border: none;
-    border-radius: 10px;
-    padding: 10px;
-    font-weight: 700;
-    font-size: 13px;
-}}
-QPushButton#playButton:disabled {{
-    background-color: #64748b;
-    color: rgba(255, 255, 255, 0.55);
-}}
-QPushButton#playButton:hover:!disabled {{
-    background-color: #4fc3f7;
-}}
-
-QListWidget#logView {{
-    background-color: rgba(0, 0, 0, 0.28);
-    color: #eceff1;
-    border-radius: 10px;
-    font-size: 11px;
-    padding: 4px;
-}}
-"""
+def ui_font(point_size: float, weight: QFont.Weight = QFont.Weight.Bold) -> QFont:
+    font = QFont()
+    font.setFamilies(_FONT_FAMILIES)
+    font.setPointSizeF(point_size)
+    font.setWeight(weight)
+    return font

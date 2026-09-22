@@ -59,6 +59,7 @@ def api_card_to_card(data: dict) -> Card:
         evolves_from=data.get("evolvesFrom"),
         rules=data.get("rules", []),
         image_url=images.get("large") or images.get("small"),
+        national_pokedex_numbers=data.get("nationalPokedexNumbers", []),
     )
 
 

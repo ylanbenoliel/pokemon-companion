@@ -1,186 +1,380 @@
 from __future__ import annotations
 
 import dataclasses
+import random
 
-from PyQt6.QtCore import QEvent, QPointF, Qt
-from PyQt6.QtGui import QMouseEvent
+import pytest
+from PyQt6.QtCore import QPointF
 
 from pokemon_companion.ai.heuristics_easy import EasyAI
-from pokemon_companion.cards_db.models import Card
 from pokemon_companion.demo_data import build_demo_deck
 from pokemon_companion.engine import rules, turn_manager
-from pokemon_companion.engine.actions import Retreat, UseAttack
-from pokemon_companion.engine.game_state import PlayerState, PokemonInPlay
-from pokemon_companion.ui.app import AI_TURN_DELAY_MS, MainWindow
-from pokemon_companion.ui.board_view import BoardView
+from pokemon_companion.engine.actions import AttachEnergy, EndTurn, PlayBasicToBench, UseAttack
+from pokemon_companion.engine.game_state import GameState, PlayerId, PlayerState, PokemonInPlay
+from pokemon_companion.ui.anim import Animator
+from pokemon_companion.ui.app import BattleController, MainWindow
+from pokemon_companion.ui.art import ArtProvider
+from pokemon_companion.ui.battle_scene import BattleScene, fan_layout, humanize
 from pokemon_companion.ui.confirmation_dialog import ConfirmationDialog
-from pokemon_companion.ui.pokemon_card_widget import AttackRow, PokemonCardWidget
 
 
-def _left_click(widget) -> None:
-    event = QMouseEvent(
-        QEvent.Type.MouseButtonPress,
-        QPointF(1, 1),
-        QPointF(1, 1),
-        Qt.MouseButton.LeftButton,
-        Qt.MouseButton.LeftButton,
-        Qt.KeyboardModifier.NoModifier,
-    )
-    widget.mousePressEvent(event)
+@pytest.fixture(autouse=True)
+def instant_animations():
+    Animator.speed = 0
+    yield
+    Animator.speed = 1.0
 
 
-def test_board_view_shows_active_bench_and_hand(qtbot, charmander, squirtle):
-    view = BoardView("Você", show_hand=True)
-    qtbot.addWidget(view)
-    player = PlayerState(
-        active=PokemonInPlay(card=charmander),
-        bench=[PokemonInPlay(card=squirtle)],
-        hand=[squirtle],
-        prizes=[],
+@pytest.fixture
+def offline_art(tmp_path) -> ArtProvider:
+    return ArtProvider(art_dir=tmp_path, fetch=lambda url: None)
+
+
+def _energy(card_type: str):
+    return next(
+        c for c in build_demo_deck() if c.supertype.value == "Energy" and c.types == [card_type]
     )
 
-    view.update_state(player)
 
-    assert view._active_card.name_label.text() == "Charmander"
-    assert view._bench_cards[0].name_label.text() == "Squirtle"
-    assert view._bench_cards[1].property("empty") is True
-    assert view.hand_view is not None
-    assert view.hand_view._layout.count() == 2  # 1 carta + 1 stretch
+def _deck_card(name: str):
+    return next(c for c in build_demo_deck() if c.name == name)
 
 
-def test_board_view_prize_pips_reflect_remaining_prizes(qtbot, charmander):
-    view = BoardView("IA")
-    qtbot.addWidget(view)
-    player = PlayerState(active=PokemonInPlay(card=charmander), prizes=[charmander] * 4)
-
-    view.update_state(player)
-
-    assert "#ffca28" in view._prizes._pips[0].styleSheet()
-    assert "#ffca28" not in view._prizes._pips[5].styleSheet()
-
-
-def test_pokemon_card_widget_shows_hp_energy_and_status(qtbot, charmander):
-    widget = PokemonCardWidget()
-    qtbot.addWidget(widget)
-    mon = PokemonInPlay(card=charmander, attached_energies=["Fire", "Fire"])
-    mon.damage_counters = 20
-
-    widget.update_pokemon(mon)
-
-    assert widget.name_label.text() == "Charmander"
-    assert widget.hp_bar.value() == charmander.hp - 20
-    assert widget._energy_row.count() == 3  # 2 pips + 1 stretch
-    assert widget.property("empty") is False
-    assert widget.status_label.isHidden()
-
-
-def test_pokemon_card_widget_set_empty_resets_state(qtbot, charmander):
-    widget = PokemonCardWidget()
-    qtbot.addWidget(widget)
-    widget.update_pokemon(PokemonInPlay(card=charmander))
-
-    widget.set_empty()
-
-    assert widget.name_label.text() == "(vazio)"
-    assert widget.property("empty") is True
-    assert widget._energy_row.count() == 0
-
-
-def test_pokemon_card_widget_shows_attacks_with_readiness(qtbot, charmander):
-    # `charmander` (fixture) tem 1 ataque só, custando 1 energia Fire.
-    widget = PokemonCardWidget()
-    qtbot.addWidget(widget)
-    assert widget._attacks_container is not None
-
-    not_ready = PokemonInPlay(card=charmander)  # sem energia anexada
-    widget.update_pokemon(not_ready, interactive=True)
-    row = widget._attacks_container.itemAt(0).widget()
-    assert row.name_label.text() == charmander.attacks[0].name
-    assert "0.45" in row.name_label.styleSheet()  # esmaecido: não tem energia
-
-    ready = PokemonInPlay(card=charmander, attached_energies=["Fire"])
-    widget.update_pokemon(ready, interactive=True)
-    row = widget._attacks_container.itemAt(0).widget()
-    assert "#263238" in row.name_label.styleSheet()  # pronto para atacar
-
-
-def test_attack_not_clickable_when_not_interactive(qtbot, charmander):
-    # Mesmo com energia suficiente, o card do oponente (interactive=False)
-    # não deve reagir a clique — só informa visualmente que está "pronto".
-    widget = PokemonCardWidget()
-    qtbot.addWidget(widget)
-    mon = PokemonInPlay(card=charmander, attached_energies=["Fire"])
-
-    widget.update_pokemon(mon, interactive=False)
-    row = widget._attacks_container.itemAt(0).widget()
-
-    assert "#263238" in row.name_label.styleSheet()  # "pronto" continua verdadeiro
-    received = []
-    row.clicked.connect(received.append)
-    _left_click(row)
-    assert received == []  # mas não é clicável
-
-
-def test_attack_row_click_emits_only_when_clickable(qtbot, charmander):
-    row = AttackRow()
-    qtbot.addWidget(row)
-    row.update_attack(charmander.attacks[0], ready=True, clickable=False)
-    fired = []
-    row.clicked.connect(lambda: fired.append(True))
-
-    _left_click(row)
-    assert fired == []
-
-    row.update_attack(charmander.attacks[0], ready=True, clickable=True)
-    _left_click(row)
-    assert fired == [True]
-
-
-def test_pokemon_card_widget_attack_clicked_forwards_index(qtbot, charmander):
-    two_attacks = dataclasses.replace(
-        charmander, attacks=[*charmander.attacks, charmander.attacks[0]]
+def _state(player_active, opponent_active, hand=None, bench=None) -> GameState:
+    filler = [_energy("Fire")] * 10
+    return GameState(
+        player=PlayerState(
+            active=PokemonInPlay(card=player_active),
+            bench=[PokemonInPlay(card=c) for c in (bench or [])],
+            hand=list(hand or []),
+            deck=list(filler),
+            prizes=[_energy("Fire")] * 6,
+        ),
+        opponent=PlayerState(
+            active=PokemonInPlay(card=opponent_active),
+            deck=list(filler),
+            prizes=[_energy("Fire")] * 6,
+            hand=[_energy("Water")] * 3,
+        ),
     )
-    widget = PokemonCardWidget()
-    qtbot.addWidget(widget)
-    mon = PokemonInPlay(card=two_attacks, attached_energies=["Fire"])
-    widget.update_pokemon(mon, interactive=True)
-
-    received: list[int] = []
-    widget.attack_clicked.connect(received.append)
-    second_row = widget._attacks_container.itemAt(1).widget()
-    _left_click(second_row)
-
-    assert received == [1]
 
 
-def test_bench_card_clicked_only_when_targetable(qtbot, charmander):
-    widget = PokemonCardWidget(compact=True)
-    qtbot.addWidget(widget)
-    widget.update_pokemon(PokemonInPlay(card=charmander))
+@pytest.fixture
+def controller(qtbot, offline_art):
+    def make(state: GameState) -> BattleController:
+        scene = BattleScene(offline_art)
+        return BattleController(scene, state_factory=lambda: state, ai_factory=EasyAI)
 
-    received = []
-    widget.clicked.connect(lambda: received.append(True))
-    _left_click(widget)
-    assert received == []  # não targetable ainda
-
-    widget.set_clickable(True)
-    _left_click(widget)
-    assert received == [True]
-    assert widget.property("targetable") is True
+    return make
 
 
-def test_compact_pokemon_card_widget_has_no_attacks_container(qtbot, charmander):
-    widget = PokemonCardWidget(compact=True)
-    qtbot.addWidget(widget)
-
-    widget.update_pokemon(PokemonInPlay(card=charmander))
-
-    assert widget._attacks_container is None
+# --------------------------------------------------------------------------
+# funções puras
 
 
-def test_confirmation_dialog_confirm_selects_top_candidate(qtbot, charmander, squirtle):
-    candidates: list[tuple[Card, int]] = [(charmander, 2), (squirtle, 9)]
-    dialog = ConfirmationDialog("carta na zona ativa", candidates)
+def test_fan_layout_is_symmetric_and_tilts_outward():
+    layout = fan_layout(5)
+    rotations = [rotation for _, rotation in layout]
+    assert rotations[0] < 0 < rotations[-1]
+    assert rotations[2] == 0
+    assert layout[0][0].y() > layout[2][0].y()  # pontas mais baixas: arco
+    assert layout[0][0].x() < layout[-1][0].x()
+
+
+def test_fan_layout_empty_and_single():
+    assert fan_layout(0) == []
+    ((_, rotation),) = fan_layout(1)
+    assert rotation == 0
+
+
+def test_humanize_replaces_engine_ids():
+    assert humanize("player colocou Charmander no banco.") == "Você colocou Charmander no banco."
+    assert humanize("Charmander (opponent) foi nocauteado!") == "Charmander (IA) foi nocauteado!"
+
+
+# --------------------------------------------------------------------------
+# arte
+
+
+def test_art_provider_uses_official_artwork_by_pokedex_number(tmp_path, qapp):
+    requested = []
+    png = _tiny_png()
+
+    def fetch(url: str) -> bytes:
+        requested.append(url)
+        return png
+
+    provider = ArtProvider(art_dir=tmp_path, fetch=fetch)
+    art = provider.pokemon_art(_deck_card("Charmander"))
+
+    assert art is not None and not art.isNull()
+    assert requested and requested[0].endswith("/official-artwork/4.png")
+    assert (tmp_path / "4.png").exists()
+
+
+def test_art_provider_caches_and_returns_none_offline(tmp_path, qapp):
+    calls = []
+    provider = ArtProvider(art_dir=tmp_path, fetch=lambda url: calls.append(url))
+    card = dataclasses.replace(_deck_card("Squirtle"), image_url=None)
+
+    assert provider.pokemon_art(card) is None
+    assert provider.pokemon_art(card) is None
+    assert len(calls) == 1  # segunda chamada veio do cache em memória
+
+
+def _tiny_png() -> bytes:
+    import io
+
+    from PIL import Image
+
+    buffer = io.BytesIO()
+    Image.new("RGBA", (8, 8), (255, 0, 0, 255)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+# --------------------------------------------------------------------------
+# sincronização da cena
+
+
+def test_initial_sync_creates_tokens_and_hand(controller):
+    squirtle = _deck_card("Squirtle")
+    state = _state(
+        _deck_card("Charmander"), squirtle, hand=[squirtle, _energy("Fire")], bench=[squirtle]
+    )
+    ctrl = controller(state)
+
+    assert len(ctrl.scene.tokens) == 3
+    assert [item.card.name for item in ctrl.scene.hand_items] == ["Squirtle", "Fire Energy"]
+    assert ctrl.scene.token_for(state.player.active).scale() == pytest.approx(0.92)
+    assert ctrl.scene.token_for(state.player.bench[0]).scale() == pytest.approx(0.62)
+
+
+def test_playing_basic_to_bench_adds_token_and_removes_hand_card(controller):
+    squirtle = _deck_card("Squirtle")
+    state = _state(_deck_card("Charmander"), squirtle, hand=[squirtle])
+    ctrl = controller(state)
+
+    targets = ctrl.targets_for_hand(0)
+    assert list(targets) == [("zone", "bench")]
+    ctrl.perform(targets[("zone", "bench")], card_source=QPointF(640, 800))
+
+    assert len(state.player.bench) == 1
+    assert ctrl.scene.token_for(state.player.bench[0]) is not None
+    assert ctrl.scene.hand_items == []
+
+
+def test_energy_drag_targets_pokemon_and_attach_reveals_orb(controller):
+    charmander = _deck_card("Charmander")
+    state = _state(charmander, _deck_card("Squirtle"), hand=[_energy("Fire")], bench=[charmander])
+    ctrl = controller(state)
+
+    targets = ctrl.targets_for_hand(0)
+    assert set(targets) == {
+        ("token", id(state.player.active)),
+        ("token", id(state.player.bench[0])),
+    }
+
+    ctrl._on_drag_started(ctrl.scene.hand_items[0])
+    assert set(ctrl.scene.targets) == set(targets)
+    token = ctrl.scene.token_for(state.player.active)
+    ctrl._on_dropped(ctrl.scene.hand_items[0], token.card_scene_rect().center())
+
+    assert state.player.active.attached_energies == ["Fire"]
+    assert token.visible_energy_count == 1
+    assert ctrl.scene.targets == []
+
+
+def test_drop_outside_targets_returns_card_to_hand(controller):
+    charmander = _deck_card("Charmander")
+    state = _state(charmander, _deck_card("Squirtle"), hand=[_energy("Fire")])
+    ctrl = controller(state)
+    item = ctrl.scene.hand_items[0]
+
+    ctrl._on_drag_started(item)
+    ctrl._on_dropped(item, QPointF(5, 5))
+
+    assert state.player.active.attached_energies == []
+    assert ctrl.scene.hand_items == [item]
+
+
+def test_click_with_multiple_targets_enters_targeting_then_token_click_plays(controller):
+    charmander = _deck_card("Charmander")
+    state = _state(charmander, _deck_card("Squirtle"), hand=[_energy("Fire")], bench=[charmander])
+    ctrl = controller(state)
+
+    ctrl._on_hand_clicked(ctrl.scene.hand_items[0])
+    assert len(ctrl.scene.targets) == 2
+    bench_token = ctrl.scene.token_for(state.player.bench[0])
+    ctrl._on_token_clicked(bench_token)
+
+    assert state.player.bench[0].attached_energies == ["Fire"]
+
+
+def test_attack_reduces_opponent_hp_and_ends_turn(controller):
+    charmander = _deck_card("Charmander")
+    state = _state(charmander, _deck_card("Squirtle"))
+    state.player.active.attached_energies = ["Fire"]
+    ctrl = controller(state)
+    ctrl._ai_timer.stop()
+    defender = state.opponent.active
+    defender_token = ctrl.scene.token_for(defender)
+
+    ctrl._on_attack_clicked(0)
+
+    assert defender.current_hp == 40
+    assert defender_token.hp_value == 40
+    assert state.active_player == PlayerId.OPPONENT
+
+
+def test_attack_button_ready_only_with_energy(controller):
+    state = _state(_deck_card("Charmander"), _deck_card("Squirtle"))
+    ctrl = controller(state)
+    first, second = ctrl.scene.attack_buttons[:2]
+    assert not first.ready and not first.enabled
+
+    state.player.active.attached_energies = ["Fire"]
+    ctrl._refresh_controls()
+    assert first.ready and first.enabled
+    assert not second.ready
+
+
+def test_end_turn_button_turns_gold_when_nothing_else_to_do(controller):
+    state = _state(_deck_card("Charmander"), _deck_card("Squirtle"))
+    ctrl = controller(state)
+    assert ctrl.scene.end_turn_button.mode == "done"
+
+    state.player.hand = [_energy("Fire")]
+    ctrl.scene.sync(state, animate=False)
+    ctrl._refresh_controls()
+    assert ctrl.scene.end_turn_button.mode == "play"
+
+
+def test_knockout_removes_token_and_takes_prize(controller):
+    charmander = _deck_card("Charmander")
+    squirtle = _deck_card("Squirtle")
+    state = _state(charmander, squirtle)
+    state.opponent.bench = [PokemonInPlay(card=squirtle)]
+    state.opponent.active.damage_counters = 50
+    state.player.active.attached_energies = ["Fire"]
+    ctrl = controller(state)
+    ctrl._ai_timer.stop()
+    knocked = state.opponent.active
+
+    ctrl._on_attack_clicked(0)
+
+    assert ctrl.scene.token_for(knocked) is None
+    assert ctrl.scene.player_prizes.count == 5
+    promoted = ctrl.scene.token_for(state.opponent.active)
+    assert promoted is not None and promoted.slot == "active"
+
+
+def test_evolution_reuses_token_with_new_card(controller):
+    charmander = _deck_card("Charmander")
+    charmeleon = _deck_card("Charmeleon")
+    state = _state(charmander, _deck_card("Squirtle"), hand=[charmeleon])
+    state.turn_number = 3
+    ctrl = controller(state)
+    token = ctrl.scene.token_for(state.player.active)
+
+    (action,) = ctrl.targets_for_hand(0).values()
+    ctrl.perform(action)
+
+    assert state.player.active.card.name == "Charmeleon"
+    assert ctrl.scene.token_for(state.player.active) is token
+    assert token.card.name == "Charmeleon"
+    assert token.max_hp == 90
+
+
+def test_unplayable_card_is_dimmed_and_does_nothing_on_click(controller):
+    state = _state(_deck_card("Charmander"), _deck_card("Squirtle"), hand=[_deck_card("Wartortle")])
+    ctrl = controller(state)
+    item = ctrl.scene.hand_items[0]
+
+    assert not item.playable
+    ctrl._on_hand_clicked(item)
+    assert state.player.hand == [_deck_card("Wartortle")]
+
+
+def test_retreat_with_multiple_bench_enters_selection(controller):
+    charmander = _deck_card("Charmander")
+    squirtle = _deck_card("Squirtle")
+    state = _state(charmander, squirtle, bench=[squirtle, charmander])
+    state.player.active.attached_energies = ["Fire"]
+    ctrl = controller(state)
+
+    ctrl._on_retreat_clicked()
+    assert len(ctrl.scene.targets) == 2
+    ctrl._on_token_clicked(ctrl.scene.token_for(state.player.bench[0]))
+
+    assert state.player.active.card.name == "Squirtle"
+
+
+def test_ai_turn_runs_until_back_to_player(controller, qtbot):
+    state = _state(_deck_card("Charmander"), _deck_card("Squirtle"))
+    ctrl = controller(state)
+
+    ctrl._perform_if_legal(EndTurn())
+    qtbot.waitUntil(lambda: state.active_player == PlayerId.PLAYER and not ctrl.busy, timeout=3000)
+
+    assert state.turn_number >= 3
+
+
+def test_full_game_via_controller_reaches_game_over(qtbot, offline_art):
+    random.seed(3)
+    scene = BattleScene(offline_art)
+    ctrl = BattleController(
+        scene,
+        state_factory=lambda: turn_manager.start_new_game(build_demo_deck(), build_demo_deck()),
+        ai_factory=EasyAI,
+    )
+
+    for _ in range(400):
+        if rules.is_game_over(ctrl.state):
+            break
+        if ctrl.is_player_turn and not ctrl.busy:
+            legal = ctrl.legal_actions()
+            preferred = [
+                a for a in legal if isinstance(a, UseAttack | AttachEnergy | PlayBasicToBench)
+            ]
+            ctrl.perform(preferred[0] if preferred else EndTurn())
+        qtbot.wait(5)
+
+    assert rules.is_game_over(ctrl.state)
+    qtbot.waitUntil(lambda: scene.game_over_overlay is not None, timeout=2000)
+
+
+def test_restart_starts_fresh_game(controller):
+    state_holder = {"n": 0}
+
+    def factory():
+        state_holder["n"] += 1
+        return _state(_deck_card("Charmander"), _deck_card("Squirtle"))
+
+    ctrl = controller(factory())
+    ctrl._state_factory = factory
+    ctrl.new_game()
+    assert state_holder["n"] == 2
+    assert len(ctrl.scene.tokens) == 2
+
+
+def test_main_window_builds_with_demo_decks(qtbot, offline_art):
+    window = MainWindow(
+        state_factory=lambda: turn_manager.start_new_game(build_demo_deck(), build_demo_deck()),
+        ai_factory=EasyAI,
+        art=offline_art,
+    )
+    qtbot.addWidget(window)
+    assert window.scene.hand_items
+    assert window.controller.is_player_turn
+
+
+# --------------------------------------------------------------------------
+# diálogo de confirmação (Fase 4)
+
+
+def test_confirmation_dialog_confirm_selects_top_candidate(qtbot):
+    charmander, squirtle = _deck_card("Charmander"), _deck_card("Squirtle")
+    dialog = ConfirmationDialog("carta na zona ativa", [(charmander, 2), (squirtle, 9)])
     qtbot.addWidget(dialog)
 
     dialog._on_confirm()
@@ -188,92 +382,10 @@ def test_confirmation_dialog_confirm_selects_top_candidate(qtbot, charmander, sq
     assert dialog.selected_card is charmander
 
 
-def test_confirmation_dialog_reject_leaves_selection_none(qtbot, charmander):
-    dialog = ConfirmationDialog("carta na zona ativa", [(charmander, 2)])
+def test_confirmation_dialog_reject_leaves_selection_none(qtbot):
+    dialog = ConfirmationDialog("carta na zona ativa", [(_deck_card("Charmander"), 2)])
     qtbot.addWidget(dialog)
 
     dialog.reject()
 
     assert dialog.selected_card is None
-
-
-def test_main_window_populates_actions_on_player_turn(qtbot):
-    state = turn_manager.start_new_game(build_demo_deck(), build_demo_deck())
-    window = MainWindow(state, EasyAI())
-    qtbot.addWidget(window)
-
-    assert window.action_list.count() > 0
-    assert window.play_button.isEnabled()
-
-
-def test_main_window_attack_click_applies_use_attack(qtbot):
-    from pokemon_companion.engine.game_state import PlayerId
-
-    state = turn_manager.start_new_game(build_demo_deck(), build_demo_deck())
-    window = MainWindow(state, EasyAI())
-    qtbot.addWidget(window)
-    window._current_actions = [UseAttack(attack_index=0)]
-
-    window._on_attack_clicked(0)
-
-    # Atacar sempre encerra o turno nas nossas regras — sinal inequívoco de
-    # que a ação foi realmente aplicada, não só removida da lista.
-    assert state.active_player == PlayerId.OPPONENT
-
-
-def test_main_window_attack_click_ignored_when_not_players_turn(qtbot):
-    state = turn_manager.start_new_game(build_demo_deck(), build_demo_deck())
-    window = MainWindow(state, EasyAI())
-    qtbot.addWidget(window)
-    from pokemon_companion.engine.game_state import PlayerId
-
-    state.active_player = PlayerId.OPPONENT
-    window._current_actions = [UseAttack(attack_index=0)]
-
-    window._on_attack_clicked(0)
-
-    assert window._current_actions == [UseAttack(attack_index=0)]  # nada mudou
-
-
-def test_main_window_bench_click_applies_retreat(qtbot, charmander, squirtle):
-    state = turn_manager.start_new_game(build_demo_deck(), build_demo_deck())
-    window = MainWindow(state, EasyAI())
-    qtbot.addWidget(window)
-    state.player.bench = [PokemonInPlay(card=squirtle)]
-    window._current_actions = [Retreat(bench_index=0)]
-
-    window._on_bench_clicked(0)
-
-    assert state.player.active is not None
-    assert state.player.active.card.name == "Squirtle"
-
-
-def test_main_window_hand_click_applies_unambiguous_action(qtbot):
-    state = turn_manager.start_new_game(build_demo_deck(), build_demo_deck())
-    window = MainWindow(state, EasyAI())
-    qtbot.addWidget(window)
-    hand_before = list(state.player.hand)
-
-    window._on_hand_card_clicked(0)
-
-    assert state.player.hand != hand_before  # a carta 0 foi jogada
-
-
-def test_full_game_playable_end_to_end_via_ui(qtbot):
-    """Sempre seleciona a primeira ação disponível (geralmente 'passar o
-    turno' ou a primeira opção legal) até o jogo terminar — equivalente ao
-    fuzz de self-play do CLI, mas passando pela camada de UI real."""
-    state = turn_manager.start_new_game(build_demo_deck(), build_demo_deck())
-    window = MainWindow(state, EasyAI())
-    qtbot.addWidget(window)
-
-    for _ in range(500):
-        if rules.is_game_over(state):
-            break
-        if state.active_player.value == "player":
-            window.action_list.setCurrentRow(len(window._current_actions) - 1)  # "Passar o turno"
-            window.play_selected_action()
-        else:
-            qtbot.wait(AI_TURN_DELAY_MS + 50)
-
-    assert state.winner is not None

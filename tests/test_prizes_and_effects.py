@@ -36,24 +36,22 @@ def test_knockout_of_v_pokemon_awards_two_prizes(charmander, squirtle):
 
 
 def test_registered_attack_effect_discards_energy_on_heads(monkeypatch, charmander, squirtle):
-    # `charmander` já tem id "basic-charmander", registrado em basic_effects.py
-    # para o ataque "Golpe Forte" — só precisamos adicionar esse ataque.
-    golpe_forte_card = dataclasses.replace(
+    # Efeito registrado em basic_effects.py para ("demo-charmander", "Brasa").
+    brasa_card = dataclasses.replace(
         charmander,
+        id="demo-charmander",
         attacks=[
             *charmander.attacks,
-            dataclasses.replace(charmander.attacks[0], name="Golpe Forte", damage="50"),
+            dataclasses.replace(charmander.attacks[0], name="Brasa", damage="40"),
         ],
     )
-    state = build_state(player_active=golpe_forte_card, opponent_active=squirtle)
+    state = build_state(player_active=brasa_card, opponent_active=squirtle)
     state.player.active.attached_energies.append("Fire")
     state.opponent.active.attached_energies = ["Water"]
 
     monkeypatch.setattr("pokemon_companion.engine.status_conditions.random.random", lambda: 0.0)
 
-    attack_index = next(
-        i for i, a in enumerate(golpe_forte_card.attacks) if a.name == "Golpe Forte"
-    )
+    attack_index = next(i for i, a in enumerate(brasa_card.attacks) if a.name == "Brasa")
     rules.apply_action(state, UseAttack(attack_index=attack_index))
 
     assert state.opponent.active.attached_energies == []

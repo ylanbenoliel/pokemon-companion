@@ -61,6 +61,7 @@ class Card:
     rules: list[str] = field(default_factory=list)
     image_url: str | None = None
     image_local_path: str | None = None
+    national_pokedex_numbers: list[int] = field(default_factory=list)
 
     @property
     def is_basic(self) -> bool:

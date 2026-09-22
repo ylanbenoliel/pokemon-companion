@@ -11,7 +11,7 @@ trabalho avançar.
 ```bash
 cd ~/pokemon_companion
 uv sync                 # instala dependências em .venv
-uv run pytest -v        # confirma que tudo continua passando (100 testes)
+uv run pytest -v        # confirma que tudo continua passando (105 testes)
 uv run mypy src          # type-check
 uv run black --check . && uv run ruff check .   # formatação/lint
 
@@ -21,7 +21,7 @@ uv run python -m pokemon_companion.main --difficulty medium
 # CLI com decklists reais (precisa de internet; formato Limitless/PTCGO):
 uv run python -m pokemon_companion.main --player-deck data/decks/meu_deck.txt --opponent-deck data/decks/deck_da_ia.txt --record-history data/partida1.json
 
-# UI gráfica (PyQt6) — mesma lógica, board do jogador ainda por clique manual:
+# Tabuleiro gráfico (PyQt6) — arrastar/clicar, animações; board do jogador ainda sem câmera:
 uv run python -m pokemon_companion.ui.app --difficulty hard
 ```
 
@@ -30,20 +30,39 @@ uv run python -m pokemon_companion.ui.app --difficulty hard
 - ✅ **Fase 0 — Setup**: `uv`, layout `src/`, `black`+`ruff`+`mypy` (+`pytest-qt` para testar a UI sem display real via `QT_QPA_PLATFORM=offscreen`).
 - ✅ **Fase 1 — Motor de regras + IA**: completo, testado, jogável via CLI.
 - ✅ **Fase 2 — Banco de cartas + decklist**: API `pokemontcg.io` + cache SQLite + parser Limitless/PTCGO.
-- ✅ **Fase 3 — UI gráfica (PyQt6)**: janela funcional, board da IA/jogador, ações por clique, turno da IA via `QTimer`. **Redesenhada visualmente** (ver `ui/theme.py` + `ui/pokemon_card_widget.py`): fundo em degradê roxo, cards de Pokémon com borda colorida por tipo de energia, barra de HP com cor por porcentagem (verde/amarelo/vermelho), pips de energia anexada, pips de prêmios, botões e listas estilizados via QSS — inspirado no visual do Pokémon TCG Pocket em vez do label de texto monoespaçado original. **Validada visualmente** (screenshots renderizados offscreen antes/depois do redesign, ver nota abaixo) e com um teste de partida completa de ponta a ponta pela UI. Não há skill deste ambiente para layout de app desktop (as skills de design existentes aqui são para Artifacts web/HTML) — o redesign foi feito aplicando princípios de design diretamente via QSS.
+- ✅ **Fase 3 — UI gráfica (PyQt6)**: tabuleiro de jogo em `QGraphicsScene` (ver "Tabuleiro estilo Hearthstone/TCG Pocket" abaixo). Testado headless com `pytest-qt` e validado por screenshots/quadros de animação renderizados offscreen.
 - ✅ **Fase 4 — Visão computacional (building blocks)**: captura de câmera multiplataforma, calibração por homografia, mapeamento de zonas, detecção de ocupação/estabilidade, reconhecimento por pHash, download+cache de imagens de carta, e um widget de calibração/debug. **Todos os módulos têm testes unitários com dados sintéticos** (sem precisar de câmera real).
 - ✅ **Fase 5 — Polimento (parcial, ver detalhes)**: prêmios diferenciados por raridade (ex/GX/V=2, VMAX/VSTAR=3), exemplo funcional de efeito de ataque registrado (`engine/effects/basic_effects.py`, testado de ponta a ponta via o registry real), histórico de partida exportável em JSON (`--record-history`).
-- ✅ **Redesign visual (pós-plano original, a pedido do usuário)**: fotos
-  reais das cartas (`ui/card_art.py`, com placeholder colorido por tipo
-  quando falha), ícones de energia por emoji, mão como fileira de
-  miniaturas com arte (`ui/hand_view.py`), e interação clicável estilo
-  Hearthstone/TCG Pocket (clique num ataque pronto para atacar, num
-  Pokémon do banco destacado para recuar, numa carta da mão para jogá-la).
+- ✅ **Tabuleiro estilo Hearthstone/TCG Pocket (pós-plano, a pedido do usuário)**:
+  a UI foi reconstruída sobre `QGraphicsScene` (padrão do Qt para jogos 2D:
+  posicionamento absoluto, rotação, z-order e animação por propriedade), após
+  pesquisar referências (layout oficial do tapete, design do TCG Pocket e do
+  Hearthstone, boas práticas de "game juice"):
+  - layout do tapete oficial, espelhado para o oponente: prêmios à esquerda,
+    deck/descarte à direita, ativo no centro, banco à frente, mão do oponente
+    (versos) no topo;
+  - arte oficial do Pokémon só com o bicho (PokeAPI via número da Pokédex,
+    campo `nationalPokedexNumbers` da API do TCG; fallback: recorte da janela
+    de ilustração da carta; fallback final: orbe do tipo);
+  - mão em leque, com hover que levanta e amplia; cartas jogáveis com brilho
+    verde, as demais esmaecidas e "tremendo" ao clique;
+  - arrastar e soltar em alvos que pulsam (ou clicar: destino único joga
+    direto; vários destinos entram em modo de escolha);
+  - botões de jogo no lugar da lista de texto: ataques (custo em orbes +
+    dano) ao lado do ativo, "Recuar" do outro lado, "Fim do turno" integrado
+    ao tabuleiro, dourado e pulsando quando não há mais jogadas;
+  - animações: orbe de energia voando e explodindo em anel/partículas ao
+    anexar; investida do atacante + hit-stop + tremida de tela + flash +
+    partículas da cor do tipo + dano flutuante + barra de HP drenando;
+    nocaute (encolhe/gira/some), evolução (flash branco, troca da arte no
+    pico), compra de cartas saindo do deck, prêmios voando para a mão,
+    banner "SEU TURNO"/"TURNO DA IA";
+  - painel de detalhes ao passar o mouse num Pokémon (ataques, fraqueza,
+    resistência, recuo), mensagens do motor como toasts discretos, tela de
+    vitória/derrota com "Jogar de novo".
+  Ícones de energia são vetoriais (QPainter), não emoji — iguais em todo SO.
 
-100 testes passando (`uv run pytest`), `black`/`ruff`/`mypy` limpos. Commits
-no histórico: Fases 0+1, Fase 2, Fases 3-5, correção de bug de nome
-invisível no banco, lista de ataques no card ativo, e o redesign visual com
-fotos/interação clicável.
+105 testes passando (`uv run pytest`), `black`/`ruff`/`mypy` limpos.
 
 ## O que foi e não foi validado neste ambiente de trabalho
 
@@ -63,13 +82,11 @@ do que o esperado inicialmente:
 2. **UI gráfica**: testada de verdade com `pytest-qt` rodando headless
    (`QT_QPA_PLATFORM=offscreen`) — vários screenshots reais foram
    renderizados e inspecionados durante o desenvolvimento (inclusive com
-   fotos reais de carta baixadas da internet), e dois bugs reais de
-   rendering foram encontrados e corrigidos assim: (a) `QImage`/`QPixmap`
-   construído antes de existir uma `QApplication`, ou com um buffer
-   temporário liberado antes do Qt terminar de usá-lo; (b) `deleteLater()`
-   só destrói o widget no próximo ciclo do event loop, então limpar uma
-   lista de widgets (energia, ataques, mão) sem `hide()` imediato deixava
-   texto de linhas antigas sobreposto às novas por um instante. Ainda
+   arte real baixada da internet), e as animações foram conferidas quadro a
+   quadro (capturas em momentos fixos durante ataque, energia e evolução) —
+   foi assim que apareceram e foram corrigidos, por exemplo, o atacante sendo
+   desenhado atrás do defensor na investida e um falso "+30" de cura na
+   evolução. Não há som (o "game feel" aqui é só visual). Ainda
    assim, vale abrir a janela de verdade (`uv run python -m
    pokemon_companion.ui.app`) numa máquina com display para conferir a
    experiência visual/de clique real.
@@ -105,14 +122,14 @@ pokemon_companion/
 │   │   └── effects/                 # registry.py + basic_effects.py (1 exemplo registrado)
 │   ├── ai/                          # Fase 1 — completo
 │   │   ├── opponent.py (Protocol + build_ai), heuristics_easy/medium/hard.py, weights.yaml
-│   ├── ui/                          # Fase 3 — completo, com redesign visual + clique
-│   │   ├── app.py (MainWindow, QApplication)
-│   │   ├── theme.py                 # QSS + paleta/emoji por tipo de energia
-│   │   ├── card_art.py              # download+cache de arte real (com placeholder)
-│   │   ├── board_view.py            # board de um lado (PrizeTracker + cards + hand_view)
-│   │   ├── hand_view.py             # mão como fileira de miniaturas clicáveis
-│   │   ├── pokemon_card_widget.py   # card: arte, HP bar, energia, status, ataques clicáveis
-│   │   ├── confirmation_dialog.py
+│   ├── ui/                          # tabuleiro em QGraphicsScene
+│   │   ├── app.py                   # MainWindow, BattleView, BattleController (input → ações)
+│   │   ├── battle_scene.py          # layout do tapete + sync animada estado→itens + efeitos
+│   │   ├── items.py                 # token de Pokémon, carta da mão, pilhas, botões, partículas...
+│   │   ├── anim.py                  # helpers de animação + fila de passos (velocidade 0 nos testes)
+│   │   ├── art.py                   # arte oficial (PokeAPI) + orbes de energia/verso vetoriais
+│   │   ├── theme.py                 # paleta por tipo, cores de destaque, fonte
+│   │   ├── confirmation_dialog.py   # Fase 4 — confirmação de reconhecimento incerto
 │   │   └── camera_debug_view.py     # Fase 4 — calibração por clique + overlay de zonas
 │   └── vision/                      # Fase 4 — completo (building blocks)
 │       ├── camera_capture.py, calibration.py, zone_mapper.py
