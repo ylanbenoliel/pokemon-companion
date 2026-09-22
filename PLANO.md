@@ -12,7 +12,10 @@ trabalho avançar.
 cd ~/pokemon_companion
 uv sync                 # instala dependências em .venv
 uv run pytest -v        # confirma que tudo continua passando
-uv run python -m pokemon_companion.main --difficulty medium   # joga a demo via CLI
+uv run python -m pokemon_companion.main --difficulty medium   # joga a demo via CLI (deck mockado)
+
+# com decklists reais (precisa de internet; formato Limitless/PTCGO, ver exemplo abaixo):
+uv run python -m pokemon_companion.main --player-deck data/decks/meu_deck.txt --opponent-deck data/decks/deck_da_ia.txt
 ```
 
 Checks antes de qualquer commit: `uv run black --check .`, `uv run ruff check .`, `uv run mypy src`.
@@ -20,16 +23,25 @@ Checks antes de qualquer commit: `uv run black --check .`, `uv run ruff check .`
 ## Status
 
 - ✅ **Fase 0 — Setup**: projeto `uv` (layout `src/`), `black`+`ruff`+`mypy` configurados em `pyproject.toml`, `.pre-commit-config.yaml`, `.gitignore` ajustado para `data/` (cache/decks).
-- ✅ **Fase 1 — Motor de regras + IA, 100% virtual**: completo e testado (26 testes em `uv run pytest`). Partida jogável do início ao fim via CLI (`main.py`) com um vencedor declarado corretamente.
-- ⬜ **Fase 2 — Banco de cartas + decklist** (próximo passo, ver detalhes abaixo).
-- ⬜ **Fase 3 — UI gráfica (PyQt6) sem câmera**.
+- ✅ **Fase 1 — Motor de regras + IA, 100% virtual**: completo e testado. Partida jogável do início ao fim via CLI (`main.py`) com um vencedor declarado corretamente.
+- ✅ **Fase 2 — Banco de cartas + decklist**: cliente da API `pokemontcg.io`, cache SQLite e parser Limitless/PTCGO completos e testados. `main.py` aceita `--player-deck`/`--opponent-deck` apontando para arquivos de decklist reais (fallback para o deck mockado quando omitido).
+- ⬜ **Fase 3 — UI gráfica (PyQt6) sem câmera** (próximo passo, ver detalhes abaixo).
 - ⬜ **Fase 4 — Visão computacional**.
 - ⬜ **Fase 5 — Polimento (pós-MVP)**.
 
-Nenhum commit git foi feito ainda — o repositório local existe (criado pelo
-`uv init`) mas está com tudo untracked/sem histórico.
+Um commit inicial já foi feito (Fases 0 e 1). O trabalho da Fase 2 ainda
+está para commitar — ver `git status`.
 
-## O que já existe (Fases 0 e 1)
+**Nota de rede**: `--player-deck`/`--opponent-deck` fazem chamadas reais à
+API pokemontcg.io na primeira vez que uma carta aparece numa decklist (fica
+cacheada depois, em `~/Library/Application Support/pokemon-companion/` no
+macOS via `platformdirs`). Isso não foi validado contra a API real nesta
+sessão (sem acesso à rede no ambiente onde o código foi escrito) — a lógica
+está coberta por testes unitários com HTTP mockado (`tests/test_api_client.py`,
+`tests/test_decklist_parser.py`), mas vale testar manualmente com uma
+decklist real antes de confiar no fluxo de ponta a ponta.
+
+## O que já existe (Fases 0, 1 e 2)
 
 ```
 pokemon_companion/
@@ -38,12 +50,15 @@ pokemon_companion/
 ├── .pre-commit-config.yaml
 ├── README.md                        # escopo e limitações do MVP
 ├── src/pokemon_companion/
-│   ├── main.py                      # CLI de demonstração (jogador humano vs IA)
-│   ├── demo_data.py                 # decks mockados usados pelo CLI (Fase 2 substitui)
+│   ├── main.py                      # CLI: jogador humano vs IA, deck mockado ou --player-deck/--opponent-deck
+│   ├── demo_data.py                 # decks mockados (fallback quando nenhuma decklist é passada)
 │   ├── config/settings.yaml
-│   ├── cards_db/
-│   │   └── models.py                # Card, Attack, Ability, Supertype (já pronto,
-│   │                                 # usado tanto pelos mocks quanto pela API futura)
+│   ├── cards_db/                    # completo
+│   │   ├── models.py                # Card, Attack, Ability, Supertype, WeaknessResistance
+│   │   ├── api_client.py            # PokemonTcgApiClient (retry/backoff) + api_card_to_card
+│   │   ├── cache.py                 # CardCache (SQLite via platformdirs, roundtrip completo)
+│   │   ├── basic_energies.py        # energias básicas resolvidas sem API
+│   │   └── decklist_parser.py       # parse_decklist_text (puro) + resolve_entries + load_deck
 │   ├── engine/                      # completo: game_state, actions, rules,
 │   │   │                            # status_conditions, turn_manager, effects/
 │   │   └── effects/registry.py      # registry de efeitos especiais de ataque (vazio por ora)
@@ -51,11 +66,14 @@ pokemon_companion/
 │   │   │                            # medium/hard, weights.yaml
 │   ├── vision/                      # só __init__.py (Fase 4)
 │   └── ui/                          # só __init__.py (Fase 3)
-└── tests/
+└── tests/                           # 38 testes, todos passando
     ├── conftest.py                  # fixtures de cartas mockadas (charmander, squirtle, ...)
     ├── test_rules.py
     ├── test_status_conditions.py
-    └── test_ai_heuristics.py        # inclui self-play fuzz tests (easy/medium/hard)
+    ├── test_ai_heuristics.py        # inclui self-play fuzz tests (easy/medium/hard)
+    ├── test_api_client.py           # HTTP mockado (sem rede)
+    ├── test_cache.py                # SQLite real em tmp_path
+    └── test_decklist_parser.py      # parser puro + resolve_entries com fakes de cache/API
 ```
 
 ### Decisões e simplificações já implementadas
@@ -76,52 +94,46 @@ pokemon_companion/
   oponente).
 - Efeitos de texto de ataques (coin flip, descarte, etc.) ainda não têm
   nenhuma carta cadastrada em `engine/effects/basic_effects.py` — só dano
-  base é aplicado até a Fase 2 trazer decklists reais que precisem disso.
+  base é aplicado; popular esse registry conforme decklists reais de teste
+  precisarem de efeitos específicos.
+- `cards_db.cache.CardCache` busca sob demanda (uma carta só é baixada/salva
+  quando aparece numa decklist sendo resolvida), nunca o pool inteiro.
+- Energias básicas (`"8 Fire Energy"`) são resolvidas localmente via
+  `cards_db.basic_energies.BASIC_ENERGIES`, sem tocar cache/API.
+- Entry point do pacote (`pokemon-companion` / `python -m pokemon_companion.main`)
+  aponta direto para `pokemon_companion.main:main`; `__init__.py` do pacote
+  ficou vazio de propósito para evitar import duplicado (`RuntimeWarning`) ao
+  rodar via `-m`.
 
-## Próximo passo: Fase 2 — Banco de cartas + decklist
+## Próximo passo: Fase 3 — UI gráfica (PyQt6) sem câmera
 
-Objetivo: substituir `demo_data.py` por cartas reais, resolvidas a partir de
-decklists em formato Limitless/PTCGO, usando a API pública `pokemontcg.io`
-cacheada localmente. Isso também cobre o requisito original de "jogar
-contra decks específicos".
+Objetivo: substituir a leitura/escrita via terminal (`input()`/`print()` em
+`main.py`) por uma UI gráfica real, mantendo o board do jogador ainda por
+clique manual (a câmera só entra na Fase 4). Isso isola o risco de UI do
+risco de visão computacional.
 
-Arquivos a criar em `src/pokemon_companion/cards_db/`:
-- `api_client.py` — cliente HTTP para `https://api.pokemontcg.io/v2/cards`
-  (usar `requests`, já é dependência do projeto). Rate limit/retry básico.
-  Ler a API key opcional de `POKEMONTCG_API_KEY` (variável de ambiente,
-  nunca hardcoded) — ver `config/settings.yaml:pokemontcg_api`.
-- `cache.py` — SQLite local (`sqlite3`, builtin) com tabelas `cards`, `sets`,
-  `card_images`. Usar `platformdirs.user_data_dir("pokemon-companion")`
-  para o caminho do banco (multiplataforma — já é dependência instalada).
-  Fetch sob demanda: só baixa uma carta quando ela aparece numa decklist
-  sendo resolvida, não o pool inteiro (~18k cartas).
-- `decklist_parser.py` — parser do formato Limitless/PTCGO
-  (`"4 Charmander SVI 26"` → quantidade, nome, código do set, número).
-  Tratar seções (`Pokémon:`, `Trainer:`, `Energy:`) e energias básicas sem
-  set/número (ex: `8 Fire Energy`) contra um pool built-in. Resolver cada
-  linha contra `cache.py`/`api_client.py` usando `set.ptcgoCode` + `number`.
-  Retornar erros claros por linha (número da linha + motivo) para o usuário
-  corrigir.
+Arquivos a criar em `src/pokemon_companion/ui/`:
+- `app.py` — ponto de entrada da aplicação PyQt6 (`QApplication`, janela
+  principal). Deve reusar `engine.rules.legal_actions`/`apply_action` e
+  `ai.opponent.AIPlayer` exatamente como `main.py` faz hoje — a lógica de
+  jogo não muda, só a camada de apresentação.
+- `board_view.py` — widget que renderiza um `GameState` (ativo, banco,
+  prêmios, mão) para os dois lados. Pode se inspirar diretamente em
+  `main.py:render_state`/`render_pokemon` para saber quais dados mostrar.
+- Reaproveitar `main.py:describe_action` como referência para gerar os
+  rótulos dos botões de ação (substituindo a lista numerada do CLI).
 
-Testes a escrever em `tests/`:
-- `test_decklist_parser.py` — decklists reais válidas + uma com erro
-  proposital; mockar `requests` para não depender de rede no CI.
-- Teste de cache confirmando que uma segunda consulta não dispara nova
-  chamada HTTP.
+Sugestão de abordagem incremental: manter `main.py` funcionando (CLI) como
+está, e criar a UI em paralelo sem quebrá-lo — o objetivo da Fase 3 é ter
+as duas interfaces funcionando sobre o mesmo motor, não substituir uma pela
+outra ainda.
 
-Depois de pronto: trocar `demo_data.build_demo_deck()` no `main.py` por
-decklists carregadas de arquivos `.txt` em `data/decks/` (diretório já
-existe, ignorado pelo git exceto `.gitkeep`), permitindo `--player-deck` e
-`--opponent-deck` como argumentos do CLI.
-
-**Critério de saída da Fase 2**: partida da Fase 1 rodando de ponta a ponta
-com decks reais importados de arquivos de texto, exibindo nomes e dados
-corretos das cartas.
+**Critério de saída da Fase 3**: jogar uma partida completa via UI gráfica,
+com paridade de ações em relação ao CLI (tudo que dá pra fazer no CLI hoje
+deve dar pra fazer clicando na UI).
 
 ## Fases seguintes (resumo — detalhes completos no plano original aprovado)
 
-- **Fase 3 — UI gráfica (PyQt6) sem câmera**: `ui/app.py`, `ui/board_view.py`.
-  Board do jogador ainda por clique manual (substitui a leitura do CLI).
 - **Fase 4 — Visão computacional**: `vision/camera_capture.py` (backend por
   SO: DSHOW/MSMF no Windows, AVFoundation no macOS, V4L2 no Linux),
   `calibration.py` (homografia via 4 cliques), `zone_mapper.py`,

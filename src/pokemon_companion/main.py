@@ -1,16 +1,22 @@
 """CLI textual de demonstração: joga uma partida completa (jogador humano vs
-IA) usando decks mockados, sem câmera nem UI gráfica — cobre o critério de
-saída da Fase 1 (motor de regras + IA jogáveis de ponta a ponta)."""
+IA) usando decks mockados ou decklists reais importadas, sem câmera nem UI
+gráfica — cobre o critério de saída da Fase 1 (motor de regras + IA jogáveis
+de ponta a ponta) e o importador de decklist da Fase 2."""
 
 from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from pokemon_companion.ai.heuristics_easy import EasyAI
 from pokemon_companion.ai.heuristics_hard import HardAI
 from pokemon_companion.ai.heuristics_medium import MediumAI
 from pokemon_companion.ai.opponent import AIPlayer
+from pokemon_companion.cards_db.api_client import PokemonTcgApiClient
+from pokemon_companion.cards_db.cache import CardCache
+from pokemon_companion.cards_db.decklist_parser import load_deck
+from pokemon_companion.cards_db.models import Card
 from pokemon_companion.demo_data import build_demo_deck
 from pokemon_companion.engine import rules, turn_manager
 from pokemon_companion.engine.actions import (
@@ -108,8 +114,40 @@ def ai_turn(state: GameState, ai: AIPlayer) -> None:
         print(f"  -> {message}")
 
 
-def run_game(difficulty: str) -> None:
-    state = turn_manager.start_new_game(build_demo_deck(), build_demo_deck())
+def _load_deck_or_exit(path: Path, cache: CardCache, api_client: PokemonTcgApiClient) -> list[Card]:
+    if not path.is_file():
+        print(f"Arquivo de decklist não encontrado: {path}")
+        sys.exit(1)
+    cards, errors = load_deck(path, cache, api_client)
+    for error in errors:
+        print(f"  ! {error}")
+    if not cards:
+        print(f"Não foi possível resolver nenhuma carta de {path}. Abortando.")
+        sys.exit(1)
+    return cards
+
+
+def run_game(
+    difficulty: str, player_deck_path: Path | None, opponent_deck_path: Path | None
+) -> None:
+    if player_deck_path or opponent_deck_path:
+        with CardCache() as cache:
+            api_client = PokemonTcgApiClient()
+            player_deck = (
+                _load_deck_or_exit(player_deck_path, cache, api_client)
+                if player_deck_path
+                else build_demo_deck()
+            )
+            opponent_deck = (
+                _load_deck_or_exit(opponent_deck_path, cache, api_client)
+                if opponent_deck_path
+                else build_demo_deck()
+            )
+    else:
+        player_deck = build_demo_deck()
+        opponent_deck = build_demo_deck()
+
+    state = turn_manager.start_new_game(player_deck, opponent_deck)
     ai = build_ai(difficulty)
     print(f"Nova partida iniciada (dificuldade da IA: {difficulty}).")
 
@@ -128,10 +166,23 @@ def main() -> None:
         description="pokemon-companion — partida de demonstração via CLI"
     )
     parser.add_argument("--difficulty", choices=["easy", "medium", "hard"], default="medium")
+    parser.add_argument(
+        "--player-deck",
+        type=Path,
+        default=None,
+        help="Arquivo de decklist (formato Limitless/PTCGO) para o seu deck. "
+        "Sem isso, usa um deck mockado de demonstração.",
+    )
+    parser.add_argument(
+        "--opponent-deck",
+        type=Path,
+        default=None,
+        help="Arquivo de decklist para o deck da IA. Sem isso, usa um deck mockado.",
+    )
     args = parser.parse_args()
 
     try:
-        run_game(args.difficulty)
+        run_game(args.difficulty, args.player_deck, args.opponent_deck)
     except (EOFError, KeyboardInterrupt):
         print("\nPartida interrompida.")
         sys.exit(1)

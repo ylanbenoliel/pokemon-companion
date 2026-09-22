@@ -85,3 +85,26 @@ def squirtle() -> Card:
 @pytest.fixture
 def charmeleon() -> Card:
     return make_evolution("Charmeleon", "Charmander", hp=90, energy_type="Fire", damage="50")
+
+
+@pytest.fixture
+def sample_api_card_json() -> dict:
+    """Formato bruto real da API pokemontcg.io, usado para testar a conversão
+    em `api_client.api_card_to_card` sem depender de rede."""
+    return {
+        "id": "svi-26",
+        "name": "Charmander",
+        "supertype": "Pokémon",
+        "subtypes": ["Basic"],
+        "hp": "60",
+        "types": ["Fire"],
+        "attacks": [
+            {"name": "Ember", "cost": ["Fire"], "damage": "30", "text": ""},
+        ],
+        "weaknesses": [{"type": "Water", "value": "×2"}],
+        "retreatCost": ["Colorless"],
+        "images": {
+            "small": "https://images.pokemontcg.io/svi/26.png",
+            "large": "https://images.pokemontcg.io/svi/26_hires.png",
+        },
+    }
