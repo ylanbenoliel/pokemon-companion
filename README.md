@@ -39,8 +39,10 @@ visão computacional por último:
   `engine/effects/` e cobrem os 20 decks do meta em `examples/decks/top/`;
   cartas fora deles podem ficar sem efeito (ver `tools/effect_coverage.py`).
 - Regras de torneio (tempo, deck check) não são aplicadas.
-- A interface abre numa tela de seleção de decks (seu deck, deck da IA e
+- A interface abre numa tela de confronto (seu deck × deck da IA e a
   dificuldade); `--player-deck`/`--opponent-deck` pulam direto para a partida.
+- As cartas de Treinador mostram em português o que fazem; as descrições
+  ficam em `engine/effects/descriptions.py` e cobrem os decks incluídos.
 - O reconhecimento de cartas por câmera é feito por hashing perceptual
   contra o pool do deck importado do jogador — não contra o card pool
   inteiro. Quando a confiança do reconhecimento é baixa, o app pede

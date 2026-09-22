@@ -26,7 +26,6 @@ from PyQt6.QtGui import (
     QPainterPath,
     QPen,
     QPixmap,
-    QPolygonF,
     QRadialGradient,
     QTextOption,
     QTransform,
@@ -41,6 +40,9 @@ from PyQt6.QtWidgets import (
 )
 
 from pokemon_companion.cards_db.models import Attack, Card, Supertype
+from pokemon_companion.engine.effects.cardinfo import has_rule_box
+from pokemon_companion.engine.effects.descriptions import describe_ability, describe_card
+from pokemon_companion.engine.effects.trainers import is_implemented
 from pokemon_companion.engine.game_state import PokemonInPlay
 from pokemon_companion.ui.anim import Animator, par, prop, seq
 from pokemon_companion.ui.art import (
@@ -49,15 +51,20 @@ from pokemon_companion.ui.art import (
     paint_placeholder_art,
 )
 from pokemon_companion.ui.theme import (
+    BONE,
     ENERGY_NAMES_PT,
     GOLD,
+    INK,
     PLAYABLE_GLOW,
     STATUS_COLORS,
     STATUS_LABELS,
+    VOLT,
+    display_font,
     energy_color,
     hp_color,
     primary_type,
     ui_font,
+    with_alpha,
 )
 
 TRAINER_COLORS = {
@@ -67,10 +74,10 @@ TRAINER_COLORS = {
     "Tool": "#8a4fd1",
 }
 TRAINER_NAMES_PT = {
-    "Item": "ITEM",
-    "Supporter": "APOIADOR",
-    "Stadium": "ESTÁDIO",
-    "Tool": "FERRAMENTA",
+    "Item": "Item",
+    "Supporter": "Apoiador",
+    "Stadium": "Estádio",
+    "Tool": "Ferramenta",
 }
 
 
@@ -388,99 +395,103 @@ class PokemonToken(QGraphicsObject):
         paint_glow(painter, card, 16, GOLD, self._glow)
         paint_soft_shadow(painter, card, 16)
 
-        frame = QLinearGradient(card.topLeft(), card.bottomLeft())
-        frame.setColorAt(0.0, type_color.lighter(140))
-        frame.setColorAt(1.0, type_color.darker(140))
-        painter.setPen(QPen(QColor(255, 255, 255, 120), 1.5))
-        painter.setBrush(QBrush(frame))
-        painter.drawRoundedRect(card, 16, 16)
-
-        art_rect = QRectF(-67, -92, 134, 128)
-        background = QRadialGradient(art_rect.center() + QPointF(0, 10), 95)
-        background.setColorAt(0.0, QColor(255, 255, 255))
-        background.setColorAt(1.0, type_color.lighter(175))
+        # cartolina da carta, com a faixa do tipo atrás da arte
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(background))
-        painter.drawRoundedRect(art_rect, 12, 12)
-        painter.save()
+        painter.setBrush(BONE)
+        painter.drawRoundedRect(card, 14, 14)
+        art_rect = QRectF(-67, -92, 134, 128)
         clip = QPainterPath()
-        clip.addRoundedRect(art_rect, 12, 12)
+        clip.addRoundedRect(art_rect, 10, 10)
+        painter.save()
         painter.setClipPath(clip)
+        band = QLinearGradient(art_rect.topLeft(), art_rect.bottomLeft())
+        band.setColorAt(0.0, type_color.lighter(128))
+        band.setColorAt(1.0, type_color.lighter(168))
+        painter.fillRect(art_rect, QBrush(band))
+        if has_rule_box(self.card):
+            # brilho holográfico das cartas com regra especial (ex/Mega)
+            holo = QLinearGradient(art_rect.bottomLeft(), art_rect.topRight())
+            for stop, color in (
+                (0.10, QColor(255, 120, 190, 55)),
+                (0.35, QColor(120, 215, 255, 60)),
+                (0.60, QColor(255, 236, 130, 65)),
+                (0.85, QColor(150, 255, 200, 45)),
+            ):
+                holo.setColorAt(stop, color)
+            holo.setColorAt(0.0, QColor(255, 255, 255, 0))
+            holo.setColorAt(1.0, QColor(255, 255, 255, 0))
+            painter.fillRect(art_rect, QBrush(holo))
         draw_art(painter, art_rect.adjusted(4, 4, -4, -2), self._art, energy_type)
         painter.restore()
+        painter.setPen(QPen(with_alpha(INK, 40), 1))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(art_rect, 10, 10)
 
         plate = QRectF(-67, 40, 134, 26)
-        painter.setBrush(QColor(8, 14, 30, 190))
-        painter.drawRoundedRect(plate, 8, 8)
-        painter.setPen(QColor("white"))
-        painter.setFont(ui_font(10.5))
+        painter.setPen(INK)
+        painter.setFont(ui_font(10.5, QFont.Weight.DemiBold))
         name = QFontMetricsF(painter.font()).elidedText(
-            self.card.name, Qt.TextElideMode.ElideRight, 88
+            self.card.name, Qt.TextElideMode.ElideRight, 92
         )
-        draw_text(painter, plate.adjusted(8, 0, -8, 0), name, Qt.AlignmentFlag.AlignVCenter)
-        painter.setFont(ui_font(8.5))
-        painter.setPen(QColor(255, 255, 255, 190))
+        draw_text(painter, plate.adjusted(2, 0, -2, 0), name, Qt.AlignmentFlag.AlignVCenter)
+        painter.setFont(display_font(9))
+        painter.setPen(with_alpha(INK, 140))
         draw_text(
             painter,
-            plate.adjusted(8, 0, -8, 0),
-            f"HP {self._max_hp}",
+            plate.adjusted(2, 0, -2, 0),
+            str(self._max_hp),
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
         )
 
-        bar = QRectF(-67, 71, 134, 13)
+        bar = QRectF(-67, 70, 134, 14)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 130))
-        painter.drawRoundedRect(bar, 6.5, 6.5)
+        painter.setBrush(with_alpha(INK, 45))
+        painter.drawRoundedRect(bar, 7, 7)
         ratio = max(0.0, min(1.0, self._hp_display / self._max_hp))
         if ratio > 0:
             fill = QRectF(bar.left(), bar.top(), bar.width() * ratio, bar.height())
             painter.setBrush(hp_color(self.hp_value, self._max_hp))
-            painter.drawRoundedRect(fill, 6.5, 6.5)
-        draw_outlined_text(
-            painter,
-            bar.center(),
-            f"{self.hp_value}/{self._max_hp}",
-            ui_font(8.5),
-            QColor("white"),
-            outline_width=3,
-        )
+            painter.drawRoundedRect(fill, 7, 7)
+        painter.setPen(INK)
+        painter.setFont(display_font(8.5))
+        draw_text(painter, bar, f"{self.hp_value}")
 
         visible = self._energies[: self.visible_energy_count]
-        for rect, energy in zip(orb_row_positions(len(visible), 0, 88, 24), visible, strict=True):
+        for rect, energy in zip(orb_row_positions(len(visible), 0, 89, 22), visible, strict=True):
             paint_energy_orb(painter, rect, energy)
 
         if self._status != "NONE":
             label = STATUS_LABELS.get(self._status, self._status)
-            painter.setFont(ui_font(8))
+            painter.setFont(ui_font(8.5, QFont.Weight.DemiBold))
             width = QFontMetricsF(painter.font()).horizontalAdvance(label) + 14
             badge = QRectF(card.left() + 6, card.top() + 6, width, 18)
-            painter.setPen(QPen(QColor("white"), 1.2))
+            painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(STATUS_COLORS.get(self._status, "#d81b60")))
             painter.drawRoundedRect(badge, 9, 9)
             painter.setPen(QColor("white"))
             draw_text(painter, badge, label)
 
         if self._tool:
-            painter.setFont(ui_font(8))
+            painter.setFont(ui_font(8.5, QFont.Weight.DemiBold))
             label = QFontMetricsF(painter.font()).elidedText(
-                self._tool, Qt.TextElideMode.ElideRight, 110
+                self._tool, Qt.TextElideMode.ElideRight, 104
             )
-            width = QFontMetricsF(painter.font()).horizontalAdvance(label) + 14
-            pill = QRectF(-width / 2, 22, width, 17)
-            painter.setPen(QPen(QColor("white"), 1))
+            width = QFontMetricsF(painter.font()).horizontalAdvance(label) + 16
+            pill = QRectF(-width / 2, 20, width, 17)
+            painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(TRAINER_COLORS["Tool"]))
             painter.drawRoundedRect(pill, 8.5, 8.5)
             painter.setPen(QColor("white"))
             draw_text(painter, pill, label)
 
         if self._ability_ready:
-            badge = QRectF(card.right() - 44, card.top() + 6, 38, 18)
-            painter.setPen(QPen(QColor("white"), 1.2))
-            painter.setBrush(QColor("#c2185b"))
+            painter.setFont(ui_font(8.5, QFont.Weight.DemiBold))
+            badge = QRectF(card.right() - 78, card.top() + 6, 72, 18)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(VOLT)
             painter.drawRoundedRect(badge, 9, 9)
-            painter.setPen(QColor("white"))
-            painter.setFont(ui_font(8))
-            draw_text(painter, badge, "HAB.")
+            painter.setPen(INK)
+            draw_text(painter, badge, "Habilidade")
 
         if self._flash > 0:
             overlay = QColor(self._flash_color)
@@ -700,10 +711,9 @@ class HandCard(QGraphicsObject):
         kind = trainer_kind(self.card)
         accent = QColor(TRAINER_COLORS.get(kind, "#5b6b82"))
         frame = QLinearGradient(rect.topLeft(), rect.bottomRight())
-        frame.setColorAt(0.0, QColor("#eef1f5"))
-        frame.setColorAt(0.5, QColor("#b8c1cc"))
-        frame.setColorAt(1.0, QColor("#8a95a3"))
-        painter.setPen(QPen(QColor(255, 255, 255, 170), 1.5))
+        frame.setColorAt(0.0, BONE)
+        frame.setColorAt(1.0, BONE.darker(107))
+        painter.setPen(QPen(with_alpha(INK, 60), 1.5))
         painter.setBrush(QBrush(frame))
         painter.drawRoundedRect(rect, 12, 12)
 
@@ -718,7 +728,7 @@ class HandCard(QGraphicsObject):
         )
         draw_text(painter, header, name)
 
-        art_rect = QRectF(rect.left() + 7, rect.top() + 29, rect.width() - 14, 92)
+        art_rect = QRectF(rect.left() + 7, rect.top() + 29, rect.width() - 14, 74)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QColor(20, 24, 34))
         painter.drawRoundedRect(art_rect, 8, 8)
@@ -734,12 +744,24 @@ class HandCard(QGraphicsObject):
             draw_text(painter, art_rect, "T")
         painter.restore()
 
-        pill = QRectF(rect.left() + 14, rect.bottom() - 40, rect.width() - 28, 18)
+        # o que a carta faz, em português, direto na carta
+        painter.setPen(with_alpha(INK, 210))
+        painter.setFont(ui_font(7.2, QFont.Weight.Medium))
+        draw_text(
+            painter,
+            QRectF(rect.left() + 9, art_rect.bottom() + 4, rect.width() - 18, 44),
+            describe_card(self.card),
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
+            wrap=True,
+        )
+
+        pill = QRectF(rect.left() + 16, rect.bottom() - 21, rect.width() - 32, 16)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(accent)
-        painter.drawRoundedRect(pill, 9, 9)
+        painter.drawRoundedRect(pill, 8, 8)
         painter.setPen(QColor("white"))
-        painter.setFont(ui_font(8))
-        draw_text(painter, pill, TRAINER_NAMES_PT.get(kind, "TREINADOR"))
+        painter.setFont(ui_font(7.5, QFont.Weight.DemiBold))
+        draw_text(painter, pill, TRAINER_NAMES_PT.get(kind, "Treinador"))
 
     # -- input ----------------------------------------------------------
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent | None) -> None:
@@ -920,7 +942,7 @@ class DiscardPile(QGraphicsObject):
         draw_text(
             painter,
             QRectF(self.RECT.left() - 10, self.RECT.bottom() + 8, self.RECT.width() + 20, 16),
-            "DESCARTE",
+            "Descarte",
         )
 
 
@@ -974,7 +996,12 @@ class PrizeGrid(QGraphicsObject):
                 _paint_empty_slot(painter, rect, radius=6)
         painter.setPen(QColor(255, 255, 255, 170))
         painter.setFont(ui_font(8.5))
-        draw_text(painter, QRectF(-110, 124, 220, 18), f"{self._label} · PRÊMIOS {self._count}")
+        painter.setFont(ui_font(9.5, QFont.Weight.DemiBold))
+        draw_text(painter, QRectF(-110, 122, 220, 16), self._label)
+        painter.setFont(ui_font(8.5))
+        painter.setPen(QColor(255, 255, 255, 130))
+        prizes = "1 prêmio" if self._count == 1 else f"{self._count} prêmios"
+        draw_text(painter, QRectF(-110, 138, 220, 14), prizes)
 
 
 class OpponentHandFan(QGraphicsObject):
@@ -1115,44 +1142,34 @@ class GameButton(QGraphicsObject):
             return
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         path = self.shape_path()
-        bounds = path.boundingRect()
         if self._glow > 0:
             painter.save()
-            for i, grow in enumerate((12, 7, 3)):
+            for index, grow in enumerate((11, 6, 2)):
                 color = QColor(GOLD)
-                color.setAlphaF(min(1.0, self._glow * (0.2 + 0.22 * i)))
-                painter.setPen(QPen(color, 5 - i))
+                color.setAlphaF(min(1.0, self._glow * (0.16 + 0.2 * index)))
+                painter.setPen(QPen(color, 4 - index))
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawPath(_grow_path(path, grow))
             painter.restore()
-        painter.save()
-        painter.translate(0, 5)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(0, 0, 0, 70))
-        painter.drawPath(path)
-        painter.restore()
 
         top, bottom = self.base_colors()
         if not self._enabled:
-            top, bottom = QColor("#5a6477"), QColor("#394254")
+            top, bottom = QColor("#2c4a48"), QColor("#1d3634")
         elif self._hovered:
-            top, bottom = top.lighter(118), bottom.lighter(118)
-        gradient = QLinearGradient(bounds.topLeft(), bounds.bottomLeft())
-        gradient.setColorAt(0.0, top)
-        gradient.setColorAt(1.0, bottom)
-        painter.setPen(QPen(QColor(255, 255, 255, 170 if self._enabled else 70), 2))
-        painter.setBrush(QBrush(gradient))
-        painter.drawPath(path)
-        painter.save()
-        painter.setClipPath(path)
+            top, bottom = top.lighter(108), bottom.lighter(108)
+
+        # relevo: a "borda" da placa aparece embaixo, como uma tecla de verdade
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(255, 255, 255, 40))
-        painter.drawRect(
-            QRectF(bounds.left(), bounds.top(), bounds.width(), bounds.height() * 0.45)
-        )
-        painter.restore()
-        painter.setOpacity(1.0 if self._enabled else 0.55)
+        painter.setBrush(bottom.darker(150))
+        painter.drawPath(path.translated(0, 5))
+        painter.setBrush(QBrush(top))
+        painter.drawPath(path)
+        painter.setPen(QPen(bottom.darker(125), 1.5))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(path)
+        painter.setOpacity(1.0 if self._enabled else 0.6)
         self.paint_content(painter)
+        painter.setOpacity(1.0)
 
     def paint_content(self, painter: QPainter) -> None:
         pass
@@ -1195,11 +1212,12 @@ def _grow_path(path: QPainterPath, amount: float) -> QPainterPath:
 
 
 class AttackButton(GameButton):
-    """Ataque do Pokémon ativo: custo (orbes), nome e dano. Formato de
-    polígono inclinado, como os botões de batalha do TCG Pocket."""
+    """Uma linha de ataque como a impressa na carta: custo em orbes à
+    esquerda, nome no meio, dano em números grandes à direita. Pronta para
+    usar = cartolina clara; sem energia = placa apagada."""
 
     def __init__(self, index: int) -> None:
-        super().__init__(310, 56)
+        super().__init__(322, 58)
         self.index = index
         self._attack: Attack | None = None
         self._ready = False
@@ -1216,56 +1234,58 @@ class AttackButton(GameButton):
         return self._ready
 
     def shape_path(self) -> QPainterPath:
-        r = self.rect()
-        skew = 14
         path = QPainterPath()
-        path.addPolygon(
-            QPolygonF(
-                [
-                    QPointF(r.left() + skew, r.top()),
-                    QPointF(r.right(), r.top()),
-                    QPointF(r.right() - skew, r.bottom()),
-                    QPointF(r.left(), r.bottom()),
-                ]
-            )
-        )
-        path.closeSubpath()
+        path.addRoundedRect(self.rect(), 10, 10)
         return path
 
     def base_colors(self) -> tuple[QColor, QColor]:
-        if not self._ready:
-            return QColor("#46506a"), QColor("#2b3246")
-        color = energy_color(self._type)
-        return color.lighter(125), color.darker(135)
+        if self._ready:
+            return BONE, BONE.darker(112)
+        return QColor("#19403c"), QColor("#123330")
 
     def paint_content(self, painter: QPainter) -> None:
         if self._attack is None:
             return
-        r = self.rect()
+        rect = self.rect()
+        accent = energy_color(self._type)
+        painter.save()
+        clip = QPainterPath()
+        clip.addRoundedRect(rect, 10, 10)
+        painter.setClipPath(clip)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(accent if self._ready else accent.darker(190))
+        painter.drawRect(QRectF(rect.left(), rect.top(), 7, rect.height()))
+        painter.restore()
+
         costs = self._attack.cost or ["Colorless"]
-        orbs = orb_row_positions(len(costs), r.left() + 30 + len(costs) * 10, -11, 22, gap=2)
+        orbs = orb_row_positions(len(costs), rect.left() + 32 + len(costs) * 11, -11, 23, gap=3)
         for orb, cost in zip(orbs, costs, strict=True):
             paint_energy_orb(painter, orb, cost)
-        name_left = orbs[-1].right() + 10
-        painter.setPen(QColor("white"))
-        painter.setFont(ui_font(12))
+
+        text_color = INK if self._ready else QColor(240, 245, 243, 150)
+        name_left = orbs[-1].right() + 12
+        damage = self._attack.damage or ""
+        painter.setFont(ui_font(12.5, QFont.Weight.DemiBold))
+        painter.setPen(text_color)
+        limit = rect.right() - (78 if damage else 16) - name_left
         name = QFontMetricsF(painter.font()).elidedText(
-            self._attack.name, Qt.TextElideMode.ElideRight, r.right() - 70 - name_left
+            self._attack.name, Qt.TextElideMode.ElideRight, limit
         )
         draw_text(
             painter,
-            QRectF(name_left, r.top(), r.right() - 70 - name_left, r.height()),
+            QRectF(name_left, rect.top(), limit, rect.height()),
             name,
-            Qt.AlignmentFlag.AlignVCenter,
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
         )
-        draw_outlined_text(
-            painter,
-            QPointF(r.right() - 42, 0),
-            self._attack.damage or "—",
-            ui_font(19, QFont.Weight.Black),
-            QColor("white"),
-            outline_width=4,
-        )
+        if damage:
+            painter.setFont(display_font(18))
+            painter.setPen(text_color)
+            draw_text(
+                painter,
+                QRectF(rect.right() - 74, rect.top(), 62, rect.height()),
+                damage,
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+            )
 
 
 class RetreatButton(GameButton):
@@ -1279,16 +1299,16 @@ class RetreatButton(GameButton):
         self.update()
 
     def base_colors(self) -> tuple[QColor, QColor]:
-        return QColor("#7b8ba6"), QColor("#4a5872")
+        return QColor("#1b433f"), QColor("#123330")
 
     def paint_content(self, painter: QPainter) -> None:
         r = self.rect()
-        painter.setPen(QColor("white"))
-        painter.setFont(ui_font(10.5))
+        painter.setPen(QColor(240, 245, 243, 225))
+        painter.setFont(ui_font(11, QFont.Weight.DemiBold))
         draw_text(
             painter,
             QRectF(r.left() + 18, r.top(), 90, r.height()),
-            "RECUAR",
+            "Recuar",
             Qt.AlignmentFlag.AlignVCenter,
         )
         cost = self._cost or []
@@ -1297,8 +1317,9 @@ class RetreatButton(GameButton):
         ):
             paint_energy_orb(painter, orb, energy)
         if not cost:
-            painter.setFont(ui_font(9))
-            draw_text(painter, QRectF(r.right() - 80, r.top(), 64, r.height()), "GRÁTIS")
+            painter.setFont(ui_font(9.5))
+            painter.setPen(QColor(240, 245, 243, 160))
+            draw_text(painter, QRectF(r.right() - 82, r.top(), 66, r.height()), "sem custo")
 
 
 class EndTurnButton(GameButton):
@@ -1321,28 +1342,25 @@ class EndTurnButton(GameButton):
         return self._mode
 
     def base_colors(self) -> tuple[QColor, QColor]:
-        if self._mode == "done":
-            return QColor("#ffd34d"), QColor("#e09a00")
-        return QColor("#3aa0ff"), QColor("#1f5fd1")
+        if self._mode in ("done", "setup"):
+            return VOLT, VOLT.darker(135)
+        if self._mode in ("ai", "watch", "choose"):
+            return QColor("#1b433f"), QColor("#123330")
+        return BONE, BONE.darker(115)
 
     def paint_content(self, painter: QPainter) -> None:
         text = {
-            "play": "FIM DO TURNO",
-            "done": "FIM DO TURNO",
-            "ai": "TURNO DA IA",
-            "watch": "ESPECTADOR",
-            "setup": "PRONTO",
-            "choose": "ESCOLHA",
-        }.get(self._mode, "FIM DE JOGO")
-        draw_outlined_text(
-            painter,
-            QPointF(0, 0),
-            text,
-            ui_font(12.5, QFont.Weight.Black),
-            QColor("white"),
-            QColor(0, 0, 0, 140),
-            3,
-        )
+            "play": "Passar o turno",
+            "done": "Passar o turno",
+            "ai": "Vez da IA",
+            "watch": "Assistindo",
+            "setup": "Pronto",
+            "choose": "Escolha no tabuleiro",
+        }.get(self._mode, "Fim de jogo")
+        dark = self._mode in ("play", "done", "setup")
+        painter.setPen(INK if dark else QColor(240, 245, 243, 210))
+        painter.setFont(display_font(11.5 if len(text) < 18 else 9.5))
+        draw_text(painter, self.rect(), text)
 
 
 # --------------------------------------------------------------------------
@@ -1506,9 +1524,9 @@ class Banner(QGraphicsObject):
             painter,
             QPointF(0, 0),
             self._title,
-            ui_font(30, QFont.Weight.Black),
-            QColor("white"),
-            QColor(0, 0, 0, 160),
+            display_font(26),
+            BONE,
+            QColor(0, 0, 0, 150),
             6,
         )
 
@@ -1585,13 +1603,13 @@ class InspectPanel(QGraphicsObject):
         rect = self.RECT
         paint_soft_shadow(painter, rect, 18, offset=8)
         painter.setPen(QPen(color.lighter(130), 2))
-        painter.setBrush(QColor(10, 16, 34, 238))
+        painter.setBrush(QColor(10, 38, 36, 242))
         painter.drawRoundedRect(rect, 18, 18)
 
         header = QRectF(rect.left(), rect.top(), rect.width(), 150)
         gradient = QLinearGradient(header.topLeft(), header.bottomLeft())
         gradient.setColorAt(0.0, color.lighter(130))
-        gradient.setColorAt(1.0, QColor(10, 16, 34, 0))
+        gradient.setColorAt(1.0, QColor(10, 38, 36, 0))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(gradient))
         clip = QPainterPath()
@@ -1636,6 +1654,28 @@ class InspectPanel(QGraphicsObject):
             painter, QRectF(rect.left() + 16, y, 238, 16), stage, Qt.AlignmentFlag.AlignVCenter
         )
         y += 22
+
+        for ability in card.abilities:
+            painter.setPen(VOLT)
+            painter.setFont(ui_font(10.5, QFont.Weight.DemiBold))
+            draw_text(
+                painter,
+                QRectF(rect.left() + 16, y, rect.width() - 32, 18),
+                f"Habilidade: {ability.name}",
+                Qt.AlignmentFlag.AlignVCenter,
+            )
+            y += 18
+            painter.setPen(QColor(255, 255, 255, 195))
+            painter.setFont(ui_font(8, QFont.Weight.Normal))
+            text = describe_ability(ability.name, ability.text)
+            draw_text(
+                painter,
+                QRectF(rect.left() + 16, y, rect.width() - 32, 34),
+                text,
+                Qt.AlignmentFlag.AlignLeft,
+                wrap=True,
+            )
+            y += 38
 
         for attack in card.attacks:
             costs = attack.cost or ["Colorless"]
@@ -1694,30 +1734,39 @@ class InspectPanel(QGraphicsObject):
 
     def _paint_trainer_text(self, painter: QPainter, rect: QRectF, y: float) -> None:
         assert self._card is not None
-        kind = trainer_kind(self._card)
+        card = self._card
+        kind = trainer_kind(card)
         draw_text(
             painter,
             QRectF(rect.left() + 16, y, 238, 16),
-            TRAINER_NAMES_PT.get(kind, "TREINADOR").title(),
+            TRAINER_NAMES_PT.get(kind, "Treinador"),
             Qt.AlignmentFlag.AlignVCenter,
         )
-        painter.setFont(ui_font(9, QFont.Weight.Normal))
-        painter.setPen(QColor(255, 255, 255, 215))
-        text = "\n\n".join(self._card.rules) or "Texto da carta indisponível."
-        draw_text(
-            painter,
-            QRectF(rect.left() + 16, y + 24, rect.width() - 32, 170),
-            text,
-            Qt.AlignmentFlag.AlignLeft,
-            wrap=True,
-        )
-        note = QRectF(rect.left() + 14, rect.bottom() - 46, rect.width() - 28, 34)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(255, 203, 69, 40))
-        painter.drawRoundedRect(note, 8, 8)
-        painter.setPen(GOLD)
-        painter.setFont(ui_font(8))
-        draw_text(painter, note, "Efeito ainda não aplicado pelo motor", wrap=True)
+        painter.setFont(ui_font(11, QFont.Weight.DemiBold))
+        painter.setPen(QColor("white"))
+        summary = describe_card(card)
+        summary_rect = QRectF(rect.left() + 16, y + 22, rect.width() - 32, 84)
+        draw_text(painter, summary_rect, summary, Qt.AlignmentFlag.AlignLeft, wrap=True)
+
+        original = " ".join(card.rules).strip()
+        if original and original != summary:
+            painter.setFont(ui_font(8, QFont.Weight.Normal))
+            painter.setPen(QColor(255, 255, 255, 130))
+            draw_text(
+                painter,
+                QRectF(rect.left() + 16, y + 112, rect.width() - 32, 120),
+                original,
+                Qt.AlignmentFlag.AlignLeft,
+                wrap=True,
+            )
+        if not is_implemented(card):
+            note = QRectF(rect.left() + 14, rect.bottom() - 46, rect.width() - 28, 34)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(with_alpha(GOLD, 40))
+            painter.drawRoundedRect(note, 8, 8)
+            painter.setPen(GOLD)
+            painter.setFont(ui_font(8))
+            draw_text(painter, note, "O motor ainda não aplica este efeito", wrap=True)
 
 
 class ZoneHighlight(QGraphicsObject):
@@ -1791,13 +1840,9 @@ class GameOverOverlay(QGraphicsObject):
         self.button.paint_content = self._paint_button_label  # type: ignore[method-assign]
 
     def _paint_button_label(self, painter: QPainter) -> None:
-        draw_outlined_text(
-            painter,
-            QPointF(0, 0),
-            "JOGAR DE NOVO",
-            ui_font(14, QFont.Weight.Black),
-            QColor("white"),
-        )
+        painter.setPen(INK)
+        painter.setFont(display_font(12.5))
+        draw_text(painter, self.button.rect(), "Jogar de novo")
 
     def boundingRect(self) -> QRectF:
         return QRectF(0, 0, self._w, self._h)
@@ -1855,13 +1900,13 @@ class ChoicePanel(QGraphicsObject):
         self.buttons: list[GameButton] = []
         for index, label in enumerate(options):
             column, row = divmod(index, rows)
-            button = self._button(label, QColor("#3a8dff"), QColor("#1c4fc4"))
+            button = self._button(label, BONE, BONE.darker(112))
             x = self._panel.left() + 24 + self.BUTTON_W / 2 + column * (self.BUTTON_W + 24)
             y = self._panel.top() + 86 + self.BUTTON_H / 2 + row * (self.BUTTON_H + self.GAP)
             button.setPos(x, y)
             button.clicked.connect(lambda i=index: self.chosen.emit(i))
             self.buttons.append(button)
-        self.cancel_button = self._button("CANCELAR", QColor("#6b7488"), QColor("#454d60"))
+        self.cancel_button = self._button("Cancelar", QColor("#1b433f"), QColor("#123330"))
         self.cancel_button.setPos(width / 2, self._panel.bottom() - 16 - self.BUTTON_H / 2)
         self.cancel_button.clicked.connect(lambda: self.chosen.emit(-1))
 
@@ -1870,8 +1915,8 @@ class ChoicePanel(QGraphicsObject):
         button.setParentItem(self)
 
         def paint_label(painter: QPainter) -> None:
-            painter.setPen(QColor("white"))
-            painter.setFont(ui_font(11, QFont.Weight.Bold))
+            painter.setPen(INK if top == BONE else QColor(240, 245, 243, 220))
+            painter.setFont(ui_font(11.5, QFont.Weight.DemiBold))
             text = QFontMetricsF(painter.font()).elidedText(
                 label, Qt.TextElideMode.ElideRight, self.BUTTON_W - 24
             )
@@ -1896,13 +1941,13 @@ class ChoicePanel(QGraphicsObject):
         painter.fillRect(self.boundingRect(), QColor(4, 8, 20, 150))
         paint_soft_shadow(painter, self._panel, 20)
         gradient = QLinearGradient(self._panel.topLeft(), self._panel.bottomLeft())
-        gradient.setColorAt(0.0, QColor("#1d2b4f"))
-        gradient.setColorAt(1.0, QColor("#0e1630"))
+        gradient.setColorAt(0.0, QColor("#124540"))
+        gradient.setColorAt(1.0, QColor("#0a2b2b"))
         painter.setPen(QPen(QColor(GOLD), 2))
         painter.setBrush(QBrush(gradient))
         painter.drawRoundedRect(self._panel, 20, 20)
-        painter.setPen(QColor("white"))
-        painter.setFont(ui_font(15, QFont.Weight.Black))
+        painter.setPen(BONE)
+        painter.setFont(display_font(14))
         draw_text(
             painter,
             QRectF(self._panel.left() + 16, self._panel.top() + 18, self._panel.width() - 32, 44),
@@ -1995,7 +2040,7 @@ class StadiumCard(QGraphicsObject):
         painter.drawRoundedRect(rect, 12, 12)
         painter.setPen(QColor(255, 255, 255, 200))
         painter.setFont(ui_font(8, QFont.Weight.Bold))
-        draw_text(painter, QRectF(rect.left(), rect.top() + 6, rect.width(), 14), "ESTÁDIO")
+        draw_text(painter, QRectF(rect.left(), rect.top() + 6, rect.width(), 14), "Estádio")
         painter.setPen(QColor("white"))
         painter.setFont(ui_font(11, QFont.Weight.Black))
         draw_text(painter, rect.adjusted(8, 18, -8, -20), self._card.name, wrap=True)

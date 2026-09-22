@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import cast
 
 from PyQt6.QtCore import QAbstractAnimation, QObject, QPointF, Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QKeySequence, QPainter, QResizeEvent, QShortcut, QShowEvent
+from PyQt6.QtGui import QKeySequence, QPainter, QResizeEvent, QShortcut, QShowEvent
 from PyQt6.QtWidgets import (
     QApplication,
     QGraphicsView,
@@ -68,10 +68,10 @@ from pokemon_companion.ui.art import ArtProvider
 from pokemon_companion.ui.battle_scene import BattleScene, Target
 from pokemon_companion.ui.deck_menu import DeckMenu, menu_size_hint, read_entry
 from pokemon_companion.ui.items import HandCard, PokemonToken
-from pokemon_companion.ui.theme import primary_type, ui_font
+from pokemon_companion.ui.theme import FELT_DEEP, primary_type, ui_font
 
 AI_THINK_MS = 550
-DIFFICULTY_LABELS = {"easy": "IA · FÁCIL", "medium": "IA · MÉDIO", "hard": "IA · DIFÍCIL"}
+DIFFICULTY_LABELS = {"easy": "IA fácil", "medium": "IA média", "hard": "IA difícil"}
 
 
 class BattleController(QObject):
@@ -178,21 +178,21 @@ class BattleController(QObject):
     def _show_game_over(self) -> None:
         winner = self.state.winner
         if self.spectating and winner is not None:
-            self.scene.show_game_over(f"{self.scene.name_of(winner).upper()} VENCE!", won=True)
+            self.scene.show_game_over(f"{self.scene.name_of(winner)} vence!", won=True)
         else:
             won = winner == PlayerId.PLAYER
-            self.scene.show_game_over("VITÓRIA!" if won else "DERROTA", won=won)
+            self.scene.show_game_over("Vitória!" if won else "Derrota", won=won)
 
     def _push_turn_banner(self) -> None:
         if rules.is_game_over(self.state) or self.state.pending_setup:
             self.queue.push(lambda: None)
             return
         bottom = self.state.active_player == PlayerId.PLAYER
-        color = QColor("#1f6fe0") if bottom else QColor("#c0392b")
+        color = self.scene.side_tint(self.state.active_player).darker(150 if bottom else 175)
         if self.spectating:
-            title = f"VEZ DE {self.scene.name_of(self.state.active_player).upper()}"
+            title = f"Vez de {self.scene.name_of(self.state.active_player)}"
         else:
-            title = "SEU TURNO" if bottom else "TURNO DA IA"
+            title = "Seu turno" if bottom else "Turno da IA"
         self.queue.push(lambda: self.scene.banner(title, color))
 
     # ------------------------------------------------------------------
@@ -592,7 +592,7 @@ class MainWindow(QMainWindow):
         art: ArtProvider | None = None,
         history_path: Path | None = None,
         player_ai_factory: Callable[[], AIPlayer] | None = None,
-        player_label: str = "VOCÊ",
+        player_label: str = "Você",
     ) -> None:
         super().__init__()
         self.setWindowTitle("Pokémon Companion")
@@ -640,7 +640,7 @@ class LauncherWindow(QMainWindow):
         self._loader: DeckLoader | None = None
         self.battle: MainWindow | None = None
 
-        self.setStyleSheet("background: #0d1730;")
+        self.setStyleSheet(f"QMainWindow {{ background: {FELT_DEEP.name()}; }}")
         self.stack = QStackedWidget()
         self.menu = DeckMenu(art=self._art)
         self.menu.start_requested.connect(self._load_and_start)
@@ -683,11 +683,10 @@ class LauncherWindow(QMainWindow):
                 manual=frozenset({PlayerId.PLAYER}),
             ),
             ai_factory=lambda: build_ai(self._difficulty),
-            opponent_label=f"{read_entry(opponent_path).title.upper()} · "
-            f"{DIFFICULTY_LABELS[self._difficulty].split('·')[-1].strip()}",
+            opponent_label=read_entry(opponent_path).title,
             art=self._art,
             history_path=self._history_path,
-            player_label="VOCÊ",
+            player_label="Você",
         )
         window.scene.set_names("Você", read_entry(opponent_path).title)
         for warning in warnings:
@@ -743,7 +742,7 @@ def build_main_window(
         art=art,
         history_path=history_path,
         player_ai_factory=(lambda: build_ai(player_difficulty)) if player_difficulty else None,
-        player_label=deck_label(player_deck_path, "IA 1") if spectate else "VOCÊ",
+        player_label=deck_label(player_deck_path, "IA 1") if spectate else "Você",
     )
     for warning in warnings:
         window.log_message(f"! {warning}")

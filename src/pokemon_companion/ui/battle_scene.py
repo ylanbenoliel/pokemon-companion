@@ -31,7 +31,16 @@ from PyQt6.QtCore import (
     QTimer,
     pyqtSignal,
 )
-from PyQt6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPen, QPixmap, QRadialGradient
+from PyQt6.QtGui import (
+    QBrush,
+    QColor,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QRadialGradient,
+)
 from PyQt6.QtWidgets import (
     QGraphicsItem,
     QGraphicsObject,
@@ -69,16 +78,21 @@ from pokemon_companion.ui.items import (
     draw_text,
 )
 from pokemon_companion.ui.theme import (
+    BONE,
     DAMAGE_RED,
+    ENERGY_COLORS,
+    FELT_LIT,
+    FELT_MID,
     GOLD,
     HEAL_GREEN,
+    LAMP,
     MAT_BOTTOM,
-    MAT_TOP,
     ZONE_FILL,
     ZONE_STROKE,
     energy_color,
     primary_type,
     ui_font,
+    with_alpha,
 )
 
 SCENE_W, SCENE_H = 1280.0, 900.0
@@ -183,6 +197,7 @@ class BattleScene(QGraphicsScene):
         self.hand_items: list[HandCard] = []
         self._temp_items: list[QGraphicsItem] = []
         self._targets: dict[Target, object] = {}
+        self._tints: dict[PlayerId, QColor] = {}
         self._zone_items: list[ZoneHighlight] = []
         self._toasts: list[Toast] = []
         self._toast_animations: list[QAbstractAnimation] = []
@@ -190,8 +205,8 @@ class BattleScene(QGraphicsScene):
 
         self.player_prizes = self._board_item(PrizeGrid(player_label), PLAYER_PRIZES)
         self.opponent_prizes = self._board_item(PrizeGrid(opponent_label), OPPONENT_PRIZES)
-        self.player_deck = self._board_item(CardPile("DECK"), PLAYER_DECK)
-        self.opponent_deck = self._board_item(CardPile("DECK"), OPPONENT_DECK)
+        self.player_deck = self._board_item(CardPile("Deck"), PLAYER_DECK)
+        self.opponent_deck = self._board_item(CardPile("Deck"), OPPONENT_DECK)
         self.player_discard = self._board_item(DiscardPile(), PLAYER_DISCARD)
         self.opponent_discard = self._board_item(DiscardPile(), OPPONENT_DISCARD)
         self.opponent_hand = self._board_item(OpponentHandFan(), OPPONENT_HAND)
@@ -238,50 +253,85 @@ class BattleScene(QGraphicsScene):
         return item
 
     # ------------------------------------------------------------------
-    # fundo: o tapete
+    # fundo: o tapete de jogo sob a luz do abajur
+    def side_tint(self, side: PlayerId) -> QColor:
+        """Cor do tipo do Pokémon ativo daquele lado (tinge o feltro)."""
+        return self._tints.get(side, QColor(ENERGY_COLORS["Colorless"]))
+
+    def _paint_felt(self, painter: QPainter, mat: QRectF) -> None:
+        weave = QLinearGradient(mat.topLeft(), mat.bottomLeft())
+        weave.setColorAt(0.0, FELT_MID)
+        weave.setColorAt(0.5, FELT_LIT)
+        weave.setColorAt(1.0, FELT_MID)
+        path = QPainterPath()
+        path.addRoundedRect(mat, 26, 26)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.fillPath(path, QBrush(weave))
+
+        painter.save()
+        painter.setClipPath(path)
+        # trama do feltro: fios finos na diagonal, quase invisíveis de perto
+        painter.setPen(QPen(QColor(255, 255, 255, 7), 1))
+        for x in range(int(mat.left()) - int(mat.height()), int(mat.right()), 7):
+            painter.drawLine(QPointF(x, mat.bottom()), QPointF(x + mat.height(), mat.top()))
+
+        # luz do abajur, vinda de cima
+        lamp = QRadialGradient(QPointF(SCENE_W / 2, 210), 760)
+        lamp.setColorAt(0.0, with_alpha(LAMP, 38))
+        lamp.setColorAt(0.55, with_alpha(LAMP, 12))
+        lamp.setColorAt(1.0, with_alpha(LAMP, 0))
+        painter.fillRect(mat, QBrush(lamp))
+
+        # cada lado recebe a cor do tipo do seu Pokémon ativo
+        for side, center in (
+            (PlayerId.OPPONENT, OPPONENT_ACTIVE),
+            (PlayerId.PLAYER, PLAYER_ACTIVE),
+        ):
+            glow = QRadialGradient(center, 430)
+            glow.setColorAt(0.0, with_alpha(self.side_tint(side), 60))
+            glow.setColorAt(1.0, with_alpha(self.side_tint(side), 0))
+            painter.fillRect(mat, QBrush(glow))
+        painter.restore()
+
+        painter.setPen(QPen(with_alpha(BONE, 40), 2))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(path)
+
+    def _paint_slots(self, painter: QPainter) -> None:
+        """Marcação impressa do tapete: retângulos das posições e a linha
+        central, com um arco na cor de cada lado."""
+        painter.setPen(QPen(ZONE_STROKE, 1.5, Qt.PenStyle.DashLine))
+        painter.setBrush(ZONE_FILL)
+        for active in (PLAYER_ACTIVE, OPPONENT_ACTIVE):
+            painter.drawRoundedRect(self._token_rect(active, ACTIVE_SCALE), 18, 18)
+        for y in (PLAYER_BENCH_Y, OPPONENT_BENCH_Y):
+            for x in BENCH_XS:
+                painter.drawRoundedRect(self._token_rect(QPointF(x, y), BENCH_SCALE), 12, 12)
+
+        line = QLinearGradient(QPointF(0, CENTER_Y), QPointF(SCENE_W, CENTER_Y))
+        line.setColorAt(0.0, with_alpha(BONE, 0))
+        line.setColorAt(0.5, with_alpha(BONE, 90))
+        line.setColorAt(1.0, with_alpha(BONE, 0))
+        painter.setPen(QPen(QBrush(line), 2))
+        painter.drawLine(QPointF(70, CENTER_Y), QPointF(SCENE_W - 70, CENTER_Y))
+
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        for side, start_angle in ((PlayerId.OPPONENT, 0), (PlayerId.PLAYER, 180)):
+            painter.setPen(QPen(with_alpha(self.side_tint(side), 150), 3))
+            painter.drawArc(QRectF(640 - 38, CENTER_Y - 38, 76, 76), start_angle * 16, 180 * 16)
+
+        painter.setPen(with_alpha(BONE, 70))
+        painter.setFont(ui_font(9.5))
+        draw_text(painter, QRectF(350, 774, 580, 16), "Banco")
+        draw_text(painter, QRectF(350, 28, 580, 16), "Banco")
+
     def drawBackground(self, painter: QPainter | None, rect: QRectF) -> None:
         if painter is None:
             return
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.fillRect(rect, MAT_BOTTOM)  # faixas fora da cena (janela com outra proporção)
-        full = QRectF(0, 0, SCENE_W, SCENE_H)
-        gradient = QLinearGradient(full.topLeft(), full.bottomLeft())
-        gradient.setColorAt(0.0, MAT_TOP)
-        gradient.setColorAt(0.5, MAT_TOP.lighter(115))
-        gradient.setColorAt(1.0, MAT_BOTTOM)
-        painter.fillRect(full, QBrush(gradient))
-
-        for center, color in (
-            (QPointF(640, 120), QColor(200, 60, 90, 45)),
-            (QPointF(640, 700), QColor(60, 140, 255, 55)),
-        ):
-            glow = QRadialGradient(center, 520)
-            glow.setColorAt(0.0, color)
-            glow.setColorAt(1.0, QColor(0, 0, 0, 0))
-            painter.fillRect(full, QBrush(glow))
-
-        line = QLinearGradient(QPointF(0, CENTER_Y), QPointF(SCENE_W, CENTER_Y))
-        line.setColorAt(0.0, QColor(255, 203, 69, 0))
-        line.setColorAt(0.5, QColor(255, 203, 69, 150))
-        line.setColorAt(1.0, QColor(255, 203, 69, 0))
-        painter.setPen(QPen(QBrush(line), 2))
-        painter.drawLine(QPointF(60, CENTER_Y), QPointF(SCENE_W - 60, CENTER_Y))
-        painter.setPen(QPen(QColor(255, 203, 69, 70), 2))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(QPointF(640, CENTER_Y), 34, 34)
-
-        painter.setPen(QPen(ZONE_STROKE, 1.5, Qt.PenStyle.DashLine))
-        painter.setBrush(ZONE_FILL)
-        for active in (PLAYER_ACTIVE, OPPONENT_ACTIVE):
-            painter.drawRoundedRect(self._token_rect(active, ACTIVE_SCALE), 16, 16)
-        for y in (PLAYER_BENCH_Y, OPPONENT_BENCH_Y):
-            for x in BENCH_XS:
-                painter.drawRoundedRect(self._token_rect(QPointF(x, y), BENCH_SCALE), 12, 12)
-
-        painter.setPen(QColor(255, 255, 255, 55))
-        painter.setFont(ui_font(9))
-        draw_text(painter, QRectF(350, 776, 580, 16), "BANCO")
-        draw_text(painter, QRectF(350, 30, 580, 16), "BANCO")
+        self._paint_felt(painter, QRectF(18, 18, SCENE_W - 36, SCENE_H - 36))
+        self._paint_slots(painter)
 
     @staticmethod
     def _token_rect(center: QPointF, scale: float) -> QRectF:
@@ -387,6 +437,15 @@ class BattleScene(QGraphicsScene):
             else:
                 piece.setZValue(resting_z)
 
+        for side, player_state in (
+            (PlayerId.PLAYER, state.player),
+            (PlayerId.OPPONENT, state.opponent),
+        ):
+            active = player_state.active
+            self._tints[side] = energy_color(
+                primary_type(active.card.types) if active is not None else "Colorless"
+            )
+        self.update()
         animations.append(self._sync_hand(state.player.hand, animate))
         self.opponent_hand.set_count(len(state.opponent.hand))
         owner = "" if state.stadium_owner is None else self.name_of(state.stadium_owner)

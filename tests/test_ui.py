@@ -359,7 +359,7 @@ def test_spectator_mode_plays_a_full_game_between_two_ais(qtbot, offline_art):
     assert scene.end_turn_button.mode == "watch"
     qtbot.waitUntil(lambda: rules.is_game_over(ctrl.state), timeout=15000)
     qtbot.waitUntil(lambda: scene.game_over_overlay is not None, timeout=2000)
-    assert scene.game_over_overlay.title.endswith("VENCE!")
+    assert scene.game_over_overlay.title.endswith("vence!")
 
 
 def test_spectator_ignores_human_input(controller, offline_art):

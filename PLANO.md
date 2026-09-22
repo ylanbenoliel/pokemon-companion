@@ -171,11 +171,32 @@ alvos da ação (`target`), para a IA avaliar cada opção e a UI mostrar
 destaques/painel. `tools/effect_coverage.py` mostra 100% dos textos das
 cartas do top 20 cobertos.
 
-Tela inicial (`ui/deck_menu.py`): grade com os decks de
-`examples/decks/**` e `data/decks/`, arte do Pokémon principal vinda do
-cache local (abre rápido e offline), escolha do seu deck, do deck da IA e da
-dificuldade — dá para treinar contra um arquétipo específico. As cartas são
-importadas numa thread à parte para a tela não travar.
+### Direção visual (skill `frontend-design`, .claude/skills/)
+
+A tela é a mesa de torneio sob a luz do abajur: tapete de feltro verde-pinho
+com a trama desenhada, poça de luz quente vinda de cima, cartas em cartolina
+creme e tinta escura. A cor forte vem de onde ela existe no jogo: o **tipo do
+Pokémon Ativo**, que tinge o lado do tabuleiro e o arco central, e o **brilho
+holográfico** das cartas com regra especial (ex/Mega). Botões são placas
+físicas com relevo, não pílulas de vidro; os rótulos são frases em caixa
+normal ("Passar o turno", "Você", "6 prêmios").
+
+Tipografia empacotada em `ui/fonts/` (licença OFL junto): **Archivo Black**
+para números e títulos, **Barlow** para o resto — mesma cara nos três
+sistemas. Tokens de cor e as duas fontes ficam em `ui/theme.py`.
+
+Cada carta de Treinador mostra **o que faz, em português**, na própria carta
+e no painel de detalhes; as traduções curtas estão em
+`engine/effects/descriptions.py` (uma linha por carta, Habilidades
+incluídas), com o texto original em inglês abaixo. Carta cujo efeito o motor
+ainda não aplica avisa isso no painel.
+
+Tela inicial (`ui/deck_menu.py`): o confronto em si — seu deck e o da IA
+frente a frente em tamanho de carta, com a marca "VS" nas cores dos dois
+tipos, e uma tira de miniaturas embaixo (filtrada por grupo: meta atual,
+Mundial, exemplos, seus decks). Clicar num dos lados diz qual deles a próxima
+escolha troca. A arte vem do cache local (abre rápido e offline) e as cartas
+são importadas numa thread à parte para a tela não travar.
 
 UI: Treinadores soltos no tabuleiro ou sobre o Pokémon alvo; painel de
 escolha para opções que não são um Pokémon; selo "HAB." nos Pokémon com

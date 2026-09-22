@@ -1,10 +1,12 @@
-"""Tela inicial: escolher o seu deck, o deck da IA e a dificuldade antes da
-partida (no espírito da seleção de decks do Pokémon TCG Pocket).
+"""Tela inicial: montar o confronto antes da partida.
 
-Os decks vêm dos arquivos de decklist em `examples/decks/` (meta atual,
-Mundial) e nos seus próprios decks em `data/decks/`. A arte de cada deck usa
-o Pokémon principal da lista, buscado **só no cache local** — a tela abre
-rápido e sem internet; decks ainda não importados aparecem com a cor do tipo.
+A tela é o próprio duelo: o seu deck e o da IA ficam frente a frente, em
+tamanho de carta, e a tira embaixo é a caixa de decks de onde você tira o
+próximo. Clicar num dos dois lados diz qual deles a tira vai trocar.
+
+Os decks vêm de `examples/decks/` (meta atual e Mundial) e de `data/decks/`.
+A arte é a do Pokémon principal da lista, buscada **só no cache local** — a
+tela abre rápido e sem internet; deck ainda não importado mostra só a cor.
 """
 
 from __future__ import annotations
@@ -18,7 +20,6 @@ from PyQt6.QtGui import QColor, QFont, QPixmap
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QFrame,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -31,7 +32,17 @@ from pokemon_companion.cards_db.cache import CardCache
 from pokemon_companion.cards_db.decklist_parser import load_deck
 from pokemon_companion.cards_db.models import Card
 from pokemon_companion.ui.art import ArtProvider
-from pokemon_companion.ui.theme import GOLD, energy_color, primary_type, ui_font
+from pokemon_companion.ui.theme import (
+    BONE,
+    FELT_DEEP,
+    FELT_LIT,
+    INK,
+    VOLT,
+    display_font,
+    energy_color,
+    primary_type,
+    ui_font,
+)
 
 DECK_FOLDERS = (
     Path("examples/decks/top"),
@@ -45,8 +56,10 @@ GROUP_LABELS = {
     "decks": "Exemplos",
     "data": "Meus decks",
 }
-DIFFICULTIES = (("easy", "FÁCIL"), ("medium", "MÉDIO"), ("hard", "DIFÍCIL"))
-TILE_SIZE = QSize(168, 148)
+DIFFICULTIES = (("easy", "Fácil"), ("medium", "Média"), ("hard", "Difícil"))
+HERO_SIZE = QSize(300, 306)
+THUMB_SIZE = QSize(132, 124)
+PLAYER, OPPONENT = "player", "opponent"
 
 
 @dataclass(frozen=True)
@@ -109,138 +122,242 @@ def deck_highlight(entry: DeckEntry, cache: CardCache) -> Card | None:
     return max(named or pokemon, key=lambda card: card.hp or 0)
 
 
-class DeckTile(QFrame):
-    """Cartão de um deck na grade (arte, nome e subtítulo)."""
+class _DeckCard(QFrame):
+    """Base das cartas de deck: arte em cima, nome embaixo, cor do tipo."""
 
     clicked = pyqtSignal(object)
 
-    def __init__(self, entry: DeckEntry) -> None:
+    def __init__(self, entry: DeckEntry | None, size: QSize, art_height: int) -> None:
         super().__init__()
         self.entry = entry
-        self._selected = False
-        self._accent = QColor("#4a5878")
-        self.setFixedSize(TILE_SIZE)
+        self._accent = QColor("#2f4f4a")
+        self._highlight = False
+        self._art_height = art_height
+        self.setFixedSize(size)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(2)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(4)
         self.art = QLabel()
         self.art.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.art.setFixedHeight(78)
-        self.name = QLabel(entry.title)
-        self.name.setFont(ui_font(10.5))
+        self.art.setFixedHeight(art_height)
+        self.name = QLabel(entry.title if entry else "")
         self.name.setWordWrap(True)
         self.name.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
-        self.detail = QLabel(entry.subtitle)
-        self.detail.setFont(ui_font(8))
-        self.detail.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self.detail.setStyleSheet("color: rgba(255,255,255,140);")
-        for widget in (self.art, self.name, self.detail):
-            layout.addWidget(widget)
-        self._restyle()
+        layout.addWidget(self.art)
+        layout.addWidget(self.name)
 
     def set_art(self, pixmap: QPixmap | None, accent: QColor) -> None:
         self._accent = accent
         if pixmap is not None and not pixmap.isNull():
             self.art.setPixmap(
                 pixmap.scaled(
-                    150,
-                    78,
+                    self.width() - 30,
+                    self._art_height,
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation,
                 )
             )
         self._restyle()
 
-    def set_selected(self, selected: bool) -> None:
-        self._selected = selected
+    def set_highlight(self, highlight: bool) -> None:
+        self._highlight = highlight
         self._restyle()
 
     @property
-    def selected(self) -> bool:
-        return self._selected
+    def highlighted(self) -> bool:
+        return self._highlight
 
     def _restyle(self) -> None:
-        accent = self._accent
-        border = GOLD.name() if self._selected else "rgba(255,255,255,45)"
-        width = 3 if self._selected else 1
-        self.setStyleSheet(f"""
-            DeckTile {{
-                border: {width}px solid {border};
-                border-radius: 14px;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {accent.lighter(115).name()}, stop:1 {accent.darker(175).name()});
-            }}
-            QLabel {{ color: white; background: transparent; }}
-            """)
+        raise NotImplementedError
 
     def mouseReleaseEvent(self, event: object) -> None:  # noqa: N802 (API do Qt)
         self.clicked.emit(self.entry)
 
 
-class DeckColumn(QWidget):
-    """Coluna rolável com o título e a grade de decks."""
+class DeckHero(_DeckCard):
+    """Um dos dois lados do confronto, do tamanho de uma carta na mesa."""
 
-    selected = pyqtSignal(object)
+    def __init__(self, side: str, caption: str) -> None:
+        super().__init__(None, HERO_SIZE, 156)
+        self.side = side
+        self.caption = caption
+        self.name.setFont(display_font(15))
+        self.detail = QLabel("")
+        self.detail.setFont(ui_font(9.5))
+        self.detail.setWordWrap(True)
+        self.detail.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
+        layout = self.layout()
+        assert isinstance(layout, QVBoxLayout)
+        layout.addWidget(self.detail)
+        layout.addStretch(1)
+        self.tag = QLabel(caption)
+        self.tag.setFont(ui_font(9.5, QFont.Weight.DemiBold))
+        self.tag.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(self.tag)
+        self._restyle()
 
-    def __init__(self, title: str, entries: list[DeckEntry], columns: int = 3) -> None:
+    def set_entry(self, entry: DeckEntry) -> None:
+        self.entry = entry
+        self.name.setText(entry.title)
+        self.detail.setText(entry.subtitle or entry.group)
+        self._restyle()
+
+    def _restyle(self) -> None:
+        accent = self._accent
+        border = VOLT.name() if self._highlight else "rgba(247,239,225,55)"
+        self.setStyleSheet(f"""
+            DeckHero {{
+                border: {3 if self._highlight else 1}px solid {border};
+                border-radius: 18px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 {BONE.name()}, stop:0.83 {BONE.name()},
+                    stop:0.831 {accent.lighter(130).name()}, stop:1 {accent.darker(120).name()});
+            }}
+            QLabel {{ background: transparent; }}
+            """)
+        self.name.setStyleSheet(f"color: {INK.name()};")
+        self.detail.setStyleSheet("color: rgba(32,36,43,165);")
+        on_light = self._accent.lightnessF() > 0.62
+        self.tag.setStyleSheet(
+            f"color: {'rgba(32,36,43,190)' if on_light else 'rgba(247,239,225,225)'};"
+        )
+
+
+class DeckThumb(_DeckCard):
+    """Miniatura na tira de decks."""
+
+    def __init__(self, entry: DeckEntry) -> None:
+        super().__init__(entry, THUMB_SIZE, 70)
+        self.name.setFont(ui_font(9.5, QFont.Weight.DemiBold))
+        self._restyle()
+
+    def _restyle(self) -> None:
+        accent = self._accent
+        border = VOLT.name() if self._highlight else "rgba(247,239,225,35)"
+        self.setStyleSheet(f"""
+            DeckThumb {{
+                border: {2 if self._highlight else 1}px solid {border};
+                border-radius: 12px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 {accent.lighter(118).name()}, stop:1 {accent.darker(150).name()});
+            }}
+            QLabel {{ color: {BONE.name()}; background: transparent; }}
+            """)
+
+
+class VersusMark(QWidget):
+    """A marca do confronto, tingida pelos tipos dos dois decks escolhidos."""
+
+    def __init__(self) -> None:
         super().__init__()
-        self.tiles: list[DeckTile] = []
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setFixedSize(118, 118)
+        self.label = QLabel("VS")
+        self.label.setFont(display_font(32))
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.note = QLabel("treino")
+        self.note.setFont(ui_font(9.5))
+        self.note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.note.setStyleSheet("color: rgba(247,239,225,120); background: transparent;")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        heading = QLabel(title)
-        heading.setFont(ui_font(13, QFont.Weight.Black))
-        heading.setStyleSheet(f"color: {GOLD.name()}; background: transparent;")
-        layout.addWidget(heading)
+        layout.setSpacing(2)
+        layout.addStretch(1)
+        layout.addWidget(self.label)
+        layout.addWidget(self.note)
+        layout.addStretch(1)
+        self.set_colors(QColor(BONE), QColor(BONE))
+
+    def set_colors(self, left: QColor, right: QColor) -> None:
+        self.label.setStyleSheet(f"background: transparent; color: {left.lighter(115).name()};")
+        self.setStyleSheet(
+            "VersusMark { border-radius: 59px; background: qlineargradient("
+            f"x1:0, y1:1, x2:1, y2:0, stop:0 rgba({left.red()},{left.green()},{left.blue()},60),"
+            f" stop:1 rgba({right.red()},{right.green()},{right.blue()},60)); }}"
+        )
+
+
+class DeckStrip(QWidget):
+    """Tira horizontal com todos os decks disponíveis, filtrada por grupo."""
+
+    chosen = pyqtSignal(object)
+
+    def __init__(self, entries: list[DeckEntry]) -> None:
+        super().__init__()
+        self.entries = entries
+        self.tiles: list[DeckThumb] = []
+        self._filter = ""
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        self.filters = QButtonGroup(self)
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(8)
+        groups = ["Todos", *dict.fromkeys(entry.group for entry in entries)]
+        for index, group in enumerate(groups):
+            button = QPushButton(group)
+            button.setCheckable(True)
+            button.setChecked(index == 0)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setFont(ui_font(9.5, QFont.Weight.DemiBold))
+            button.setStyleSheet("""
+                QPushButton { color: rgba(247,239,225,190); border: none; padding: 5px 13px;
+                    border-radius: 13px; background: rgba(247,239,225,18); }
+                QPushButton:checked { color: #20242b; background: #f7efe1; }
+                """)
+            button.clicked.connect(lambda _=False, g=group: self.filter_group(g))
+            self.filters.addButton(button)
+            filter_row.addWidget(button)
+        filter_row.addStretch(1)
+        layout.addLayout(filter_row)
 
         holder = QWidget()
-        grid = QGridLayout(holder)
-        grid.setSpacing(12)
-        row = column = 0
-        group = ""
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(2, 2, 2, 10)
+        row.setSpacing(10)
         for entry in entries:
-            if entry.group != group:
-                group = entry.group
-                if column:
-                    row, column = row + 1, 0
-                label = QLabel(group.upper())
-                label.setFont(ui_font(9))
-                label.setStyleSheet("color: rgba(255,255,255,120);")
-                grid.addWidget(label, row, 0, 1, columns)
-                row += 1
-            tile = DeckTile(entry)
-            tile.clicked.connect(self._on_tile_clicked)
-            self.tiles.append(tile)
-            grid.addWidget(tile, row, column)
-            column += 1
-            if column == columns:
-                row, column = row + 1, 0
-        grid.setRowStretch(row + 1, 1)
+            thumb = DeckThumb(entry)
+            thumb.clicked.connect(self.chosen.emit)
+            self.tiles.append(thumb)
+            row.addWidget(thumb)
+        row.addStretch(1)
 
         scroll = QScrollArea()
         scroll.setWidget(holder)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setFixedHeight(THUMB_SIZE.height() + 28)
         scroll.setStyleSheet("background: transparent;")
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        bar = scroll.horizontalScrollBar()
+        assert bar is not None
+        bar.setStyleSheet("""
+            QScrollBar:horizontal { height: 6px; background: transparent; margin: 0; }
+            QScrollBar::handle:horizontal { background: rgba(247,239,225,70); border-radius: 3px;
+                min-width: 60px; }
+            QScrollBar::add-line, QScrollBar::sub-line { width: 0; }
+            """)
         layout.addWidget(scroll)
 
-    def _on_tile_clicked(self, entry: DeckEntry) -> None:
-        self.select(entry)
-        self.selected.emit(entry)
-
-    def select(self, entry: DeckEntry | None) -> None:
+    def filter_group(self, group: str) -> None:
+        self._filter = "" if group == "Todos" else group
         for tile in self.tiles:
-            tile.set_selected(entry is not None and tile.entry.path == entry.path)
+            assert tile.entry is not None
+            tile.setVisible(not self._filter or tile.entry.group == self._filter)
 
-    @property
-    def selection(self) -> DeckEntry | None:
-        return next((tile.entry for tile in self.tiles if tile.selected), None)
+    def mark(self, chosen: list[DeckEntry]) -> None:
+        paths = {entry.path for entry in chosen}
+        for tile in self.tiles:
+            assert tile.entry is not None
+            tile.set_highlight(tile.entry.path in paths)
 
 
 class DeckMenu(QWidget):
-    """Tela de seleção: seu deck × deck da IA, dificuldade e "JOGAR"."""
+    """Confronto: seu deck × deck da IA, dificuldade e "Jogar"."""
 
     start_requested = pyqtSignal(object, object, str)
 
@@ -254,122 +371,180 @@ class DeckMenu(QWidget):
         self._entries = entries if entries is not None else discover_decks()
         self._art = art
         self._cache_factory = cache_factory
+        self._cards: dict[Path, Card | None] = {}
         self.difficulty = "medium"
+        self.armed = PLAYER
 
-        self.setStyleSheet("background: #0d1730;")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet(
+            "DeckMenu { background: qlineargradient(x1:0.5, y1:0, x2:0.5, y2:1,"
+            f" stop:0 {FELT_LIT.name()}, stop:1 {FELT_DEEP.name()}); }}"
+        )
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(28, 22, 28, 22)
-        outer.setSpacing(14)
+        outer.setContentsMargins(30, 22, 30, 22)
+        outer.setSpacing(16)
+        outer.addLayout(self._build_header())
+        outer.addLayout(self._build_matchup(), 1)
 
-        title = QLabel("ESCOLHA OS DECKS")
-        title.setFont(ui_font(22, QFont.Weight.Black))
-        title.setStyleSheet(f"color: {GOLD.name()}; background: transparent;")
-        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        outer.addWidget(title)
+        self.strip = DeckStrip(self._entries)
+        self.strip.chosen.connect(self._on_deck_chosen)
+        outer.addWidget(self.strip)
+        outer.addLayout(self._build_footer())
 
-        columns = QHBoxLayout()
-        columns.setSpacing(24)
-        self.player_column = DeckColumn("SEU DECK", self._entries)
-        self.opponent_column = DeckColumn("DECK DA IA", self._entries)
-        columns.addWidget(self.player_column)
-        columns.addWidget(self.opponent_column)
-        outer.addLayout(columns, 1)
+        if self._entries:
+            self.choose(PLAYER, self._entries[0])
+            self.choose(OPPONENT, self._entries[min(1, len(self._entries) - 1)])
+        self.arm(PLAYER)
+        QTimer.singleShot(0, self.load_art)
 
-        controls = QHBoxLayout()
-        controls.setSpacing(10)
-        label = QLabel("DIFICULDADE")
-        label.setFont(ui_font(10))
-        label.setStyleSheet("color: rgba(255,255,255,170); background: transparent;")
-        controls.addWidget(label)
+    # ------------------------------------------------------------------
+    # construção
+    def _build_header(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        title = QLabel("Treino")
+        title.setFont(display_font(20))
+        title.setStyleSheet(f"color: {BONE.name()}; background: transparent;")
+        row.addWidget(title)
+        hint = QLabel("escolha os dois decks e jogue")
+        hint.setFont(ui_font(10))
+        hint.setStyleSheet("color: rgba(247,239,225,130); background: transparent;")
+        row.addWidget(hint)
+        row.addStretch(1)
+
+        label = QLabel("IA")
+        label.setFont(ui_font(10, QFont.Weight.DemiBold))
+        label.setStyleSheet("color: rgba(247,239,225,150); background: transparent;")
+        row.addWidget(label)
         self.difficulty_buttons = QButtonGroup(self)
         for key, text in DIFFICULTIES:
             button = QPushButton(text)
             button.setCheckable(True)
             button.setChecked(key == self.difficulty)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.setStyleSheet(self._difficulty_style())
+            button.setFont(ui_font(10, QFont.Weight.DemiBold))
+            button.setStyleSheet("""
+                QPushButton { color: rgba(247,239,225,200); border: 1px solid rgba(247,239,225,45);
+                    border-radius: 14px; padding: 6px 15px; background: transparent; }
+                QPushButton:checked { color: #20242b; background: #ffe03d;
+                    border: 1px solid #ffe03d; }
+                """)
             button.clicked.connect(lambda _=False, k=key: self._set_difficulty(k))
             self.difficulty_buttons.addButton(button)
-            controls.addWidget(button)
-        controls.addStretch(1)
+            row.addWidget(button)
+        return row
 
+    def _build_matchup(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setSpacing(18)
+        row.addStretch(1)
+        self.heroes = {
+            PLAYER: DeckHero(PLAYER, "seu deck"),
+            OPPONENT: DeckHero(OPPONENT, "deck da IA"),
+        }
+        self.versus = VersusMark()
+        row.addWidget(self.heroes[PLAYER])
+        row.addWidget(self.versus)
+        row.addWidget(self.heroes[OPPONENT])
+        row.addStretch(1)
+        for side, hero in self.heroes.items():
+            hero.clicked.connect(lambda _=None, s=side: self.arm(s))
+        return row
+
+    def _build_footer(self) -> QHBoxLayout:
+        row = QHBoxLayout()
         self.status = QLabel("")
         self.status.setFont(ui_font(9.5))
-        self.status.setStyleSheet("color: rgba(255,255,255,150); background: transparent;")
-        controls.addWidget(self.status)
-
-        self.play_button = QPushButton("JOGAR")
-        self.play_button.setFont(ui_font(13, QFont.Weight.Black))
-        self.play_button.setMinimumSize(190, 46)
+        self.status.setStyleSheet("color: rgba(247,239,225,150); background: transparent;")
+        row.addWidget(self.status)
+        row.addStretch(1)
+        self.play_button = QPushButton("Jogar")
+        self.play_button.setFont(display_font(13))
+        self.play_button.setMinimumSize(200, 48)
         self.play_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.play_button.setStyleSheet("""
-            QPushButton { color: #10203f; border-radius: 23px; padding: 6px 18px;
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #ffd34d, stop:1 #e09a00); }
-            QPushButton:disabled { color: rgba(255,255,255,120); background: #39425a; }
+            QPushButton { color: #20242b; border: none; border-radius: 10px; padding: 8px 20px;
+                background: #ffe03d; }
+            QPushButton:hover { background: #fff06f; }
+            QPushButton:disabled { color: rgba(247,239,225,110); background: rgba(247,239,225,22); }
             """)
         self.play_button.clicked.connect(self._start)
-        controls.addWidget(self.play_button)
-        outer.addLayout(controls)
-
-        self.player_column.selected.connect(lambda _: self._refresh())
-        self.opponent_column.selected.connect(lambda _: self._refresh())
-        if self._entries:
-            self.player_column.select(self._entries[0])
-            self.opponent_column.select(self._entries[min(1, len(self._entries) - 1)])
-        self._refresh()
-        QTimer.singleShot(0, self.load_art)
+        row.addWidget(self.play_button)
+        return row
 
     # ------------------------------------------------------------------
-    def _difficulty_style(self) -> str:
-        return """
-            QPushButton { color: white; border: 1px solid rgba(255,255,255,60);
-                border-radius: 16px; padding: 7px 16px; background: #1d2b4f; }
-            QPushButton:checked { color: #10203f; background: #ffd34d;
-                border: 1px solid #ffd34d; font-weight: bold; }
-        """
+    # escolha
+    def arm(self, side: str) -> None:
+        """Marca qual lado a próxima escolha na tira vai trocar."""
+        self.armed = side
+        for key, hero in self.heroes.items():
+            hero.set_highlight(key == side)
+
+    def choose(self, side: str, entry: DeckEntry) -> None:
+        hero = self.heroes[side]
+        hero.set_entry(entry)
+        card = self._cards.get(entry.path)
+        if card is not None:
+            hero.set_art(self._pixmap(card), QColor(energy_color(primary_type(card.types))))
+        self.strip.mark([h.entry for h in self.heroes.values() if h.entry is not None])
+        self.versus.set_colors(self._accent(PLAYER), self._accent(OPPONENT))
+        self.play_button.setEnabled(all(h.entry is not None for h in self.heroes.values()))
+
+    def selection(self, side: str) -> DeckEntry | None:
+        return self.heroes[side].entry
+
+    @property
+    def tiles(self) -> list[DeckThumb]:
+        return self.strip.tiles
+
+    def _accent(self, side: str) -> QColor:
+        entry = self.heroes[side].entry
+        card = self._cards.get(entry.path) if entry else None
+        return QColor(energy_color(primary_type(card.types))) if card else QColor(BONE)
+
+    def _on_deck_chosen(self, entry: DeckEntry) -> None:
+        self.choose(self.armed, entry)
+        self.arm(OPPONENT if self.armed == PLAYER else PLAYER)
 
     def _set_difficulty(self, key: str) -> None:
         self.difficulty = key
 
-    def _refresh(self) -> None:
-        ready = (
-            self.player_column.selection is not None and self.opponent_column.selection is not None
-        )
-        self.play_button.setEnabled(ready)
+    def _pixmap(self, card: Card) -> QPixmap | None:
+        art = self._art or ArtProvider()
+        return art.card_art(card)
 
     def load_art(self) -> None:
-        """Preenche a arte dos decks já importados (uma carta por vez, para a
-        tela não travar na primeira abertura)."""
-        art = self._art or ArtProvider()
-        tiles = [*self.player_column.tiles, *self.opponent_column.tiles]
-        by_path: dict[Path, list[DeckTile]] = {}
-        for tile in tiles:
-            by_path.setdefault(tile.entry.path, []).append(tile)
-        pending = list(by_path.items())
+        """Preenche a arte dos decks já importados, um por vez, para a tela
+        não travar na primeira abertura."""
+        pending = list({t.entry.path: t.entry for t in self.tiles if t.entry}.values())
 
         def step() -> None:
             if not pending:
                 self.status.setText("")
                 return
-            path, group = pending.pop(0)
-            self.status.setText(f"Carregando decks… ({len(pending)} restantes)")
+            entry = pending.pop(0)
+            self.status.setText(f"Lendo as listas… faltam {len(pending)}")
             try:
                 with self._cache_factory() as cache:
-                    card = deck_highlight(group[0].entry, cache)
+                    card = deck_highlight(entry, cache)
             except Exception:  # noqa: BLE001 - arte é opcional
                 card = None
+            self._cards[entry.path] = card
             if card is not None:
-                pixmap = art.card_art(card)
+                pixmap = self._pixmap(card)
                 accent = QColor(energy_color(primary_type(card.types)))
-                for tile in group:
-                    tile.set_art(pixmap, accent)
+                for tile in self.tiles:
+                    if tile.entry is not None and tile.entry.path == entry.path:
+                        tile.set_art(pixmap, accent)
+                for hero in self.heroes.values():
+                    if hero.entry is not None and hero.entry.path == entry.path:
+                        hero.set_art(pixmap, accent)
+                self.versus.set_colors(self._accent(PLAYER), self._accent(OPPONENT))
             QTimer.singleShot(0, step)
 
         QTimer.singleShot(0, step)
 
     def _start(self) -> None:
-        player, opponent = self.player_column.selection, self.opponent_column.selection
+        player, opponent = self.selection(PLAYER), self.selection(OPPONENT)
         if player is None or opponent is None:
             return
         self.play_button.setEnabled(False)
@@ -378,16 +553,4 @@ class DeckMenu(QWidget):
 
 
 def menu_size_hint() -> QSize:
-    return QSize(1180, 760)
-
-
-__all__ = [
-    "DeckColumn",
-    "DeckEntry",
-    "DeckMenu",
-    "DeckTile",
-    "deck_highlight",
-    "discover_decks",
-    "menu_size_hint",
-    "read_entry",
-]
+    return QSize(1200, 800)
