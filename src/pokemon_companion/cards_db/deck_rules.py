@@ -4,13 +4,15 @@ decklist; violações viram avisos, não bloqueiam a partida):
 - exatamente 60 cartas;
 - no máximo 4 cópias com o mesmo nome (energia básica é ilimitada);
 - pelo menos 1 Pokémon Básico;
-- no máximo 1 carta ACE SPEC e no máximo 1 Pokémon Radiante.
+- no máximo 1 carta ACE SPEC e no máximo 1 Pokémon Radiante;
+- só cartas da rotação atual do Standard (ver `standard.py`).
 """
 
 from __future__ import annotations
 
 from collections import Counter
 
+from pokemon_companion.cards_db import standard
 from pokemon_companion.cards_db.models import Card, Supertype
 
 DECK_SIZE = 60
@@ -21,8 +23,13 @@ def _is_basic_energy(card: Card) -> bool:
     return card.supertype == Supertype.ENERGY and card.id.startswith("basic-energy-")
 
 
-def validate_deck(cards: list[Card]) -> list[str]:
+def validate_deck(cards: list[Card], legal: set[str] | None = None) -> list[str]:
+    """`legal`: assinaturas do Standard; sem ela (arquivo ausente), não checa."""
     problems: list[str] = []
+    if legal is not None:
+        outside = standard.illegal_cards(cards, legal)
+        if outside:
+            problems.append(f"fora da rotação do Standard: {', '.join(outside)}")
     if len(cards) != DECK_SIZE:
         problems.append(f"o deck tem {len(cards)} cartas (o oficial é exatamente {DECK_SIZE})")
 

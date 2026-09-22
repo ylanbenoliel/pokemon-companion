@@ -65,10 +65,19 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--top", type=int, default=20)
     parser.add_argument("--out", type=Path, default=Path("examples/decks/top"))
+    parser.add_argument(
+        "--clean", action="store_true", help="remove os decks que saíram do ranking"
+    )
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
-    for rank, deck_id, name, share in archetypes(args.top):
+    ranking = archetypes(args.top)
+    if not ranking:
+        raise SystemExit("O Limitless não devolveu nenhum arquétipo: o layout do site mudou?")
+    if args.clean:
+        for old in args.out.glob("*.txt"):
+            old.unlink()
+    for rank, deck_id, name, share in ranking:
         list_id = first_list_id(deck_id)
         if list_id is None:
             print(f"#{rank} {name}: nenhuma lista encontrada")

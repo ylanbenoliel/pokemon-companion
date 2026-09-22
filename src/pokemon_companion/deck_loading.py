@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pokemon_companion.cards_db import standard
 from pokemon_companion.cards_db.api_client import PokemonTcgApiClient
 from pokemon_companion.cards_db.cache import CardCache
 from pokemon_companion.cards_db.deck_rules import validate_deck
@@ -33,7 +34,8 @@ def _load_deck_file(
     cards, errors = load_deck(path, cache, api_client)
     if not cards:
         raise DeckLoadError(f"Não foi possível resolver nenhuma carta de {path}.")
-    errors += [f"{path.name}: {problem}" for problem in validate_deck(cards)]
+    legal = standard.load_legal()
+    errors += [f"{path.name}: {problem}" for problem in validate_deck(cards, legal)]
     return cards, errors
 
 

@@ -19,13 +19,13 @@ from pokemon_companion.cards_db.models import Ability, Attack, Card, Supertype, 
 DEFAULT_DB_PATH = Path(user_data_dir("pokemon-companion", "pokemon-companion")) / "cards_cache.db"
 
 
-def _card_to_json(card: Card) -> str:
+def card_to_json(card: Card) -> str:
     payload = dataclasses.asdict(card)
     payload["supertype"] = str(card.supertype)
     return json.dumps(payload, ensure_ascii=False)
 
 
-def _card_from_json(raw: str) -> Card:
+def card_from_json(raw: str) -> Card:
     data = json.loads(raw)
     return Card(
         id=data["id"],
@@ -75,13 +75,13 @@ class CardCache:
             "SELECT data FROM cards WHERE name = ? AND set_code = ? AND number = ?",
             (name, set_code, number),
         ).fetchone()
-        return _card_from_json(row["data"]) if row else None
+        return card_from_json(row["data"]) if row else None
 
     def save(self, card: Card, set_code: str, number: str) -> None:
         self._conn.execute(
             "INSERT OR REPLACE INTO cards (id, name, set_code, number, data) "
             "VALUES (?, ?, ?, ?, ?)",
-            (card.id, card.name, set_code, number, _card_to_json(card)),
+            (card.id, card.name, set_code, number, card_to_json(card)),
         )
         self._conn.commit()
 
