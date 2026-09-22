@@ -19,6 +19,7 @@ jogo corre sozinho, com as mesmas animações — útil para testar decks.
 from __future__ import annotations
 
 import argparse
+import random
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -104,6 +105,8 @@ class BattleController(QObject):
         self._cancel_modes()
         self.scene.reset()
         self.scene.sync(self.state, animate=False)
+        starter = self.scene.name_of(self.state.active_player)
+        self.scene.show_toast(f"Cara ou coroa: {starter} começa")
         self._push_turn_banner()
 
     @property
@@ -415,7 +418,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Pokémon Companion")
         self.scene = BattleScene(art or ArtProvider(), opponent_label, player_label)
         if player_ai_factory is not None:
-            self.scene.set_names(player_label.title(), opponent_label.title())
+            self.scene.set_names(display_name(player_label), display_name(opponent_label))
         self.view = BattleView(self.scene)
         self.setCentralWidget(self.view)
         self.controller = BattleController(
@@ -424,6 +427,16 @@ class MainWindow(QMainWindow):
 
     def log_message(self, message: str) -> None:
         self.scene.show_toast(message)
+
+
+def display_name(label: str) -> str:
+    """ "NS ZOROARK EX" → "Ns Zoroark ex" (o sufixo "ex" é minúsculo nas cartas)."""
+    return label.title().replace(" Ex", " ex")
+
+
+def coin_flip_first_player() -> PlayerId:
+    """Cara ou coroa decide quem começa (livro de regras, setup passo 2)."""
+    return random.choice([PlayerId.PLAYER, PlayerId.OPPONENT])
 
 
 def deck_label(path: Path | None, fallback: str) -> str:
@@ -443,7 +456,9 @@ def build_main_window(
     player_deck, opponent_deck, warnings = load_decks(player_deck_path, opponent_deck_path)
     spectate = player_difficulty is not None
     window = MainWindow(
-        state_factory=lambda: turn_manager.start_new_game(list(player_deck), list(opponent_deck)),
+        state_factory=lambda: turn_manager.start_new_game(
+            list(player_deck), list(opponent_deck), first_player=coin_flip_first_player()
+        ),
         ai_factory=lambda: build_ai(difficulty),
         opponent_label=(
             deck_label(opponent_deck_path, "IA 2")

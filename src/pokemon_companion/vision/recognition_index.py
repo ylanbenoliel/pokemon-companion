@@ -27,7 +27,7 @@ def load_or_download_card_image(card: Card, images_dir: Path) -> Image.Image | N
     local_path = _local_image_path(card, images_dir)
 
     if local_path.exists():
-        return Image.open(local_path).convert("RGB")
+        return Image.open(local_path).convert("RGBA").convert("RGB")
 
     if not card.image_url:
         return None
@@ -35,7 +35,7 @@ def load_or_download_card_image(card: Card, images_dir: Path) -> Image.Image | N
     response = requests.get(card.image_url, timeout=10)
     response.raise_for_status()
     local_path.write_bytes(response.content)
-    return Image.open(local_path).convert("RGB")
+    return Image.open(local_path).convert("RGBA").convert("RGB")
 
 
 def build_recognition_index_for_deck(

@@ -1,14 +1,17 @@
 """Motor de regras: gera ações legais e aplica seus efeitos sobre o GameState.
 
-Cobre as regras essenciais do MVP (ver README para o que fica de fora):
-energia, ataques com fraqueza/resistência, evolução, retreat, condições de
-status básicas, knockout, prêmios e condições de vitória. Simplificações
-documentadas:
-- Todo Pokémon nocauteado vale exatamente 1 prêmio.
-- O Pokémon ativo inicial é escolhido automaticamente (primeiro básico da
-  mão), não pela escolha do jogador.
-- Após um knockout, o próximo ativo do lado afetado é promovido
-  automaticamente (primeiro do banco), sem escolha do jogador.
+Cobre as regras essenciais do livro de regras oficial (ver README para o
+que fica de fora): energia (1 por turno), ataques com fraqueza/resistência,
+evolução, recuo, condições especiais com Checkup entre turnos, nocaute,
+prêmios por tipo de Pokémon e as 3 condições de vitória. Inclui as
+restrições de primeiro turno: quem começa não ataca no turno 1, e nenhum
+jogador evolui no próprio primeiro turno.
+
+Simplificações documentadas:
+- Após um nocaute, o novo ativo é escolhido automaticamente (heurística em
+  `choose_promotion`), não pelo jogador.
+- Cartas de Treinador, Habilidades e efeitos de texto de ataques (fora os
+  cadastrados em `effects/`) não são aplicados.
 """
 
 from __future__ import annotations
@@ -30,13 +33,14 @@ from pokemon_companion.engine.game_state import (
     GameState,
     PlayerId,
     PokemonInPlay,
+    StatusCondition,
 )
 from pokemon_companion.engine.status_conditions import (
     apply_between_turns_effects,
     can_attack,
     can_retreat,
     check_confusion_self_damage,
-    try_wake_up,
+    recover_from_paralysis,
 )
 
 
@@ -79,8 +83,11 @@ def legal_actions(state: GameState) -> list[Action]:
             elif len(player.bench) < MAX_BENCH_SIZE:
                 actions.append(PlayBasicToBench(hand_index=i))
 
+    # Regras de 1º turno: turno 1 é o primeiro turno de quem começa, turno 2 o
+    # do outro jogador — ninguém evolui no próprio primeiro turno.
+    can_evolve = state.turn_number > 2
     for i, card in enumerate(player.hand):
-        if card.is_pokemon and card.evolves_from:
+        if can_evolve and card.is_pokemon and card.evolves_from:
             if (
                 player.active
                 and player.active.card.name == card.evolves_from
@@ -106,7 +113,8 @@ def legal_actions(state: GameState) -> list[Action]:
                         AttachEnergy(hand_index=i, target_is_active=False, bench_index=bi)
                     )
 
-    if player.active and can_attack(player.active):
+    # Quem começa pula a etapa de ataque no primeiro turno da partida.
+    if state.turn_number > 1 and player.active and can_attack(player.active):
         for ai, attack in enumerate(player.active.card.attacks):
             if energy_satisfies_cost(player.active.attached_energies, attack.cost):
                 actions.append(UseAttack(attack_index=ai))
@@ -146,6 +154,21 @@ def prize_count_for(card: Card) -> int:
     return 1
 
 
+def choose_promotion(bench: list[PokemonInPlay]) -> int:
+    """Índice do Pokémon do banco que assume o ativo após um nocaute.
+
+    Pelas regras, o dono escolhe; aqui a escolha é automática (para os dois
+    lados): primeiro quem já consegue atacar com a energia anexada, depois
+    quem tem mais energia, depois mais HP restante.
+    """
+
+    def score(mon: PokemonInPlay) -> tuple[bool, int, int]:
+        ready = any(energy_satisfies_cost(mon.attached_energies, a.cost) for a in mon.card.attacks)
+        return (ready, len(mon.attached_energies), mon.current_hp)
+
+    return max(range(len(bench)), key=lambda index: score(bench[index]))
+
+
 def _check_and_process_knockout(state: GameState, owner_id: PlayerId) -> list[str]:
     messages: list[str] = []
     owner = state.state_of(owner_id)
@@ -168,7 +191,7 @@ def _check_and_process_knockout(state: GameState, owner_id: PlayerId) -> list[st
             )
 
         if owner.bench:
-            owner.active = owner.bench.pop(0)
+            owner.active = owner.bench.pop(choose_promotion(owner.bench))
         if not opponent.prizes or not owner.has_pokemon_in_play():
             state.winner = opponent_id
             messages.append(f"{opponent_id.value} venceu a partida!")
@@ -179,10 +202,16 @@ def _check_and_process_knockout(state: GameState, owner_id: PlayerId) -> list[st
 def _end_turn(state: GameState) -> list[str]:
     messages: list[str] = []
 
+    # Pokémon Checkup (livro de regras): Envenenado, Queimado, Adormecido,
+    # Paralisado — para os ativos dos dois jogadores, em toda troca de turno.
     for pid in (PlayerId.PLAYER, PlayerId.OPPONENT):
         ps = state.state_of(pid)
         if ps.active:
             messages.extend(apply_between_turns_effects(ps.active))
+    current_active = state.state_of(state.active_player).active
+    if current_active is not None:
+        # Paralisado se recupera no checkup logo após o turno do próprio dono.
+        messages.extend(recover_from_paralysis(current_active))
 
     for pid in (PlayerId.PLAYER, PlayerId.OPPONENT):
         messages.extend(_check_and_process_knockout(state, pid))
@@ -207,10 +236,6 @@ def _end_turn(state: GameState) -> list[str]:
         return messages
 
     new_player.hand.append(new_player.deck.pop(0))
-
-    if new_player.active:
-        messages.extend(try_wake_up(new_player.active))
-
     return messages
 
 
@@ -241,7 +266,8 @@ def apply_action(state: GameState, action: Action) -> list[str]:
             card=card,
             attached_energies=target.attached_energies,
             damage_counters=target.damage_counters,
-            status=target.status,
+            # Evoluir remove todas as condições especiais (livro de regras).
+            status=StatusCondition.NONE,
             turn_played=target.turn_played,
             evolved_this_turn=True,
         )
@@ -289,6 +315,8 @@ def apply_action(state: GameState, action: Action) -> list[str]:
         for _ in range(cost):
             if player.active.attached_energies:
                 player.active.attached_energies.pop()
+        # Ir para o banco remove todas as condições especiais.
+        player.active.status = StatusCondition.NONE
         player.bench[action.bench_index] = player.active
         player.active = new_active
         player.has_retreated_this_turn = True

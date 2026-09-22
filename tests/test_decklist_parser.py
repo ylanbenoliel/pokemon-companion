@@ -68,7 +68,7 @@ def test_parse_limitless_export_format():
     ]
 
 
-def test_trainers_resolve_locally_without_api(tmp_path):
+def test_trainer_not_found_falls_back_to_local_card_without_error():
     entry = DecklistEntry(4, "Ultra Ball", "MEG", "131", "Trainer")
     api = FakeApiClient({})
 
@@ -77,7 +77,19 @@ def test_trainers_resolve_locally_without_api(tmp_path):
     assert not errors
     assert len(cards) == 4
     assert cards[0].supertype.value == "Trainer"
-    assert api.calls == 0
+    assert api.calls == 1  # tentou buscar imagem/texto; sem resultado, usa carta local
+
+
+def test_trainer_lookup_failure_is_not_an_error():
+    class Down:
+        def find_card(self, name, set_code, number):  # noqa: ANN001, ANN201
+            raise RuntimeError("fora do ar")
+
+    entry = DecklistEntry(2, "Boss's Orders", "MEG", "114", "Trainer")
+    cards, errors = resolve_entries([entry], FakeCache(), Down())
+
+    assert not errors
+    assert [c.name for c in cards] == ["Boss's Orders", "Boss's Orders"]
 
 
 def test_parse_decklist_text_reports_unrecognized_line():

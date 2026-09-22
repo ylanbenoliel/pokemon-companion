@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pokemon_companion.cards_db.api_client import PokemonTcgApiClient
 from pokemon_companion.cards_db.cache import CardCache
+from pokemon_companion.cards_db.deck_rules import validate_deck
 from pokemon_companion.cards_db.decklist_parser import load_deck
 from pokemon_companion.cards_db.lookup import CardLookup, FallbackLookup
 from pokemon_companion.cards_db.models import Card
@@ -27,6 +28,7 @@ def _load_deck_file(
     cards, errors = load_deck(path, cache, api_client)
     if not cards:
         raise DeckLoadError(f"Não foi possível resolver nenhuma carta de {path}.")
+    errors += [f"{path.name}: {problem}" for problem in validate_deck(cards)]
     return cards, errors
 
 

@@ -3,18 +3,18 @@
 
 medium:
   win: 1000.0
-  prizes_taken: 20.0
+  prizes_taken: 25.0
   board_presence: 5.0
-  damage_dealt: 1.0
+  opponent_hp: 1.0
+  own_hp: 0.4
   lose_own_active: 80.0
-  energy_attached: 4.0
-  board_hp: 0.1
+  energy_attached: 5.0
 
 hard:
   win: 1000.0
-  prizes_taken: 25.0
+  prizes_taken: 30.0
   board_presence: 5.0
-  damage_dealt: 1.5
+  opponent_hp: 1.2
+  own_hp: 0.5
   lose_own_active: 100.0
-  energy_attached: 5.0
-  board_hp: 0.12
+  energy_attached: 6.0

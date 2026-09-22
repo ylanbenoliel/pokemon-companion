@@ -31,7 +31,7 @@ from PyQt6.QtCore import (
     QTimer,
     pyqtSignal,
 )
-from PyQt6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPen, QRadialGradient
+from PyQt6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPen, QPixmap, QRadialGradient
 from PyQt6.QtWidgets import (
     QGraphicsItem,
     QGraphicsObject,
@@ -41,7 +41,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from pokemon_companion.cards_db.models import Card
+from pokemon_companion.cards_db.models import Card, Supertype
 from pokemon_companion.engine.game_state import GameState, PlayerId, PlayerState, PokemonInPlay
 from pokemon_companion.ui.anim import Animator, par, pause, prop, seq
 from pokemon_companion.ui.art import ArtProvider, paint_card_back
@@ -283,6 +283,10 @@ class BattleScene(QGraphicsScene):
         y = PLAYER_BENCH_Y if side == PlayerId.PLAYER else OPPONENT_BENCH_Y
         return QPointF(BENCH_XS[cast(int, slot)], y), BENCH_SCALE
 
+    def _art_unless_energy(self, card: Card) -> QPixmap | None:
+        # Energias são desenhadas como orbes vetoriais, sem imagem.
+        return None if card.supertype == Supertype.ENERGY else self.art.card_art(card)
+
     def token_for(self, mon: PokemonInPlay | None) -> PokemonToken | None:
         return None if mon is None else self.tokens.get(id(mon))
 
@@ -348,7 +352,7 @@ class BattleScene(QGraphicsScene):
             source = card_source if side == PlayerId.PLAYER else opponent_source
             existing = self.tokens.get(key)
             if existing is None:
-                piece = PokemonToken(mon, self.art.pokemon_art(mon.card), side)
+                piece = PokemonToken(mon, self.art.card_art(mon.card), side)
                 piece.setParentItem(self.root)
                 piece.clicked.connect(self.token_clicked.emit)
                 piece.hovered.connect(self._show_inspect)
@@ -543,7 +547,7 @@ class BattleScene(QGraphicsScene):
     def _evolve(
         self, token: PokemonToken, mon: PokemonInPlay, animate: bool
     ) -> QAbstractAnimation | None:
-        art = self.art.pokemon_art(mon.card)
+        art = self.art.card_art(mon.card)
         if not animate:
             token.stage_evolution(mon, art)
             token.commit = 1
@@ -585,12 +589,12 @@ class BattleScene(QGraphicsScene):
                 continue
             removed.extend(old_items[i1:i2])
             for j in range(j1, j2):
-                item = HandCard(
-                    hand[j], self.art.pokemon_art(hand[j]) if hand[j].is_pokemon else None, j
-                )
+                item = HandCard(hand[j], self._art_unless_energy(hand[j]), j)
                 item.clicked.connect(self.hand_card_clicked.emit)
                 item.drag_started.connect(self.hand_drag_started.emit)
                 item.dropped.connect(self.hand_card_dropped.emit)
+                item.hovered.connect(self._show_hand_inspect)
+                item.unhovered.connect(lambda _item: self.inspect.hide())
                 self.addItem(item)
                 new_items[j] = item
                 created.append(item)
@@ -665,7 +669,7 @@ class BattleScene(QGraphicsScene):
         top = player.discard[-1] if player.discard else None
         discard.set_top(
             top,
-            self.art.pokemon_art(top) if top is not None and top.is_pokemon else None,
+            self._art_unless_energy(top) if top is not None else None,
             len(player.discard),
         )
         return animation
@@ -932,11 +936,18 @@ class BattleScene(QGraphicsScene):
 
     # -- painel de inspeção ---------------------------------------------
     def _show_inspect(self, token: PokemonToken) -> None:
-        self.inspect.show_card(token.card, self.art.pokemon_art(token.card), token.hp_value)
+        self.inspect.show_card(token.card, self.art.card_art(token.card), token.hp_value)
         on_left = token.scenePos().x() >= SCENE_W / 2 or token.side == PlayerId.PLAYER
         self.inspect.setPos(
             INSPECT_POS if on_left else QPointF(SCENE_W - INSPECT_POS.x(), INSPECT_POS.y())
         )
+        self.inspect.show()
+
+    def _show_hand_inspect(self, item: HandCard) -> None:
+        if item.card.supertype == Supertype.ENERGY:
+            return
+        self.inspect.show_card(item.card, self._art_unless_energy(item.card), item.card.hp or 0)
+        self.inspect.setPos(INSPECT_POS)
         self.inspect.show()
 
     def _hide_inspect(self, token: PokemonToken) -> None:

@@ -13,9 +13,11 @@ Duas etapas deliberadamente separadas:
 - `parse_decklist_text` é pura (sem I/O), fácil de testar.
 - `resolve_entries` resolve cada linha em um `Card` real via cache/API.
 
-Energias básicas e cartas de Treinador são resolvidas localmente, sem rede:
-energias básicas são idênticas em qualquer edição, e o motor (MVP) não
-aplica efeitos de Treinador — só precisa da carta para ocupar o deck e a mão.
+Energias básicas são resolvidas localmente (idênticas em qualquer edição).
+Cartas de Treinador são buscadas na API só para ter imagem, tipo (Item,
+Apoiador...) e texto na tela — o motor ainda não aplica seus efeitos. Se a
+busca falhar, viram uma carta local só com o nome, sem erro: a partida não
+depende dos dados delas.
 """
 
 from __future__ import annotations
@@ -142,20 +144,23 @@ def resolve_entries(
             cards.extend([base_card] * entry.quantity)
             continue
 
-        if entry.section == "Trainer":
-            cards.extend([_local_trainer(entry)] * entry.quantity)
-            continue
-
         assert entry.number is not None
+        is_trainer = entry.section == "Trainer"
         card = cache.find(entry.name, entry.set_code, entry.number)
         if card is None:
             try:
                 card = api_client.find_card(entry.name, entry.set_code, entry.number)
             # Qualquer falha vira um erro de resolução reportado, não uma exceção.
             except Exception as exc:  # noqa: BLE001
+                if is_trainer:
+                    cards.extend([_local_trainer(entry)] * entry.quantity)
+                    continue
                 errors.append(
                     f"Erro ao buscar {entry.name} ({entry.set_code} {entry.number}): {exc}"
                 )
+                continue
+            if card is None and is_trainer:
+                cards.extend([_local_trainer(entry)] * entry.quantity)
                 continue
             if card is None:
                 errors.append(

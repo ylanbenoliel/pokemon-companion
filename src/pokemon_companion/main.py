@@ -6,6 +6,7 @@ de ponta a ponta) e o importador de decklist da Fase 2."""
 from __future__ import annotations
 
 import argparse
+import random
 import sys
 from pathlib import Path
 
@@ -93,7 +94,9 @@ def run_game(
     for warning in warnings:
         print(f"  ! {warning}")
 
-    state = turn_manager.start_new_game(player_deck, opponent_deck)
+    first = random.choice([PlayerId.PLAYER, PlayerId.OPPONENT])  # cara ou coroa
+    state = turn_manager.start_new_game(player_deck, opponent_deck, first_player=first)
+    print(f"Cara ou coroa: {'você' if first == PlayerId.PLAYER else 'a IA'} começa.")
     ai = build_ai(difficulty)
     recorder = MatchRecorder() if history_path else None
     print(f"Nova partida iniciada (dificuldade da IA: {difficulty}).")

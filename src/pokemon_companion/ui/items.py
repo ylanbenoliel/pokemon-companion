@@ -60,6 +60,24 @@ from pokemon_companion.ui.theme import (
     ui_font,
 )
 
+TRAINER_COLORS = {
+    "Item": "#2f6fd6",
+    "Supporter": "#e07b1a",
+    "Stadium": "#2e9e5b",
+    "Tool": "#8a4fd1",
+}
+TRAINER_NAMES_PT = {
+    "Item": "ITEM",
+    "Supporter": "APOIADOR",
+    "Stadium": "ESTÁDIO",
+    "Tool": "FERRAMENTA",
+}
+
+
+def trainer_kind(card: Card) -> str:
+    return next((kind for kind in TRAINER_COLORS if kind in card.subtypes), "")
+
+
 # pyqtProperty existe em runtime, mas falta nos stubs de tipo do PyQt6.
 pyqtProperty = QtCore.pyqtProperty  # type: ignore[attr-defined]
 
@@ -465,6 +483,8 @@ class HandCard(QGraphicsObject):
     clicked = pyqtSignal(object)
     drag_started = pyqtSignal(object)
     dropped = pyqtSignal(object, QPointF)
+    hovered = pyqtSignal(object)
+    unhovered = pyqtSignal(object)
 
     def __init__(self, card: Card, art: QPixmap | None, hand_index: int) -> None:
         super().__init__()
@@ -639,17 +659,55 @@ class HandCard(QGraphicsObject):
         )
 
     def _paint_trainer(self, painter: QPainter, rect: QRectF) -> None:
-        painter.setPen(QPen(QColor(255, 255, 255, 140), 1.5))
-        painter.setBrush(QColor("#5b6b82"))
+        kind = trainer_kind(self.card)
+        accent = QColor(TRAINER_COLORS.get(kind, "#5b6b82"))
+        frame = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        frame.setColorAt(0.0, QColor("#eef1f5"))
+        frame.setColorAt(0.5, QColor("#b8c1cc"))
+        frame.setColorAt(1.0, QColor("#8a95a3"))
+        painter.setPen(QPen(QColor(255, 255, 255, 170), 1.5))
+        painter.setBrush(QBrush(frame))
         painter.drawRoundedRect(rect, 12, 12)
+
+        header = QRectF(rect.left() + 6, rect.top() + 5, rect.width() - 12, 20)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(accent)
+        painter.drawRoundedRect(header, 7, 7)
         painter.setPen(QColor("white"))
-        painter.setFont(ui_font(10))
-        draw_text(painter, rect.adjusted(8, 8, -8, -8), self.card.name, wrap=True)
+        painter.setFont(ui_font(9))
+        name = QFontMetricsF(painter.font()).elidedText(
+            self.card.name, Qt.TextElideMode.ElideRight, header.width() - 10
+        )
+        draw_text(painter, header, name)
+
+        art_rect = QRectF(rect.left() + 7, rect.top() + 29, rect.width() - 14, 92)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(20, 24, 34))
+        painter.drawRoundedRect(art_rect, 8, 8)
+        painter.save()
+        clip = QPainterPath()
+        clip.addRoundedRect(art_rect, 8, 8)
+        painter.setClipPath(clip)
+        if self._art is not None:
+            draw_art(painter, art_rect, self._art, "Colorless")
+        else:
+            painter.setPen(QColor(255, 255, 255, 150))
+            painter.setFont(ui_font(22, QFont.Weight.Black))
+            draw_text(painter, art_rect, "T")
+        painter.restore()
+
+        pill = QRectF(rect.left() + 14, rect.bottom() - 40, rect.width() - 28, 18)
+        painter.setBrush(accent)
+        painter.drawRoundedRect(pill, 9, 9)
+        painter.setPen(QColor("white"))
+        painter.setFont(ui_font(8))
+        draw_text(painter, pill, TRAINER_NAMES_PT.get(kind, "TREINADOR"))
 
     # -- input ----------------------------------------------------------
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent | None) -> None:
         if self.dragging:
             return
+        self.hovered.emit(self)
         self.setZValue(500)
         self._play(
             par(
@@ -660,6 +718,7 @@ class HandCard(QGraphicsObject):
         )
 
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent | None) -> None:
+        self.unhovered.emit(self)
         if not self.dragging:
             self.return_to_fan()
 
@@ -1507,9 +1566,16 @@ class InspectPanel(QGraphicsObject):
 
         y = rect.top() + 142
         painter.setPen(QColor("white"))
-        painter.setFont(ui_font(15, QFont.Weight.Black))
+        name_width = 170.0 if card.is_pokemon else rect.width() - 32
+        painter.setFont(ui_font(15 if len(card.name) <= 16 else 12, QFont.Weight.Black))
+        name = QFontMetricsF(painter.font()).elidedText(
+            card.name, Qt.TextElideMode.ElideRight, name_width
+        )
         draw_text(
-            painter, QRectF(rect.left() + 16, y, 180, 26), card.name, Qt.AlignmentFlag.AlignVCenter
+            painter,
+            QRectF(rect.left() + 16, y, name_width, 26),
+            name,
+            Qt.AlignmentFlag.AlignVCenter,
         )
         if card.is_pokemon:
             painter.setFont(ui_font(11))
@@ -1522,6 +1588,9 @@ class InspectPanel(QGraphicsObject):
         y += 28
         painter.setFont(ui_font(8.5, QFont.Weight.Medium))
         painter.setPen(QColor(255, 255, 255, 170))
+        if not card.is_pokemon:
+            self._paint_trainer_text(painter, rect, y)
+            return
         stage = "Básico" if card.is_basic else f"Evolui de {card.evolves_from}"
         draw_text(
             painter, QRectF(rect.left() + 16, y, 238, 16), stage, Qt.AlignmentFlag.AlignVCenter
@@ -1582,6 +1651,33 @@ class InspectPanel(QGraphicsObject):
                 strict=True,
             ):
                 paint_energy_orb(painter, orb, energy)
+
+    def _paint_trainer_text(self, painter: QPainter, rect: QRectF, y: float) -> None:
+        assert self._card is not None
+        kind = trainer_kind(self._card)
+        draw_text(
+            painter,
+            QRectF(rect.left() + 16, y, 238, 16),
+            TRAINER_NAMES_PT.get(kind, "TREINADOR").title(),
+            Qt.AlignmentFlag.AlignVCenter,
+        )
+        painter.setFont(ui_font(9, QFont.Weight.Normal))
+        painter.setPen(QColor(255, 255, 255, 215))
+        text = "\n\n".join(self._card.rules) or "Texto da carta indisponível."
+        draw_text(
+            painter,
+            QRectF(rect.left() + 16, y + 24, rect.width() - 32, 170),
+            text,
+            Qt.AlignmentFlag.AlignLeft,
+            wrap=True,
+        )
+        note = QRectF(rect.left() + 14, rect.bottom() - 46, rect.width() - 28, 34)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(255, 203, 69, 40))
+        painter.drawRoundedRect(note, 8, 8)
+        painter.setPen(GOLD)
+        painter.setFont(ui_font(8))
+        draw_text(painter, note, "Efeito ainda não aplicado pelo motor", wrap=True)
 
 
 class ZoneHighlight(QGraphicsObject):

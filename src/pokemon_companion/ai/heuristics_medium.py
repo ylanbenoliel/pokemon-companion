@@ -18,14 +18,16 @@ from pokemon_companion.engine.game_state import GameState, PlayerId
 
 DEFAULT_WEIGHTS: dict[str, float] = {
     "win": 1000.0,
-    "prizes_taken": 20.0,
+    "prizes_taken": 25.0,
     "board_presence": 5.0,
-    "damage_dealt": 1.0,
+    # HP *restante* em campo, não contadores de dano: com contadores, nocautear
+    # "apagava" o dano já causado (o Pokémon vai para o descarte) e um KO
+    # chegava a pontuar negativo — a IA deixava de atacar para não nocautear.
+    "opponent_hp": 1.0,
+    "own_hp": 0.4,
     "lose_own_active": 80.0,
-    # Sem estes dois termos, recuar (que descarta energia) e evoluir (que dá
-    # mais HP) pontuavam igual a "não fazer nada" — a IA recuava em loop.
-    "energy_attached": 4.0,
-    "board_hp": 0.1,
+    # Recuar descarta energia; sem este termo a IA recuava sem propósito.
+    "energy_attached": 5.0,
 }
 
 
@@ -53,17 +55,11 @@ def evaluate_state(state: GameState, perspective: PlayerId, weights: dict[str, f
     score -= weights["board_presence"] * len(opponent.bench)
 
     my_mons, their_mons = me.all_pokemon_in_play(), opponent.all_pokemon_in_play()
-    energy_weight = weights.get("energy_attached", 0.0)
-    score += energy_weight * sum(len(m.attached_energies) for m in my_mons)
-    score -= energy_weight * sum(len(m.attached_energies) for m in their_mons)
-    hp_weight = weights.get("board_hp", 0.0)
-    score += hp_weight * sum(m.current_hp for m in my_mons)
-    score -= hp_weight * sum(m.current_hp for m in their_mons)
-
-    score += weights["damage_dealt"] * sum(
-        m.damage_counters for m in opponent.all_pokemon_in_play()
-    )
-    score -= weights["damage_dealt"] * sum(m.damage_counters for m in me.all_pokemon_in_play())
+    score += weights["own_hp"] * sum(m.current_hp for m in my_mons)
+    score -= weights["opponent_hp"] * sum(m.current_hp for m in their_mons)
+    energy = weights["energy_attached"]
+    score += energy * sum(len(m.attached_energies) for m in my_mons)
+    score -= energy * sum(len(m.attached_energies) for m in their_mons)
 
     if me.active is None:
         score -= weights["lose_own_active"]

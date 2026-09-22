@@ -22,11 +22,10 @@ def default_coin_flip() -> bool:
 def apply_between_turns_effects(
     pokemon: PokemonInPlay, flip_coin: CoinFlip = default_coin_flip
 ) -> list[str]:
-    """Aplica efeitos de status que ocorrem no fim/início de turno.
-
-    Ordem oficial: dano de veneno, depois dano de queimadura + coin flip de cura.
-    Sono/paralisia não causam dano aqui — afetam apenas se o Pokémon pode agir
-    (ver `can_attack`/`can_retreat`), e o sono tenta "acordar" no início do turno.
+    """Condições especiais no Pokémon Checkup, na ordem do livro de regras:
+    Envenenado (1 contador), Queimado (2 contadores, depois moeda: cara
+    cura), Adormecido (moeda: cara acorda). Paralisado é tratado à parte em
+    `recover_from_paralysis`, porque só se recupera após o turno do dono.
     """
     messages: list[str] = []
 
@@ -43,11 +42,19 @@ def apply_between_turns_effects(
         else:
             messages.append(f"{pokemon.card.name} continua queimado (coroa).")
 
+    messages.extend(try_wake_up(pokemon, flip_coin))
     return messages
 
 
+def recover_from_paralysis(pokemon: PokemonInPlay) -> list[str]:
+    if pokemon.status != StatusCondition.PARALYZED:
+        return []
+    pokemon.status = StatusCondition.NONE
+    return [f"{pokemon.card.name} não está mais paralisado."]
+
+
 def try_wake_up(pokemon: PokemonInPlay, flip_coin: CoinFlip = default_coin_flip) -> list[str]:
-    """Chamado no início do turno do jogador dono do Pokémon dormindo."""
+    """Moeda do Adormecido, feita em todo Pokémon Checkup."""
     if pokemon.status != StatusCondition.ASLEEP:
         return []
     if flip_coin():

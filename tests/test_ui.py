@@ -56,6 +56,7 @@ def _state(player_active, opponent_active, hand=None, bench=None) -> GameState:
             prizes=[_energy("Fire")] * 6,
             hand=[_energy("Water")] * 3,
         ),
+        turn_number=3,  # meio de partida: fora das restrições de 1º turno
     )
 
 
@@ -105,7 +106,7 @@ def test_art_provider_uses_official_artwork_by_pokedex_number(tmp_path, qapp):
         return png
 
     provider = ArtProvider(art_dir=tmp_path, fetch=fetch)
-    art = provider.pokemon_art(_deck_card("Charmander"))
+    art = provider.card_art(_deck_card("Charmander"))
 
     assert art is not None and not art.isNull()
     assert requested and requested[0].endswith("/official-artwork/4.png")
@@ -117,8 +118,8 @@ def test_art_provider_caches_and_returns_none_offline(tmp_path, qapp):
     provider = ArtProvider(art_dir=tmp_path, fetch=lambda url: calls.append(url))
     card = dataclasses.replace(_deck_card("Squirtle"), image_url=None)
 
-    assert provider.pokemon_art(card) is None
-    assert provider.pokemon_art(card) is None
+    assert provider.card_art(card) is None
+    assert provider.card_art(card) is None
     assert len(calls) == 1  # segunda chamada veio do cache em memória
 
 

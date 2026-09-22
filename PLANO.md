@@ -11,7 +11,7 @@ trabalho avançar.
 ```bash
 cd ~/pokemon_companion
 uv sync                 # instala dependências em .venv
-uv run pytest -v        # confirma que tudo continua passando (115 testes)
+uv run pytest -v        # confirma que tudo continua passando (125 testes)
 uv run mypy src          # type-check
 uv run black --check . && uv run ruff check .   # formatação/lint
 
@@ -26,7 +26,8 @@ uv run python -m pokemon_companion.ui.app --difficulty hard
 
 # Modo espectador: duas IAs no difícil com decks competitivos (Regional de Baltimore, 09/2026):
 uv run python -m pokemon_companion.ui.app --spectate --difficulty hard --player-difficulty hard \
-  --player-deck examples/decks/dragapult_ex.txt --opponent-deck examples/decks/ns_zoroark_ex.txt --speed 1.5
+  --player-deck examples/decks/dragapult_ex.txt --opponent-deck examples/decks/ns_zoroark_ex.txt \
+  --speed 1.5 --record-history data/partida.json
 ```
 
 ## Status — todas as 5 fases do plano original têm código funcional
@@ -66,7 +67,7 @@ uv run python -m pokemon_companion.ui.app --spectate --difficulty hard --player-
     vitória/derrota com "Jogar de novo".
   Ícones de energia são vetoriais (QPainter), não emoji — iguais em todo SO.
 
-115 testes passando (`uv run pytest`), `black`/`ruff`/`mypy` limpos.
+125 testes passando (`uv run pytest`), `black`/`ruff`/`mypy` limpos.
 
 - ✅ **Decks competitivos + modo espectador (pós-plano)**: duas listas reais do
   Limitless em `examples/decks/` (Dragapult ex, 3º no Regional de Baltimore;
@@ -90,6 +91,32 @@ uv run python -m pokemon_companion.ui.app --spectate --difficulty hard --player-
   loop. Agora cada candidata é avaliada após completar o próprio turno e o
   turno inteiro do oponente; a avaliação também valoriza energia anexada e
   HP em campo. Nos 10 jogos simulados: recuos 76 → 16, ataques 133 → 263.
+
+- ✅ **Revisão contra o livro de regras oficial (Paradox Rift, SV)**:
+  implementado o que faltava — quem começa não ataca no 1º turno; ninguém
+  evolui no próprio 1º turno; todo turno começa com compra (inclusive o 1º);
+  moeda decide quem começa; mulligan dá compra extra ao outro jogador;
+  Checkup na ordem oficial (Envenenado → Queimado → Adormecido →
+  Paralisado), com Adormecido checado em todo checkup e Paralisado se
+  recuperando após o turno do dono (antes nunca se recuperava); evoluir ou
+  ir para o banco remove condições especiais; novo ativo após nocaute
+  escolhido por heurística (pronto para atacar > mais energia > mais HP);
+  validação de deck (60 cartas, máx. 4 cópias, ≥1 Básico, 1 ACE SPEC, 1
+  Radiante). Não existe limite de cartas na mão no TCG — correto não haver
+  descarte. **Ainda faltam**: efeitos de Treinador (Item/Apoiador com limite
+  de 1 por turno/Estádio/Ferramenta), Habilidades, Energias Especiais,
+  efeitos de texto de ataques, escolha manual do novo ativo e montagem do
+  banco no setup, morte súbita.
+- ✅ **IA: correção da avaliação**: o termo "dano causado" contava contadores
+  de dano ainda em campo, então nocautear (o Pokémon vai para o descarte)
+  "apagava" o dano e um KO pontuava negativo — a IA passava a vez podendo
+  atacar (~188 vezes em 10 jogos). Agora a avaliação usa HP restante. Com os
+  decks competitivos: 11 de 12 partidas terminam por prêmios/nocaute (antes
+  9 de 10 iam a deck-out) e "podia atacar e passou" caiu para 12.
+- ✅ **Treinadores com imagem e texto**: buscados na API (TCGdex) para exibir
+  a ilustração recortada, o tipo (Item/Apoiador/Estádio/Ferramenta) e o
+  texto no painel de detalhes, com o aviso de que o efeito ainda não é
+  aplicado; se a busca falhar, viram carta local só com nome, sem erro.
 
 ## O que foi e não foi validado neste ambiente de trabalho
 

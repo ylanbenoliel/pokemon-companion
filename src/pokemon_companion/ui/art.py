@@ -1,12 +1,12 @@
 """Arte dos Pokémon e desenhos vetoriais do tabuleiro.
 
-Arte do Pokémon (só o bicho, sem a moldura da carta), em ordem de
-preferência:
-1. Arte oficial em PNG transparente do repositório de sprites da PokeAPI,
-   indexada pelo número da Pokédex (`Card.national_pokedex_numbers`, que a
-   API do TCG já fornece).
-2. Recorte da janela de ilustração da imagem da carta (`Card.image_url`),
-   para cartas sem número de Pokédex.
+Arte da carta (só a ilustração, sem a moldura), em ordem de preferência:
+1. Pokémon: arte oficial em PNG transparente do repositório de sprites da
+   PokeAPI, indexada pelo número da Pokédex (`Card.national_pokedex_numbers`,
+   que a API do TCG já fornece).
+2. Recorte da janela de ilustração da imagem da carta (`Card.image_url`) —
+   usado para Treinadores e Pokémon sem número de Pokédex; a janela muda de
+   lugar conforme o tipo de carta.
 3. `None` — quem desenha usa um placeholder.
 
 Downloads ficam em cache em disco (diretório de dados do usuário) e em
@@ -38,7 +38,7 @@ from PyQt6.QtGui import (
     QRadialGradient,
 )
 
-from pokemon_companion.cards_db.models import Card
+from pokemon_companion.cards_db.models import Card, Supertype
 from pokemon_companion.ui.theme import energy_color
 from pokemon_companion.vision.recognition_index import load_or_download_card_image
 
@@ -46,10 +46,11 @@ POKEAPI_ARTWORK_URL = (
     "https://raw.githubusercontent.com/PokeAPI/sprites/master/"
     "sprites/pokemon/other/official-artwork/{number}.png"
 )
-DEFAULT_ART_DIR = Path(user_data_dir("pokemon-companion", "pokemon-companion")) / "pokemon_art"
+DEFAULT_ART_DIR = Path(user_data_dir("pokemon-companion", "pokemon-companion")) / "card_art"
 
 # Janela da ilustração dentro do scan de uma carta (frações de largura/altura).
 CARD_ILLUSTRATION_WINDOW = (0.085, 0.105, 0.915, 0.47)
+TRAINER_ILLUSTRATION_WINDOW = (0.08, 0.135, 0.92, 0.52)
 
 Fetcher = Callable[[str], bytes | None]
 
@@ -69,7 +70,7 @@ class ArtProvider:
         self._fetch = fetch or _http_fetch
         self._cache: dict[str, QPixmap | None] = {}
 
-    def pokemon_art(self, card: Card) -> QPixmap | None:
+    def card_art(self, card: Card) -> QPixmap | None:
         if card.id in self._cache:
             return self._cache[card.id]
         pixmap = self._official_artwork(card) or self._cropped_card_art(card)
@@ -97,7 +98,11 @@ class ArtProvider:
             return None
         if image is None:
             return None
-        left, top, right, bottom = CARD_ILLUSTRATION_WINDOW
+        left, top, right, bottom = (
+            TRAINER_ILLUSTRATION_WINDOW
+            if card.supertype == Supertype.TRAINER
+            else CARD_ILLUSTRATION_WINDOW
+        )
         width, height = image.size
         cropped = image.crop(
             (int(left * width), int(top * height), int(right * width), int(bottom * height))

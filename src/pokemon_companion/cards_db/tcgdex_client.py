@@ -47,6 +47,13 @@ def tcgdex_card_to_card(data: dict) -> Card:
         subtypes.append("ex")  # Megas vêm sem `suffix` na TCGdex
     if name.startswith("Mega "):
         subtypes.append("Mega")
+    trainer_type = data.get("trainerType")
+    if trainer_type:
+        subtypes.append(trainer_type)  # Item, Supporter, Stadium, Tool
+    if data.get("energyType") == "Special":
+        subtypes.append("Special")
+    if str(data.get("rarity", "")).upper().startswith("ACE SPEC"):
+        subtypes.append("ACE SPEC")
 
     image = data.get("image")
     return Card(
@@ -83,6 +90,7 @@ def tcgdex_card_to_card(data: dict) -> Card:
             )
             for a in data.get("abilities", [])
         ],
+        rules=[data["effect"]] if data.get("effect") else [],
         image_url=f"{image}/high.png" if image else None,
         national_pokedex_numbers=list(data.get("dexId", [])),
     )
