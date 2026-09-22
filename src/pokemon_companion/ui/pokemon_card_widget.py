@@ -1,28 +1,86 @@
 """Widget de uma carta de Pokémon em jogo (ativo ou banco): nome, barra de
-HP colorida por porcentagem, pips de energia anexada e badge de status —
-visual inspirado em cards do Pokémon TCG Pocket em vez de texto corrido."""
+HP colorida por porcentagem, pips de energia anexada, badge de status e
+(no card ativo) a lista de ataques com custo de energia e dano — visual
+inspirado em cards do Pokémon TCG Pocket em vez de texto corrido."""
 
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout, QWidget
 
+from pokemon_companion.cards_db.models import Attack
 from pokemon_companion.engine.game_state import PokemonInPlay
+from pokemon_companion.engine.rules import energy_satisfies_cost
 from pokemon_companion.ui.theme import STATUS_LABELS, energy_color, hp_bar_color
 
 _NAME_COLOR_FILLED = "#263238"
 _NAME_COLOR_EMPTY = "rgba(255, 255, 255, 0.55)"
+_ATTACK_READY_COLOR = "#263238"
+_ATTACK_NOT_READY_COLOR = "rgba(38, 50, 56, 0.45)"
 
 
 class EnergyPip(QLabel):
-    def __init__(self, energy_type: str) -> None:
+    def __init__(self, energy_type: str, size: int = 14) -> None:
         super().__init__()
-        self.setFixedSize(14, 14)
+        self.setFixedSize(size, size)
         self.setStyleSheet(
             f"background-color: {energy_color(energy_type)}; "
-            "border-radius: 7px; border: 1px solid rgba(0, 0, 0, 0.25);"
+            f"border-radius: {size // 2}px; border: 1px solid rgba(0, 0, 0, 0.25);"
         )
         self.setToolTip(energy_type)
+
+
+class AttackRow(QWidget):
+    """Uma linha: pips do custo de energia + nome do ataque + dano.
+
+    Fica esmaecida quando a energia atualmente anexada não é suficiente
+    para usar o ataque — resposta direta a "não dá pra saber quantas
+    energias meu pokémon precisa pra atacar"."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        self._cost_row = QHBoxLayout()
+        self._cost_row.setSpacing(2)
+        cost_container = QWidget()
+        cost_container.setLayout(self._cost_row)
+        cost_container.setMinimumWidth(46)
+        layout.addWidget(cost_container)
+
+        self.name_label = QLabel()
+        layout.addWidget(self.name_label, 1)
+
+        self.damage_label = QLabel()
+        layout.addWidget(self.damage_label)
+
+    def _clear_cost_pips(self) -> None:
+        while self._cost_row.count():
+            item = self._cost_row.takeAt(0)
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+    def update_attack(self, attack: Attack, ready: bool) -> None:
+        self._clear_cost_pips()
+        for energy_type in attack.cost:
+            self._cost_row.addWidget(EnergyPip(energy_type, size=10))
+        self._cost_row.addStretch(1)
+
+        color = _ATTACK_READY_COLOR if ready else _ATTACK_NOT_READY_COLOR
+        weight = 700 if ready else 500
+        style = f"color: {color}; font-weight: {weight}; font-size: 11px;"
+        self.name_label.setStyleSheet(style)
+        self.damage_label.setStyleSheet(style)
+
+        self.name_label.setText(attack.name)
+        self.damage_label.setText(attack.damage or "0")
+        tooltip = attack.text or f"Custo: {', '.join(attack.cost) or 'nenhum'}"
+        self.setToolTip(tooltip)
 
 
 class PokemonCardWidget(QFrame):
@@ -30,8 +88,8 @@ class PokemonCardWidget(QFrame):
         super().__init__()
         self.setObjectName("pokemonCard")
         self._compact = compact
-        self.setMinimumWidth(92 if compact else 150)
-        self.setMinimumHeight(72 if compact else 88)
+        self.setMinimumWidth(92 if compact else 160)
+        self.setMinimumHeight(72 if compact else 100)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
@@ -69,6 +127,16 @@ class PokemonCardWidget(QFrame):
         self.status_label.hide()
         layout.addWidget(self.status_label)
 
+        # A lista de ataques só aparece no card ativo (não no banco, que é
+        # pequeno demais e não pode atacar de qualquer forma) — mostra
+        # custo de energia (pips) e dano de cada ataque, esmaecendo os que
+        # ainda não têm energia suficiente anexada.
+        self._attacks_container: QVBoxLayout | None = None
+        if not compact:
+            self._attacks_container = QVBoxLayout()
+            self._attacks_container.setSpacing(2)
+            layout.addLayout(self._attacks_container)
+
         self.set_empty()
 
     def _display_name(self, name: str) -> str:
@@ -87,6 +155,17 @@ class PokemonCardWidget(QFrame):
             if widget is not None:
                 widget.deleteLater()
 
+    def _clear_attack_rows(self) -> None:
+        if self._attacks_container is None:
+            return
+        while self._attacks_container.count():
+            item = self._attacks_container.takeAt(0)
+            if item is None:
+                continue
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
     def set_empty(self) -> None:
         self.setProperty("empty", True)
         self.setProperty("energyType", None)
@@ -98,6 +177,7 @@ class PokemonCardWidget(QFrame):
         self.hp_bar.setFormat("")
         self.hp_bar.setStyleSheet("")
         self._clear_energy_pips()
+        self._clear_attack_rows()
         self.status_label.hide()
         self._repolish()
 
@@ -134,6 +214,14 @@ class PokemonCardWidget(QFrame):
             self.status_label.show()
         else:
             self.status_label.hide()
+
+        if self._attacks_container is not None:
+            self._clear_attack_rows()
+            for attack in mon.card.attacks:
+                row = AttackRow()
+                ready = energy_satisfies_cost(mon.attached_energies, attack.cost)
+                row.update_attack(attack, ready)
+                self._attacks_container.addWidget(row)
 
         self._repolish()
 

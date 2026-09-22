@@ -68,6 +68,34 @@ def test_pokemon_card_widget_set_empty_resets_state(qtbot, charmander):
     assert widget._energy_row.count() == 0
 
 
+def test_pokemon_card_widget_shows_attacks_with_readiness(qtbot, charmander):
+    # `charmander` (fixture) tem 1 ataque só, custando 1 energia Fire.
+    widget = PokemonCardWidget()
+    qtbot.addWidget(widget)
+    assert widget._attacks_container is not None
+
+    not_ready = PokemonInPlay(card=charmander)  # sem energia anexada
+    widget.update_pokemon(not_ready)
+    assert widget._attacks_container.count() == 1
+    row = widget._attacks_container.itemAt(0).widget()
+    assert row.name_label.text() == charmander.attacks[0].name
+    assert "0.45" in row.name_label.styleSheet()  # esmaecido: não tem energia
+
+    ready = PokemonInPlay(card=charmander, attached_energies=["Fire"])
+    widget.update_pokemon(ready)
+    row = widget._attacks_container.itemAt(0).widget()
+    assert "#263238" in row.name_label.styleSheet()  # pronto para atacar
+
+
+def test_compact_pokemon_card_widget_has_no_attacks_container(qtbot, charmander):
+    widget = PokemonCardWidget(compact=True)
+    qtbot.addWidget(widget)
+
+    widget.update_pokemon(PokemonInPlay(card=charmander))
+
+    assert widget._attacks_container is None
+
+
 def test_confirmation_dialog_confirm_selects_top_candidate(qtbot, charmander, squirtle):
     candidates: list[tuple[Card, int]] = [(charmander, 2), (squirtle, 9)]
     dialog = ConfirmationDialog("carta na zona ativa", candidates)
