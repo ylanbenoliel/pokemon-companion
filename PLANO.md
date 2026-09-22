@@ -35,6 +35,8 @@ uv run python tools/tournament.py examples/decks/top --games 4 --level hard
 uv run python tools/effect_coverage.py examples/decks/top
 # Atualizar os 20 decks do meta a partir do limitlesstcg.com:
 uv run python tools/fetch_top_decks.py
+# Reproduzir o top cut de um torneio real (padrão: Mundial 2026):
+uv run python tools/replay_top_cut.py --series 40
 ```
 
 ## Status — todas as 5 fases do plano original têm código funcional
@@ -175,8 +177,9 @@ grava `data/tournament/*/results.json` + `summary.txt`.
 | 1ª (motor novo) | 380 | 54 | 326 | 63 | 55% | 18% – 71% |
 | 2ª | 380 | 0 | 380 | 18 | 52% | 18% – 74% |
 | final | 760 | 0 | 760 | 42 | 51% | 33% – 72% |
+| final (com os ajustes do Mundial) | 760 | 0 | 760 | 27 | 53% | 30% – 75% |
 
-Final: média de 19 turnos por partida (≈ 9–10 de cada jogador); decisão
+Final: média de 18 turnos por partida (≈ 9–10 de cada jogador); decisão
 da IA com média de 65 ms (p99 0,4 s). Topo: Crustle 72%, Cynthia's
 Garchomp 68%, Basic Box 67%, Lillie's Clefairy 66%. Fundo: Festival Lead,
 Toxtricity e Team Rocket's Honchkrow com 33–34%.
@@ -209,6 +212,49 @@ ordem do deck); os decks mais fracos no torneio dependem de sequências
 longas (Festival Lead com dois ataques, Hide 'n' Sneak contando descarte)
 que a busca de um turno não enxerga bem. Pequena fonte de não-determinismo
 entre processos: a mesma seed nem sempre reproduz a partida.
+
+## Reprodução do Mundial 2026 (top cut real vs simulação)
+
+`tools/replay_top_cut.py` baixa do Limitless as listas do Top 8 e a chave de
+eliminação com os vencedores reais (Limitless Labs, páginas de pairings) e
+simula cada confronto em melhores de 3. **Não existe registro jogada a
+jogada** de partidas físicas: o Mundial só está em vídeo, então o que dá
+para reproduzir são os confrontos, não os lances.
+
+Mundial 2026 (San Francisco, 28–30/08/2026, 797 jogadores, formato
+TEF–Pitch Black): campeão Andrew Hedrick (Dragapult); as 8 listas ficam em
+`examples/decks/worlds2026/` (o 5º e o 6º colocados usaram a mesma lista, é
+assim no Limitless).
+
+Medida mais estável que "acertou o vencedor" (7 confrontos em melhor de 3
+têm muito ruído, ainda mais no espelho Dragapult × Dragapult): um round
+robin entre os 8 decks (8 partidas por par) comparado à classificação real
+por correlação de Spearman.
+
+| Versão da IA | Acertos na chave | Round robin: 1º lugar | Spearman |
+|---|---|---|---|
+| antes dos ajustes | 3/7 | Crustle (real 6º) | — |
+| + progresso de energia | 5/7 | — | — |
+| + estimativa de dano | 3/7 (ruído) | **Dragapult do campeão** (68%) | **+0,26** |
+| (sem estimativa, controle) | — | Crustle (real 6º) | +0,17 |
+
+Ajustes que saíram daqui:
+1. **Progresso de energia** (`attack_progress`): a avaliação passou a medir,
+   para cada Pokémon (banco inclusive), quanto da energia do seu melhor
+   ataque já está paga, ponderado pelo dano. Sem isso a IA espalhava energia
+   e o atacante principal nunca ficava pronto — o Dragapult ex passou a
+   partida inteira com uma Psychic e nunca usou Phantom Dive.
+2. **Estimativa de dano por ataque** (`AttackSpec.estimate`): ataques com
+   número variável ("20× cartas na mão") valiam 60 fixos para a IA, o que
+   tornava o Alakazam (Powerful Hand) e outros decks de escala invisíveis.
+3. **6 cartas novas das listas do Mundial** implementadas (Enhanced Hammer,
+   Strange Timepiece, Fighting Wings, Watchful Eye, Teleporter,
+   Electromagnetic Sonar) — `tools/effect_coverage.py` mostra 0 faltando.
+
+O que a simulação ainda erra: superestima Crustle (parede contra ex) e
+subestima Alakazam. Os dois dependem de planejamento de vários turnos
+(guardar cartas na mão para o Powerful Hand; furar a parede com contadores
+no banco) que a busca de um turno não enxerga.
 
 ## O que foi e não foi validado neste ambiente de trabalho
 

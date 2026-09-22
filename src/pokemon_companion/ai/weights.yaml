@@ -13,6 +13,7 @@ medium: &default
   energy_attached: 5.0
   hand_size: 2.0
   attack_ready: 12.0
+  attack_progress: 20.0
   deck_out: 150.0
 
 hard: *default

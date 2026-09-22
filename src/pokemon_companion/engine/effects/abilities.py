@@ -152,6 +152,18 @@ def _run_away_draw(ctx: Ctx) -> None:
     core.shuffle_deck(ctx.me)
 
 
+@ability("Teleporter", is_active)
+def _teleporter(ctx: Ctx) -> None:
+    mon = ctx.source
+    assert mon is not None
+    ctx.me.deck.extend(mon.all_cards())
+    ctx.me.deck.extend(
+        core.BASIC_ENERGIES[e] for e in mon.attached_energies if e in core.BASIC_ENERGIES
+    )
+    ctx.me.active = None
+    core.shuffle_deck(ctx.me)
+
+
 @ability(
     "Lunar Cycle",
     lambda ctx: any(m.card.name == "Solrock" for m in ctx.me.all_pokemon_in_play())
@@ -297,7 +309,11 @@ def _can_move_counters(ctx: Ctx) -> bool:
     return has_dark and any(m.damage_counters for m in ctx.me.all_pokemon_in_play())
 
 
-@ability("Adrena-Brain", _can_move_counters, options=opp_any)
+@ability(
+    "Adrena-Brain",
+    lambda ctx: _can_move_counters(ctx) and not passives.counters_locked(ctx.state),
+    options=opp_any,
+)
 def _adrena_brain(ctx: Ctx) -> None:
     donor = max(ctx.me.all_pokemon_in_play(), key=lambda m: m.damage_counters)
     moved = min(3, core.damage_counters_on(donor))

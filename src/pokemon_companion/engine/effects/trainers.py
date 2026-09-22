@@ -696,6 +696,44 @@ def _miracle_headset(ctx: Ctx) -> None:
     core.recover_from_discard(ctx, lambda c: "Supporter" in c.subtypes, 2)
 
 
+def _special_holders(ctx: Ctx) -> list[PokemonInPlay]:
+    return [m for m in ctx.opp.all_pokemon_in_play() if m.special_energy_cards]
+
+
+@trainer("Enhanced Hammer", lambda ctx: bool(_special_holders(ctx)))
+def _enhanced_hammer(ctx: Ctx) -> None:
+    holders = _special_holders(ctx)
+    mon = ctx.opp.active if ctx.opp.active in holders else holders[0]
+    assert mon is not None
+    card = mon.special_energy_cards[0]
+    ctx.opp.discard.append(core.detach_energy(mon, card.name))
+    ctx.log(f"{card.name} de {mon.card.name} foi descartada.")
+
+
+def _timepiece_options(ctx: Ctx) -> list[Target | None]:
+    return [
+        ("own", p)
+        for p in core.positions(ctx.me)
+        if (mon := core.mon_at(ctx.me, p)) is not None
+        and mon.prior_cards
+        and pokemon_type(mon.card) == "Psychic"
+    ]
+
+
+@trainer("Strange Timepiece", lambda ctx: bool(_timepiece_options(ctx)), _timepiece_options)
+def _strange_timepiece(ctx: Ctx) -> None:
+    """Desevolui um estágio (o uso comum: jogar a evolução de novo e repetir
+    Habilidades como Psychic Draw). O Pokémon não pode evoluir neste turno."""
+    mon = core.mon_at(ctx.me, target_index(ctx, -1))
+    assert mon is not None and mon.prior_cards
+    ctx.me.hand.append(mon.card)
+    ctx.log(f"{mon.card.name} voltou para a mão; {mon.prior_cards[0].name} fica em jogo.")
+    mon.card = mon.prior_cards[0]
+    mon.prior_cards = mon.prior_cards[1:]
+    mon.turn_played = ctx.turn
+    mon.abilities_used = set()
+
+
 @trainer("Energy Search")
 def _energy_search(ctx: Ctx) -> None:
     core.search_deck(ctx, is_basic_energy, 1)

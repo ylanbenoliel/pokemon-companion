@@ -36,26 +36,50 @@ AttackFn = Callable[[Ctx, Attack], None]
 OptionsFn = Callable[[Ctx, Attack], list[Target | None]]
 
 
+EstimateFn = Callable[["Ctx", Attack], int]
+
+
 @dataclass(frozen=True)
 class AttackSpec:
     fn: AttackFn
     options: OptionsFn | None = None
     #: rótulo de uma opção ("mode", k) para a UI
     mode_label: Callable[[int], str] | None = None
+    #: dano provável, para a IA avaliar ataques cujo número depende do estado
+    estimate: EstimateFn | None = None
 
 
 ATTACKS: dict[str, AttackSpec] = {}
 
 
 def attack(
-    *names: str, options: OptionsFn | None = None, mode_label: Callable[[int], str] | None = None
+    *names: str,
+    options: OptionsFn | None = None,
+    mode_label: Callable[[int], str] | None = None,
+    estimate: EstimateFn | None = None,
 ) -> Callable[[AttackFn], AttackFn]:
     def decorator(fn: AttackFn) -> AttackFn:
         for name in names:
-            ATTACKS[name] = AttackSpec(fn, options, mode_label)
+            ATTACKS[name] = AttackSpec(fn, options, mode_label, estimate)
         return fn
 
     return decorator
+
+
+#: dano presumido de um ataque sem número no texto (efeitos, cópia, status)
+EFFECT_ATTACK_VALUE = 60
+
+
+def estimated_damage(state: object, side: object, mon: PokemonInPlay, attack_: Attack) -> int:
+    """Quanto este ataque provavelmente causa agora — usado pela avaliação da
+    IA, que senão trata "20× o número de X" como um ataque fraco qualquer."""
+    spec = spec_for(attack_)
+    if spec is not None and spec.estimate is not None:
+        ctx = Ctx(state, side, mon)  # type: ignore[arg-type]
+        return spec.estimate(ctx, attack_)
+    if attack_.base_damage:
+        return attack_.base_damage
+    return EFFECT_ATTACK_VALUE if attack_.text else 0
 
 
 def spec_for(attack_: Attack) -> AttackSpec | None:
@@ -254,7 +278,7 @@ def discard_all_energy(ctx: Ctx) -> None:
 # dano variável
 
 
-@attack("Rapid-Fire Combo")
+@attack("Rapid-Fire Combo", estimate=lambda ctx, a: a.base_damage + 50)
 def _rapid_fire(ctx: Ctx, a: Attack) -> None:
     heads = 0
     while core.coin():
@@ -263,7 +287,7 @@ def _rapid_fire(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage + 50 * heads)
 
 
-@attack("Comet Punch")
+@attack("Comet Punch", estimate=lambda ctx, a: 60)
 def _comet_punch(ctx: Ctx, a: Attack) -> None:
     heads = sum(core.coin() for _ in range(4))
     ctx.log(f"{heads} cara(s).")
@@ -275,35 +299,54 @@ def _tumbling(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage + (20 if core.coin() else 0))
 
 
-@attack("Full Moon Rondo")
+@attack(
+    "Full Moon Rondo",
+    estimate=lambda ctx, a: a.base_damage + 20 * (len(ctx.me.bench) + len(ctx.opp.bench)),
+)
 def _full_moon(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage + 20 * (len(ctx.me.bench) + len(ctx.opp.bench)))
 
 
-@attack("Do the Wave")
+@attack("Do the Wave", estimate=lambda ctx, a: 20 * len(ctx.me.bench))
 def _do_the_wave(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, 20 * len(ctx.me.bench))
 
 
-@attack("Myriad Leaf Shower")
+@attack(
+    "Myriad Leaf Shower",
+    estimate=lambda ctx, a: a.base_damage
+    + 30 * sum(len(m.attached_energies) for m in (ctx.me.active, ctx.opp.active) if m),
+)
 def _myriad(ctx: Ctx, a: Attack) -> None:
     count = sum(len(m.attached_energies) for m in (ctx.me.active, ctx.opp.active) if m)
     hit_active(ctx, a.base_damage + 30 * count)
 
 
-@attack("Syrup Storm")
+@attack(
+    "Syrup Storm",
+    estimate=lambda ctx, a: a.base_damage
+    + 30 * sum(m.attached_energies.count("Grass") for m in ctx.me.all_pokemon_in_play()),
+)
 def _syrup(ctx: Ctx, a: Attack) -> None:
     grass = sum(m.attached_energies.count("Grass") for m in ctx.me.all_pokemon_in_play())
     hit_active(ctx, a.base_damage + 30 * grass)
 
 
-@attack("Rocket Rush")
+@attack(
+    "Rocket Rush",
+    estimate=lambda ctx, a: 30
+    * sum(1 for m in ctx.me.all_pokemon_in_play() if in_group(m.card, "Team Rocket's")),
+)
 def _rocket_rush(ctx: Ctx, a: Attack) -> None:
     team = sum(1 for m in ctx.me.all_pokemon_in_play() if in_group(m.card, "Team Rocket's"))
     hit_active(ctx, 30 * team)
 
 
-@attack("R Command")
+@attack(
+    "R Command",
+    estimate=lambda ctx, a: 20
+    * sum(1 for c in ctx.me.discard if trainer_kind(c) == "Supporter" and "Team Rocket" in c.name),
+)
 def _r_command(ctx: Ctx, a: Attack) -> None:
     supporters = sum(
         1 for c in ctx.me.discard if trainer_kind(c) == "Supporter" and "Team Rocket" in c.name
@@ -311,7 +354,11 @@ def _r_command(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, 20 * supporters)
 
 
-@attack("Raging Curse")
+@attack(
+    "Raging Curse",
+    estimate=lambda ctx, a: 10
+    * sum(core.damage_counters_on(m) for m in ctx.me.bench if in_group(m.card, "Cynthia's")),
+)
 def _raging_curse(ctx: Ctx, a: Attack) -> None:
     counters = sum(
         core.damage_counters_on(m) for m in ctx.me.bench if in_group(m.card, "Cynthia's")
@@ -319,7 +366,11 @@ def _raging_curse(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, 10 * counters, weakness=False)
 
 
-@attack("Relentless Punches")
+@attack(
+    "Relentless Punches",
+    estimate=lambda ctx, a: a.base_damage
+    + 50 * (core.damage_counters_on(ctx.opp.active) if ctx.opp.active else 0),
+)
 def _relentless(ctx: Ctx, a: Attack) -> None:
     defender = ctx.opp.active
     counters = core.damage_counters_on(defender) if defender else 0
@@ -333,7 +384,10 @@ def _whirling_envy(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage + bonus, weakness=False)
 
 
-@attack("Powerful Rage")
+@attack(
+    "Powerful Rage",
+    estimate=lambda ctx, a: 20 * (core.damage_counters_on(ctx.source) if ctx.source else 0),
+)
 def _powerful_rage(ctx: Ctx, a: Attack) -> None:
     assert ctx.source is not None
     hit_active(ctx, 20 * core.damage_counters_on(ctx.source))
@@ -387,6 +441,17 @@ def _psychic(ctx: Ctx, a: Attack) -> None:
     )
 
 
+@attack("Fighting Wings")
+def _fighting_wings(ctx: Ctx, a: Attack) -> None:
+    defender = ctx.opp.active
+    hit_active(ctx, a.base_damage + (90 if defender and "ex" in defender.card.subtypes else 0))
+
+
+@attack("Electromagnetic Sonar")
+def _electromagnetic_sonar(ctx: Ctx, a: Attack) -> None:
+    core.recover_from_discard(ctx, lambda c: c.supertype.value == "Trainer", 1)
+
+
 @attack("Ghostly Blow")
 def _ghostly_blow(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
@@ -402,6 +467,8 @@ def _strange_hacking(ctx: Ctx, a: Attack) -> None:
     """Confunde o Ativo e move contadores entre os Pokémon do oponente para
     nocautear o alvo que vale mais prêmios, quando dá."""
     status_on_defender(ctx, StatusCondition.CONFUSED)
+    if passives.counters_locked(ctx.state):
+        return
     mons = ctx.opp.all_pokemon_in_play()
     for target in sorted(mons, key=lambda m: -core._prize_value(m.card)):
         donors = [m for m in mons if m is not target and m.damage_counters]
@@ -419,7 +486,10 @@ def _strange_hacking(ctx: Ctx, a: Attack) -> None:
         return
 
 
-@attack("Irritated Outburst")
+@attack(
+    "Irritated Outburst",
+    estimate=lambda ctx, a: 60 * (ctx.state.prize_count - len(ctx.me.prizes)),
+)
 def _irritated(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, 60 * prizes_taken_by(ctx))
 
@@ -585,12 +655,12 @@ def _torrential_pump(ctx: Ctx, a: Attack) -> None:
 # alvo livre / banco
 
 
-@attack("Cruel Arrow", options=opp_any)
+@attack("Cruel Arrow", options=opp_any, estimate=lambda ctx, a: 100)
 def _cruel_arrow(ctx: Ctx, a: Attack) -> None:
     hit(ctx, target_index(ctx), 100)
 
 
-@attack("Sonic Ripper", options=opp_any)
+@attack("Sonic Ripper", options=opp_any, estimate=lambda ctx, a: 220)
 def _sonic_ripper(ctx: Ctx, a: Attack) -> None:
     assert ctx.source is not None
     for energy in list(ctx.source.attached_energies):
@@ -599,27 +669,32 @@ def _sonic_ripper(ctx: Ctx, a: Attack) -> None:
     hit(ctx, target_index(ctx), 220)
 
 
-@attack("Strike the Sleeper", options=opp_bench)
+@attack(
+    "Strike the Sleeper",
+    options=opp_bench,
+    estimate=lambda ctx, a: 20
+    * max((core.damage_counters_on(m) for m in ctx.opp.bench), default=0),
+)
 def _strike_sleeper(ctx: Ctx, a: Attack) -> None:
     mon = core.mon_at(ctx.opp, target_index(ctx, 0))
     if mon is not None:
         hit(ctx, target_index(ctx, 0), 20 * core.damage_counters_on(mon))
 
 
-@attack("Twin Shotels")
+@attack("Twin Shotels", estimate=lambda ctx, a: 100)
 def _twin_shotels(ctx: Ctx, a: Attack) -> None:
     for position in best_damage_targets(ctx, 50, 2):
         hit(ctx, position, 50, weakness=False, resistance=False, ignore_effects=True)
 
 
-@attack("Trifrost")
+@attack("Trifrost", estimate=lambda ctx, a: 220)
 def _trifrost(ctx: Ctx, a: Attack) -> None:
     discard_all_energy(ctx)
     for position in best_damage_targets(ctx, 110, 3):
         hit(ctx, position, 110)
 
 
-@attack("Phantom Dive")
+@attack("Phantom Dive", estimate=lambda ctx, a: a.base_damage + 60)
 def _phantom_dive(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
     core.spread_counters(ctx, ctx.opp_id, 6, bench_only=True)
@@ -649,7 +724,7 @@ def _spiritual_end(ctx: Ctx, a: Attack) -> None:
         core.place_counters(ctx, ctx.opp_id, mon, 3 * core.damage_counters_on(mon))
 
 
-@attack("Powerful Hand")
+@attack("Powerful Hand", estimate=lambda ctx, a: 20 * len(ctx.me.hand))
 def _powerful_hand(ctx: Ctx, a: Attack) -> None:
     if ctx.opp.active is not None:
         core.place_counters(ctx, ctx.opp_id, ctx.opp.active, 2 * len(ctx.me.hand))

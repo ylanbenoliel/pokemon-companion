@@ -13,8 +13,8 @@ import yaml
 
 from pokemon_companion.engine import rules
 from pokemon_companion.engine.actions import Action, Retreat
-from pokemon_companion.engine.effects import passives
-from pokemon_companion.engine.game_state import GameState, PlayerId
+from pokemon_companion.engine.effects import attacks, passives
+from pokemon_companion.engine.game_state import GameState, PlayerId, PokemonInPlay
 
 DEFAULT_WEIGHTS: dict[str, float] = {
     "win": 1000.0,
@@ -33,6 +33,10 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "hand_size": 2.0,
     # Ativo que já consegue atacar no próximo turno.
     "attack_ready": 12.0,
+    # Progresso de energia rumo ao melhor ataque de cada Pokémon (banco
+    # inclusive), ponderado pelo dano: sem isto a IA anexava energia em
+    # qualquer um e o atacante principal nunca ficava pronto.
+    "attack_progress": 20.0,
     # Deck acabando: perder por não conseguir comprar (cresce ao quadrado
     # abaixo de LOW_DECK cartas; sem isto a IA comprava até o deck-out).
     "deck_out": 150.0,
@@ -79,6 +83,13 @@ def evaluate_state(state: GameState, perspective: PlayerId, weights: dict[str, f
     score += hand * min(len(me.hand), HAND_CAP)
     score -= hand * 0.5 * min(len(opponent.hand), HAND_CAP)
 
+    progress = weights.get("attack_progress", 0.0)
+    if progress:
+        score += progress * sum(_attack_potential(state, perspective, m) for m in my_mons)
+        score -= (
+            progress * 0.5 * sum(_attack_potential(state, perspective.other, m) for m in their_mons)
+        )
+
     ready = weights.get("attack_ready", 0.0)
     for side, sign in ((perspective, 1), (perspective.other, -1)):
         active = state.state_of(side).active
@@ -91,6 +102,19 @@ def evaluate_state(state: GameState, perspective: PlayerId, weights: dict[str, f
         score -= weights.get("deck_out", 0.0) * ((LOW_DECK - len(me.deck)) / LOW_DECK) ** 2
 
     return score
+
+
+def _attack_potential(state: GameState, side: PlayerId, mon: PokemonInPlay) -> float:
+    """Melhor (dano/100 × fração do custo paga) entre os ataques do Pokémon."""
+    units = passives.provided_energy(state, side, mon)
+    best = 0.0
+    for attack in mon.card.attacks:
+        damage = attacks.estimated_damage(state, side, mon, attack)
+        if damage <= 0:
+            continue
+        cost = passives.attack_cost(state, side, mon, attack)
+        best = max(best, min(damage, 300) / 100 * passives.cost_progress(units, cost))
+    return best
 
 
 def retreats_last(actions: list[Action]) -> list[Action]:

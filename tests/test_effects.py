@@ -14,6 +14,7 @@ from pokemon_companion.engine.actions import (
     AttachEnergy,
     EndSetup,
     EndTurn,
+    Evolve,
     PlayBasicToActive,
     PlayBasicToBench,
     PlayTrainer,
@@ -360,3 +361,55 @@ def test_team_rockets_energy_only_on_team_rocket_pokemon(state):
     state.player.bench = [PokemonInPlay(card=mon("Team Rocket's Murkrow"))]
     attaches = [a for a in rules.legal_actions(state) if isinstance(a, AttachEnergy)]
     assert attaches == [AttachEnergy(hand_index=0, target_is_active=False, bench_index=0)]
+
+
+def test_enhanced_hammer_discards_only_special_energy(state):
+    special = dataclasses.replace(make_energy("Mist Energy", "Colorless"), subtypes=["Special"])
+    state.opponent.active.attached_energies = ["Fire", "Mist Energy"]
+    state.opponent.active.special_energy_cards = [special]
+    state.player.hand = [trainer("Enhanced Hammer")]
+
+    rules.apply_action(state, PlayTrainer(hand_index=0))
+
+    assert state.opponent.active.attached_energies == ["Fire"]
+    assert state.opponent.discard[-1].name == "Mist Energy"
+
+
+def test_strange_timepiece_devolves_one_stage(state):
+    basic = make_basic_pokemon("Kadabra", 80, "Psychic")
+    evolved = dataclasses.replace(
+        make_evolution("Alakazam", "Kadabra", 140, "Psychic", "100"), subtypes=["Stage 2"]
+    )
+    state.player.active = PokemonInPlay(card=evolved, prior_cards=[basic], turn_played=1)
+    state.player.hand = [trainer("Strange Timepiece")]
+
+    options = [a for a in rules.legal_actions(state) if isinstance(a, PlayTrainer)]
+    assert options == [PlayTrainer(hand_index=0, target=("own", -1))]
+    rules.apply_action(state, options[0])
+
+    assert state.player.active.card.name == "Kadabra"
+    assert state.player.hand[-1].name == "Alakazam"
+    # não pode evoluir de novo neste turno
+    assert not any(isinstance(a, Evolve) for a in rules.legal_actions(state))
+
+
+def test_estimated_damage_uses_board_state():
+    from pokemon_companion.cards_db.models import Attack as AttackCard
+    from pokemon_companion.engine.effects import attacks as attack_effects
+
+    card = dataclasses.replace(
+        mon("Alakazam"),
+        attacks=[AttackCard(name="Powerful Hand", cost=["Psychic"], damage="", text="x")],
+    )
+    s = build_state(player_active=card, opponent_active=mon("Alvo"))
+    s.player.hand = [mon(f"C{i}") for i in range(7)]
+    active = s.player.active
+    assert attack_effects.estimated_damage(s, PlayerId.PLAYER, active, card.attacks[0]) == 140
+
+
+def test_cost_progress_counts_partially_paid_cost():
+    progress = passives.cost_progress
+    assert progress(["Fire"], ["Fire", "Colorless"]) == 0.5
+    assert progress(["Fire", "Psychic"], ["Fire", "Colorless"]) == 1.0
+    assert progress([], ["Fire"]) == 0.0
+    assert progress(["Any"], ["Metal"]) == 1.0

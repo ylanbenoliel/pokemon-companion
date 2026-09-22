@@ -153,6 +153,23 @@ def attack_cost(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack: A
     return cost
 
 
+def cost_progress(units: list[str], cost: list[str]) -> float:
+    """Fração do custo já coberta pelas energias (guloso; 1.0 = pode pagar)."""
+    if not cost:
+        return 1.0
+    remaining = list(units)
+    matched = 0
+    for need in (c for c in cost if c != "Colorless"):
+        unit = next((u for u in remaining if u == need or need in u.split("|")), None)
+        if unit is None and "Any" in remaining:
+            unit = "Any"
+        if unit is not None:
+            remaining.remove(unit)
+            matched += 1
+    matched += min(len(remaining), cost.count("Colorless"))
+    return matched / len(cost)
+
+
 def can_pay(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack: Attack) -> bool:
     return energy_satisfies(
         provided_energy(state, owner, mon), attack_cost(state, owner, mon, attack)
@@ -278,6 +295,11 @@ def prevents_attack_effects(
     return not is_active and any(
         ability_active(state, mon, "Spherical Shield") for mon in owner_state.all_pokemon_in_play()
     )
+
+
+def counters_locked(state: GameState) -> bool:
+    """Watchful Eye: contadores de dano não podem ser movidos."""
+    return any_ability_in_play(state, None, "Watchful Eye")
 
 
 def prevents_ability_effects(state: GameState, defender: PokemonInPlay) -> bool:
