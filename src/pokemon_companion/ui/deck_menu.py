@@ -19,6 +19,7 @@ from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QPixmap
 from PyQt6.QtWidgets import (
     QButtonGroup,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -32,6 +33,7 @@ from pokemon_companion.cards_db.cache import CardCache
 from pokemon_companion.cards_db.decklist_parser import load_deck
 from pokemon_companion.cards_db.models import Card
 from pokemon_companion.ui.art import ArtProvider
+from pokemon_companion.ui.deck_import import DeckImportDialog
 from pokemon_companion.ui.theme import (
     BONE,
     FELT_DEEP,
@@ -366,11 +368,13 @@ class DeckMenu(QWidget):
         entries: list[DeckEntry] | None = None,
         art: ArtProvider | None = None,
         cache_factory: Callable[[], CardCache] = CardCache,
+        import_dialog: Callable[..., DeckImportDialog] = DeckImportDialog,
     ) -> None:
         super().__init__()
         self._entries = entries if entries is not None else discover_decks()
         self._art = art
         self._cache_factory = cache_factory
+        self._import_dialog = import_dialog
         self._cards: dict[Path, Card | None] = {}
         self.difficulty = "medium"
         self.armed = PLAYER
@@ -452,6 +456,17 @@ class DeckMenu(QWidget):
 
     def _build_footer(self) -> QHBoxLayout:
         row = QHBoxLayout()
+        self.import_button = QPushButton("Importar deck")
+        self.import_button.setFont(ui_font(10, QFont.Weight.DemiBold))
+        self.import_button.setMinimumHeight(38)
+        self.import_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.import_button.setStyleSheet("""
+            QPushButton { color: #f7efe1; background: rgba(247,239,225,16);
+                border: 1px solid rgba(247,239,225,45); border-radius: 8px; padding: 8px 16px; }
+            QPushButton:hover { background: rgba(247,239,225,30); }
+            """)
+        self.import_button.clicked.connect(self._import_deck)
+        row.addWidget(self.import_button)
         self.status = QLabel("")
         self.status.setFont(ui_font(9.5))
         self.status.setStyleSheet("color: rgba(247,239,225,150); background: transparent;")
@@ -523,25 +538,63 @@ class DeckMenu(QWidget):
                 return
             entry = pending.pop(0)
             self.status.setText(f"Lendo as listas… faltam {len(pending)}")
-            try:
-                with self._cache_factory() as cache:
-                    card = deck_highlight(entry, cache)
-            except Exception:  # noqa: BLE001 - arte é opcional
-                card = None
-            self._cards[entry.path] = card
-            if card is not None:
-                pixmap = self._pixmap(card)
-                accent = QColor(energy_color(primary_type(card.types)))
-                for tile in self.tiles:
-                    if tile.entry is not None and tile.entry.path == entry.path:
-                        tile.set_art(pixmap, accent)
-                for hero in self.heroes.values():
-                    if hero.entry is not None and hero.entry.path == entry.path:
-                        hero.set_art(pixmap, accent)
-                self.versus.set_colors(self._accent(PLAYER), self._accent(OPPONENT))
+            self._load_entry_art(entry)
             QTimer.singleShot(0, step)
 
         QTimer.singleShot(0, step)
+
+    def _load_entry_art(self, entry: DeckEntry) -> None:
+        try:
+            with self._cache_factory() as cache:
+                card = deck_highlight(entry, cache)
+        except Exception:  # noqa: BLE001 - arte é opcional
+            card = None
+        self._cards[entry.path] = card
+        if card is not None:
+            pixmap = self._pixmap(card)
+            accent = QColor(energy_color(primary_type(card.types)))
+            for tile in self.tiles:
+                if tile.entry is not None and tile.entry.path == entry.path:
+                    tile.set_art(pixmap, accent)
+            for hero in self.heroes.values():
+                if hero.entry is not None and hero.entry.path == entry.path:
+                    hero.set_art(pixmap, accent)
+            self.versus.set_colors(self._accent(PLAYER), self._accent(OPPONENT))
+
+    # ------------------------------------------------------------------
+    # importação
+    def _import_deck(self) -> None:
+        dialog = self._import_dialog(parent=self)
+        if dialog.exec() != QDialog.DialogCode.Accepted or dialog.imported_path is None:
+            return
+        entry = read_entry(dialog.imported_path)
+        self._entries = [e for e in self._entries if e.path != entry.path] + [entry]
+        self._rebuild_strip()
+        self.choose(self.armed, entry)
+        self.arm(OPPONENT if self.armed == PLAYER else PLAYER)
+        self.status.setText(f"Importado: {entry.title}")
+        self._load_entry_art(entry)
+
+    def _rebuild_strip(self) -> None:
+        layout = self.layout()
+        assert isinstance(layout, QVBoxLayout)
+        index = layout.indexOf(self.strip)
+        old_strip = self.strip
+        new_strip = DeckStrip(self._entries)
+        new_strip.chosen.connect(self._on_deck_chosen)
+        layout.removeWidget(old_strip)
+        old_strip.deleteLater()
+        layout.insertWidget(index, new_strip)
+        self.strip = new_strip
+        for path, card in self._cards.items():
+            if card is None:
+                continue
+            pixmap = self._pixmap(card)
+            accent = QColor(energy_color(primary_type(card.types)))
+            for tile in self.tiles:
+                if tile.entry is not None and tile.entry.path == path:
+                    tile.set_art(pixmap, accent)
+        self.strip.mark([h.entry for h in self.heroes.values() if h.entry is not None])
 
     def _start(self) -> None:
         player, opponent = self.selection(PLAYER), self.selection(OPPONENT)

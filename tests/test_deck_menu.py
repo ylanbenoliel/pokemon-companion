@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from PyQt6.QtWidgets import QDialog
 
 from pokemon_companion.ui.art import ArtProvider
 from pokemon_companion.ui.deck_menu import (
@@ -118,3 +119,52 @@ def test_difficulty_buttons_change_selection(qtbot, decks, tmp_path):
     next(b for b in menu.difficulty_buttons.buttons() if b.text() == "Difícil").click()
 
     assert menu.difficulty == "hard"
+
+
+class _FakeImportDialog:
+    """Substitui `DeckImportDialog`: já "importado", sem abrir janela real."""
+
+    def __init__(self, imported_path):
+        self.imported_path = imported_path
+
+    def exec(self) -> int:
+        return QDialog.DialogCode.Accepted
+
+
+def test_importing_a_deck_adds_it_to_the_strip_and_fills_the_armed_side(qtbot, decks, tmp_path):
+    imported = decks / "data"
+    imported.mkdir()
+    imported_path = imported / "minha_lista.txt"
+    imported_path.write_text(
+        "# Minha Lista — importado agora\nPokémon (1)\n4 Dreepy TWM 128\n", encoding="utf-8"
+    )
+    entries = discover_decks((decks / "top",))
+    menu = DeckMenu(
+        entries=entries,
+        art=ArtProvider(art_dir=tmp_path / "art", fetch=lambda url: None),
+        import_dialog=lambda parent: _FakeImportDialog(imported_path),
+    )
+    qtbot.addWidget(menu)
+    assert menu.armed == PLAYER
+
+    menu.import_button.click()
+
+    assert menu.selection(PLAYER).title == "Minha Lista"
+    assert menu.armed == OPPONENT
+    assert "Minha Lista" in [t.entry.title for t in menu.strip.tiles]
+    assert "Importado" in menu.status.text()
+
+
+def test_importing_nothing_leaves_the_menu_untouched(qtbot, decks, tmp_path):
+    entries = discover_decks((decks / "top",))
+    menu = DeckMenu(
+        entries=entries,
+        art=ArtProvider(art_dir=tmp_path / "art", fetch=lambda url: None),
+        import_dialog=lambda parent: _FakeImportDialog(None),
+    )
+    qtbot.addWidget(menu)
+    before = menu.selection(PLAYER)
+
+    menu.import_button.click()
+
+    assert menu.selection(PLAYER) == before
