@@ -11,7 +11,7 @@ trabalho avançar.
 ```bash
 cd ~/pokemon_companion
 uv sync                 # instala dependências em .venv
-uv run pytest -v        # confirma que tudo continua passando (90 testes)
+uv run pytest -v        # confirma que tudo continua passando (100 testes)
 uv run mypy src          # type-check
 uv run black --check . && uv run ruff check .   # formatação/lint
 
@@ -33,29 +33,44 @@ uv run python -m pokemon_companion.ui.app --difficulty hard
 - ✅ **Fase 3 — UI gráfica (PyQt6)**: janela funcional, board da IA/jogador, ações por clique, turno da IA via `QTimer`. **Redesenhada visualmente** (ver `ui/theme.py` + `ui/pokemon_card_widget.py`): fundo em degradê roxo, cards de Pokémon com borda colorida por tipo de energia, barra de HP com cor por porcentagem (verde/amarelo/vermelho), pips de energia anexada, pips de prêmios, botões e listas estilizados via QSS — inspirado no visual do Pokémon TCG Pocket em vez do label de texto monoespaçado original. **Validada visualmente** (screenshots renderizados offscreen antes/depois do redesign, ver nota abaixo) e com um teste de partida completa de ponta a ponta pela UI. Não há skill deste ambiente para layout de app desktop (as skills de design existentes aqui são para Artifacts web/HTML) — o redesign foi feito aplicando princípios de design diretamente via QSS.
 - ✅ **Fase 4 — Visão computacional (building blocks)**: captura de câmera multiplataforma, calibração por homografia, mapeamento de zonas, detecção de ocupação/estabilidade, reconhecimento por pHash, download+cache de imagens de carta, e um widget de calibração/debug. **Todos os módulos têm testes unitários com dados sintéticos** (sem precisar de câmera real).
 - ✅ **Fase 5 — Polimento (parcial, ver detalhes)**: prêmios diferenciados por raridade (ex/GX/V=2, VMAX/VSTAR=3), exemplo funcional de efeito de ataque registrado (`engine/effects/basic_effects.py`, testado de ponta a ponta via o registry real), histórico de partida exportável em JSON (`--record-history`).
+- ✅ **Redesign visual (pós-plano original, a pedido do usuário)**: fotos
+  reais das cartas (`ui/card_art.py`, com placeholder colorido por tipo
+  quando falha), ícones de energia por emoji, mão como fileira de
+  miniaturas com arte (`ui/hand_view.py`), e interação clicável estilo
+  Hearthstone/TCG Pocket (clique num ataque pronto para atacar, num
+  Pokémon do banco destacado para recuar, numa carta da mão para jogá-la).
 
-88 testes passando (`uv run pytest`), `black`/`ruff`/`mypy` limpos. Dois
-commits no histórico até agora (Fases 0+1, Fase 2) — o trabalho das Fases
-3-5 ainda está para commitar nesta sessão.
+100 testes passando (`uv run pytest`), `black`/`ruff`/`mypy` limpos. Commits
+no histórico: Fases 0+1, Fase 2, Fases 3-5, correção de bug de nome
+invisível no banco, lista de ataques no card ativo, e o redesign visual com
+fotos/interação clicável.
 
-## O que NÃO foi validado (limitações honestas deste ambiente de trabalho)
+## O que foi e não foi validado neste ambiente de trabalho
 
-Este código foi escrito num ambiente sem internet, sem display gráfico real
-e sem câmera/hardware. Isso não impediu testar a lógica (ver estratégias de
-teste abaixo), mas alguns fluxos de ponta a ponta só podem ser confirmados
-por você, com hardware/rede reais:
+Este código foi escrito sem display gráfico real e sem câmera/hardware —
+mas **com acesso à internet** (confirmado nesta sessão: as URLs de imagem
+usadas no deck de demonstração foram checadas contra o CDN real do
+`pokemontcg.io` antes de serem usadas). Isso permitiu validar mais coisas
+do que o esperado inicialmente:
 
 1. **Decklists reais via API** (`--player-deck`/`--opponent-deck`): a lógica
-   está 100% coberta por testes com HTTP mockado, mas nunca foi executada
-   contra a API real do `pokemontcg.io`. Teste com uma decklist real antes
-   de confiar no fluxo.
+   está coberta por testes com HTTP mockado; a API principal
+   (`api.pokemontcg.io`) chegou a retornar 502 (fora do ar) durante um
+   teste manual nesta sessão, mas o CDN de imagens (`images.pokemontcg.io`)
+   respondeu normalmente. Ainda não foi feito um teste de ponta a ponta
+   completo de "importar uma decklist real" — vale testar quando a API
+   principal estiver disponível.
 2. **UI gráfica**: testada de verdade com `pytest-qt` rodando headless
-   (`QT_QPA_PLATFORM=offscreen`) — inclusive um screenshot real foi
-   renderizado e inspecionado durante o desenvolvimento, e um bug de
-   crash real (`QImage`/`QPixmap` construído antes de existir uma
-   `QApplication`, ou com um buffer temporário que era liberado antes do
-   Qt terminar de usá-lo) foi encontrado e corrigido através dos testes.
-   Ainda assim, vale abrir a janela de verdade (`uv run python -m
+   (`QT_QPA_PLATFORM=offscreen`) — vários screenshots reais foram
+   renderizados e inspecionados durante o desenvolvimento (inclusive com
+   fotos reais de carta baixadas da internet), e dois bugs reais de
+   rendering foram encontrados e corrigidos assim: (a) `QImage`/`QPixmap`
+   construído antes de existir uma `QApplication`, ou com um buffer
+   temporário liberado antes do Qt terminar de usá-lo; (b) `deleteLater()`
+   só destrói o widget no próximo ciclo do event loop, então limpar uma
+   lista de widgets (energia, ataques, mão) sem `hide()` imediato deixava
+   texto de linhas antigas sobreposto às novas por um instante. Ainda
+   assim, vale abrir a janela de verdade (`uv run python -m
    pokemon_companion.ui.app`) numa máquina com display para conferir a
    experiência visual/de clique real.
 3. **Visão computacional com câmera física**: `camera_capture.py`,
@@ -90,11 +105,14 @@ pokemon_companion/
 │   │   └── effects/                 # registry.py + basic_effects.py (1 exemplo registrado)
 │   ├── ai/                          # Fase 1 — completo
 │   │   ├── opponent.py (Protocol + build_ai), heuristics_easy/medium/hard.py, weights.yaml
-│   ├── ui/                          # Fase 3 — completo, com redesign visual
-│   │   ├── app.py (MainWindow, QApplication), confirmation_dialog.py
-│   │   ├── theme.py                 # QSS + paleta por tipo de energia
-│   │   ├── board_view.py            # board de um lado (PrizeTracker + cards)
-│   │   ├── pokemon_card_widget.py   # card individual: HP bar, pips de energia, status
+│   ├── ui/                          # Fase 3 — completo, com redesign visual + clique
+│   │   ├── app.py (MainWindow, QApplication)
+│   │   ├── theme.py                 # QSS + paleta/emoji por tipo de energia
+│   │   ├── card_art.py              # download+cache de arte real (com placeholder)
+│   │   ├── board_view.py            # board de um lado (PrizeTracker + cards + hand_view)
+│   │   ├── hand_view.py             # mão como fileira de miniaturas clicáveis
+│   │   ├── pokemon_card_widget.py   # card: arte, HP bar, energia, status, ataques clicáveis
+│   │   ├── confirmation_dialog.py
 │   │   └── camera_debug_view.py     # Fase 4 — calibração por clique + overlay de zonas
 │   └── vision/                      # Fase 4 — completo (building blocks)
 │       ├── camera_capture.py, calibration.py, zone_mapper.py
