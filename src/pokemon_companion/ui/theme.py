@@ -82,14 +82,11 @@ QFrame#pokemonCard[empty="true"] {{
 }}
 {_ENERGY_BORDER_RULES}
 
-QLabel#cardName {{
-    font-weight: 700;
-    font-size: 12px;
-    color: #263238;
-}}
-QFrame#pokemonCard[empty="true"] QLabel#cardName {{
-    color: rgba(255, 255, 255, 0.55);
-}}
+/* A cor/peso do nome (#cardName) é definida diretamente em
+   pokemon_card_widget.py, não aqui — um seletor QSS descendente
+   `[empty="true"] QLabel#cardName` não se reavalia de forma confiável
+   quando só o QFrame pai é repolido, deixando o texto preso na cor do
+   estado anterior. */
 
 QProgressBar#hpBar {{
     border: none;

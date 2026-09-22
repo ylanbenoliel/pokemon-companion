@@ -10,6 +10,9 @@ from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QVBoxLayo
 from pokemon_companion.engine.game_state import PokemonInPlay
 from pokemon_companion.ui.theme import STATUS_LABELS, energy_color, hp_bar_color
 
+_NAME_COLOR_FILLED = "#263238"
+_NAME_COLOR_EMPTY = "rgba(255, 255, 255, 0.55)"
+
 
 class EnergyPip(QLabel):
     def __init__(self, energy_type: str) -> None:
@@ -26,7 +29,9 @@ class PokemonCardWidget(QFrame):
     def __init__(self, compact: bool = False) -> None:
         super().__init__()
         self.setObjectName("pokemonCard")
-        self.setMinimumWidth(78 if compact else 150)
+        self._compact = compact
+        self.setMinimumWidth(92 if compact else 150)
+        self.setMinimumHeight(72 if compact else 88)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
@@ -34,7 +39,18 @@ class PokemonCardWidget(QFrame):
 
         self.name_label = QLabel("(vazio)")
         self.name_label.setObjectName("cardName")
-        self.name_label.setWordWrap(True)
+        if compact:
+            # Nomes longos ("Charmander", "Rhydon"...) não cabem numa carta
+            # estreita do banco — em vez de quebrar linha (o que espremia a
+            # altura reservada até o texto sumir), mantemos 1 linha e
+            # truncamos com "..." via _display_name, garantindo que o nome
+            # sempre apareça, mesmo que cortado.
+            self.name_label.setWordWrap(False)
+            font = self.name_label.font()
+            font.setPointSize(max(font.pointSize() - 2, 7))
+            self.name_label.setFont(font)
+        else:
+            self.name_label.setWordWrap(True)
         layout.addWidget(self.name_label)
 
         self.hp_bar = QProgressBar()
@@ -55,6 +71,13 @@ class PokemonCardWidget(QFrame):
 
         self.set_empty()
 
+    def _display_name(self, name: str) -> str:
+        # Truncamento por caracteres (não por pixel) para o nome nunca
+        # desaparecer, e ser independente de fonte/DPI da tela real.
+        if self._compact and len(name) > 11:
+            return name[:10] + "…"
+        return name
+
     def _clear_energy_pips(self) -> None:
         while self._energy_row.count():
             item = self._energy_row.takeAt(0)
@@ -68,6 +91,8 @@ class PokemonCardWidget(QFrame):
         self.setProperty("empty", True)
         self.setProperty("energyType", None)
         self.name_label.setText("(vazio)")
+        self.name_label.setToolTip("")
+        self.name_label.setStyleSheet(f"color: {_NAME_COLOR_EMPTY}; font-weight: 700;")
         self.hp_bar.setRange(0, 1)
         self.hp_bar.setValue(0)
         self.hp_bar.setFormat("")
@@ -78,7 +103,15 @@ class PokemonCardWidget(QFrame):
 
     def update_pokemon(self, mon: PokemonInPlay) -> None:
         self.setProperty("empty", False)
-        self.name_label.setText(mon.card.name)
+        self.name_label.setText(self._display_name(mon.card.name))
+        self.name_label.setToolTip(mon.card.name)
+        # Cor definida diretamente aqui (não via seletor QSS descendente
+        # `[empty="true"] QLabel#cardName`): repolir o QFrame pai não força
+        # reavaliação de estilo do QLabel filho de forma confiável — o
+        # texto ficava "preso" na cor clara do estado vazio mesmo depois de
+        # o card ser preenchido. Bug real, encontrado inspecionando um
+        # screenshot com o banco cheio.
+        self.name_label.setStyleSheet(f"color: {_NAME_COLOR_FILLED}; font-weight: 700;")
 
         max_hp = mon.card.hp or 1
         current_hp = mon.current_hp
