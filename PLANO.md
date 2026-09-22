@@ -236,6 +236,49 @@ efeito (~23% das cartas). Todos implementados. Mecanismos novos, genéricos
 Torneio só entre os 5 novos (40 partidas, IA difícil): 0 erros, Mega Starmie
 81% e Mega Chandelure 25%.
 
+## Manutenção das regras: rotação do Standard e rotina semanal
+
+`cards_db/standard.py` baixa da TCGdex todas as cartas legais no Standard
+(`legal.standard=true`) e grava as assinaturas legais em
+`cards_db/standard_legal.json` (versionado). Ao carregar um deck, carta fora
+da rotação vira aviso (não bloqueia). `tools/maintenance.py --refresh`
+atualiza pool + meta, mede a cobertura e grava `data/maintenance_report.md`;
+sai com código 1 se o meta tiver texto sem efeito ou carta fora da rotação.
+
+Situação em 22/09/2026 (marcas G–J, 3345 impressões, 1409 nomes): meta com
+0 textos faltando e 0 cartas fora da rotação; pool legal com 881 de 3636
+textos-impressão cobertos — faltam ~1460 efeitos distintos (1125 ataques,
+218 Habilidades, 97 Treinadores, 16 Estádios, 6 energias especiais).
+
+**Rotina agendada (pendente: precisa do repositório no GitHub)** — segunda
+às 9h de Belém (`0 12 * * 1` UTC), lote de ~40 efeitos por PR. Prompt:
+
+> Você é a rotina semanal de manutenção das regras do projeto
+> pokemon_companion (Pokémon TCG em Python; use `uv`; o PLANO.md explica o
+> projeto). 1) `uv sync` e `uv run python tools/maintenance.py --refresh`. Se o
+> download da TCGdex ou do Limitless falhar, não improvise: pare e explique o
+> erro. 2) Leia `data/maintenance_report.md`. Prioridade: (a) textos sem
+> efeito nos decks do meta e cartas fora da rotação neles; (b) depois, até
+> somar ~40 efeitos, textos da seção "Faltando no pool legal", começando
+> pelos que aparecem em mais impressões. 3) Implemente em
+> `src/pokemon_companion/engine/effects/`: ataques em `attacks.py`
+> (`@attack`), Habilidades ativadas em `abilities.py`, Treinadores e
+> Estádios em `trainers.py`, efeitos contínuos em `passives.py`, e uma linha
+> em português por Treinador/Habilidade em `descriptions.py`. Nunca coloque
+> nome de carta ou número fixo em código compartilhado (`core.py`, funções
+> gerais de `passives.py`): crie um mecanismo genérico. Leia valores do
+> texto com `number_in_text` e, quando o efeito for igual ao de uma carta já
+> implementada, só acrescente o nome ao decorator. Escolhas estratégicas
+> viram `options`; o resto é heurística. 4) Teste cada mecanismo novo em
+> `tests/test_effects.py`. Tudo verde antes do PR: `uv run black . && uv run
+> ruff check . && uv run mypy src && uv run pytest -q`; `uv run python
+> tools/effect_coverage.py examples/decks/top` com 0 faltando; `uv run
+> python tools/tournament.py examples/decks/top --games 2 --level hard` sem
+> erros. 5) Atualize os números desta seção do PLANO.md. 6) Commits em
+> português, numa branch nova; abra um PR para `main` com a cobertura antes e
+> depois e a lista do que foi implementado. Nunca faça push na `main` nem
+> force push. Se não houver nada a fazer, não abra PR.
+
 ## Torneio IA vs IA — top 20 do meta (resultados e ajustes)
 
 `tools/tournament.py` joga um round robin headless (IA difícil nos dois
