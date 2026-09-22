@@ -1,0 +1,21 @@
+# Configuração padrão do pokemon-companion.
+# Caminhos de dados/cache reais são resolvidos em runtime via `platformdirs`
+# (não fixos aqui), para funcionar corretamente em Windows/Linux/macOS.
+
+pokemontcg_api:
+  base_url: "https://api.pokemontcg.io/v2"
+  # Opcional: aumenta o rate limit de 30 para 20000 req/dia.
+  # Defina via variável de ambiente POKEMONTCG_API_KEY, nunca aqui.
+  api_key_env_var: "POKEMONTCG_API_KEY"
+
+camera:
+  # Índice do dispositivo de câmera (0 = padrão do sistema).
+  device_index: 0
+  # Backend é escolhido automaticamente por SO em vision/camera_capture.py;
+  # "auto" força o fallback cv2.CAP_ANY.
+  backend: "auto"
+  analysis_fps: 3
+
+ai:
+  default_difficulty: "medium"
+  weights_file: "ai/weights.yaml"
