@@ -25,7 +25,7 @@ def render_pokemon(label: str, mon: PokemonInPlay | None) -> str:
     energies = ", ".join(mon.attached_energies) or "nenhuma"
     status = "-" if mon.status.name == "NONE" else mon.status.name
     return (
-        f"{label}: {mon.card.name} HP {mon.current_hp}/{mon.card.hp} "
+        f"{label}: {mon.card.name} HP {mon.current_hp}/{mon.max_hp} "
         f"| Energia: {energies} | Status: {status}"
     )
 
@@ -47,7 +47,7 @@ def render_state(state: GameState) -> str:
 def _apply_and_record(
     state: GameState, action: Action, recorder: MatchRecorder | None
 ) -> list[str]:
-    turn, actor = state.turn_number, state.active_player
+    turn, actor = state.turn_number, rules.decision_player(state)
     messages = rules.apply_action(state, action)
     if recorder is not None:
         recorder.record(turn, actor, action, messages)
@@ -96,14 +96,16 @@ def run_game(
         print(f"  ! {warning}")
 
     first = random.choice([PlayerId.PLAYER, PlayerId.OPPONENT])  # cara ou coroa
-    state = turn_manager.start_new_game(player_deck, opponent_deck, first_player=first)
+    state = turn_manager.start_new_game(
+        player_deck, opponent_deck, first_player=first, manual=frozenset({PlayerId.PLAYER})
+    )
     print(f"Cara ou coroa: {'você' if first == PlayerId.PLAYER else 'a IA'} começa.")
     ai = build_ai(difficulty)
     recorder = MatchRecorder() if history_path else None
     print(f"Nova partida iniciada (dificuldade da IA: {difficulty}).")
 
     while not rules.is_game_over(state):
-        if state.active_player == PlayerId.PLAYER:
+        if rules.decision_player(state) == PlayerId.PLAYER:
             human_turn(state, recorder)
         else:
             ai_turn(state, ai, recorder)

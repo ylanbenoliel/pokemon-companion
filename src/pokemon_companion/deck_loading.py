@@ -20,6 +20,11 @@ class DeckLoadError(Exception):
     pass
 
 
+def make_lookup() -> CardLookup:
+    """pokemontcg.io primeiro; se estiver fora do ar, TCGdex (uma falha só)."""
+    return FallbackLookup([PokemonTcgApiClient(max_retries=1), TcgdexClient()])
+
+
 def _load_deck_file(
     path: Path, cache: CardCache, api_client: CardLookup
 ) -> tuple[list[Card], list[str]]:
@@ -47,8 +52,7 @@ def load_decks(
 
     warnings: list[str] = []
     with CardCache() as cache:
-        # pokemontcg.io primeiro; se estiver fora do ar, TCGdex (uma falha só).
-        api_client = FallbackLookup([PokemonTcgApiClient(max_retries=1), TcgdexClient()])
+        api_client = make_lookup()
 
         if player_deck_path is not None:
             player_deck, player_warnings = _load_deck_file(player_deck_path, cache, api_client)

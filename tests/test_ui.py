@@ -157,7 +157,7 @@ def test_playing_basic_to_bench_adds_token_and_removes_hand_card(controller):
 
     targets = ctrl.targets_for_hand(0)
     assert list(targets) == [("zone", "bench")]
-    ctrl.perform(targets[("zone", "bench")], card_source=QPointF(640, 800))
+    ctrl.perform(targets[("zone", "bench")][0], card_source=QPointF(640, 800))
 
     assert len(state.player.bench) == 1
     assert ctrl.scene.token_for(state.player.bench[0]) is not None
@@ -277,7 +277,7 @@ def test_evolution_reuses_token_with_new_card(controller):
     ctrl = controller(state)
     token = ctrl.scene.token_for(state.player.active)
 
-    (action,) = ctrl.targets_for_hand(0).values()
+    ((action,),) = ctrl.targets_for_hand(0).values()
     ctrl.perform(action)
 
     assert state.player.active.card.name == "Charmeleon"
@@ -418,3 +418,123 @@ def test_confirmation_dialog_reject_leaves_selection_none(qtbot):
     dialog.reject()
 
     assert dialog.selected_card is None
+
+
+# --------------------------------------------------------------------------
+# Treinadores, Habilidades, Estádio, promoção e setup na interface
+
+
+def _trainer(name: str, kind: str = "Item"):
+    from pokemon_companion.cards_db.models import Card, Supertype
+
+    return Card(id=f"t-{name}", name=name, supertype=Supertype.TRAINER, subtypes=[kind])
+
+
+def test_item_is_played_by_dropping_on_board(controller):
+    state = _state(_deck_card("Charmander"), _deck_card("Squirtle"), hand=[_trainer("Poké Pad")])
+    state.player.deck = [_deck_card("Squirtle")] * 5
+    ctrl = controller(state)
+    item = ctrl.scene.hand_items[0]
+
+    ctrl._on_drag_started(item)
+    assert ctrl.scene.targets == [("zone", "play")]
+    ctrl._on_dropped(item, QPointF(640, 400))
+
+    assert [c.name for c in state.player.hand] == ["Squirtle"]
+    assert state.player.discard[-1].name == "Poké Pad"
+
+
+def test_boss_orders_highlights_opponent_bench_and_pulls_clicked_pokemon(controller):
+    state = _state(
+        _deck_card("Charmander"),
+        _deck_card("Squirtle"),
+        hand=[_trainer("Boss's Orders", "Supporter")],
+    )
+    state.opponent.bench = [
+        PokemonInPlay(card=_deck_card("Charmander")),
+        PokemonInPlay(card=_deck_card("Squirtle")),
+    ]
+    ctrl = controller(state)
+    target = state.opponent.bench[1]
+
+    ctrl._on_hand_clicked(ctrl.scene.hand_items[0])
+    assert set(ctrl.scene.targets) == {("token", id(m)) for m in state.opponent.bench}
+    ctrl._on_token_clicked(ctrl.scene.token_for(target))
+
+    assert state.opponent.active is target
+
+
+def test_ability_badge_and_confirmation_panel(controller):
+    from pokemon_companion.cards_db.models import Ability
+
+    kanga = dataclasses.replace(_deck_card("Charmander"), abilities=[Ability(name="Run Errand")])
+    state = _state(kanga, _deck_card("Squirtle"))
+    ctrl = controller(state)
+    token = ctrl.scene.token_for(state.player.active)
+    assert token.ability_ready
+
+    ctrl._on_token_clicked(token)
+    panel = ctrl.scene.choice_panel
+    assert panel is not None and panel.options == ["Usar Run Errand"]
+    panel.chosen.emit(0)
+
+    assert len(state.player.hand) == 2
+    assert ctrl.scene.choice_panel is None
+    assert not token.ability_ready
+
+
+def test_stadium_is_shown_and_used_by_click(controller):
+    state = _state(_deck_card("Charmander"), _deck_card("Squirtle"), hand=[_energy("Fire")] * 3)
+    state.stadium = _trainer("Prism Tower", "Stadium")
+    ctrl = controller(state)
+
+    assert ctrl.scene.stadium_item.isVisible() and ctrl.scene.stadium_item.usable
+    ctrl.scene.stadium_item.clicked.emit()
+
+    assert state.player.stadium_used_this_turn
+    assert len(state.player.hand) == 2  # descartou 2, comprou 1
+    assert not ctrl.scene.stadium_item.usable
+
+
+def test_player_chooses_new_active_after_knockout(controller):
+    state = _state(_deck_card("Charmander"), _deck_card("Squirtle"))
+    state.manual_choices = frozenset({PlayerId.PLAYER})
+    state.player.bench = [PokemonInPlay(card=_deck_card("Squirtle"))]
+    state.player.active.damage_counters = 60  # Squirtle (água) nocauteia com fraqueza
+    state.active_player = PlayerId.OPPONENT
+    state.opponent.active.attached_energies = ["Water"]
+    ctrl = controller(state)
+    ctrl._ai_timer.stop()
+
+    ctrl.perform(UseAttack(attack_index=0))
+
+    assert state.pending_promotion == PlayerId.PLAYER
+    assert ctrl.is_player_turn
+    benched = state.player.bench[0]
+    assert ctrl.scene.targets == [("token", id(benched))]
+    ctrl._on_token_clicked(ctrl.scene.token_for(benched))
+
+    assert state.player.active is benched
+    assert state.active_player == PlayerId.PLAYER
+
+
+def test_manual_setup_uses_ready_button(controller):
+    charmander, squirtle = _deck_card("Charmander"), _deck_card("Squirtle")
+    state = turn_manager.start_new_game(
+        [charmander] * 30 + [squirtle] * 30,
+        [squirtle] * 20 + [_energy("Water")] * 40,
+        rng=random.Random(1),
+        first_player=PlayerId.PLAYER,
+        manual=frozenset({PlayerId.PLAYER}),
+    )
+    ctrl = controller(state)
+    assert ctrl.scene.end_turn_button.mode == "choose"
+
+    ((action,),) = ctrl.targets_for_hand(0).values()
+    ctrl.perform(action)
+    assert state.player.active is not None
+    assert ctrl.scene.end_turn_button.mode == "setup"
+
+    ctrl.scene.end_turn_button.clicked.emit()
+    assert state.pending_setup == ()
+    assert ctrl.scene.end_turn_button.mode in ("play", "done")

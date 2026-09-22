@@ -1,7 +1,9 @@
 # Pesos da função de avaliação heurística usada por MediumAI/HardAI.
 # Ajustável sem tocar em código — ver ai/heuristics_medium.py:evaluate_state.
+# Chaves ausentes usam DEFAULT_WEIGHTS. Valores calibrados no torneio IA vs IA
+# dos 20 decks do meta (tools/tournament.py).
 
-medium:
+medium: &default
   win: 1000.0
   prizes_taken: 25.0
   board_presence: 5.0
@@ -9,12 +11,8 @@ medium:
   own_hp: 0.4
   lose_own_active: 80.0
   energy_attached: 5.0
+  hand_size: 2.0
+  attack_ready: 12.0
+  deck_out: 150.0
 
-hard:
-  win: 1000.0
-  prizes_taken: 30.0
-  board_presence: 5.0
-  opponent_hp: 1.2
-  own_hp: 0.5
-  lose_own_active: 100.0
-  energy_attached: 6.0
+hard: *default

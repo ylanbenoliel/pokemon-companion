@@ -31,15 +31,14 @@ visão computacional por último:
 
 ## Limitações conhecidas do MVP
 
-- Cobre as regras essenciais do TCG (energia, ataques, dano, evolução, banco,
-  prêmios, condições de status básicas). **Não** cobre: efeitos de
-  Trainer/Item complexos, ataques especiais GX/V/VSTAR, abilities passivas
-  complexas, regras de ACE SPEC, ou regras de torneio.
-- Todos os Pokémon nocauteados valem 1 prêmio no MVP (sem diferenciação por
-  raridade ex/GX/V).
-- Efeitos de texto de ataques (coin flips, descarte de energia, etc.) só são
-  aplicados para cartas explicitamente cadastradas em
-  `engine/effects/basic_effects.py`; as demais aplicam apenas o dano base.
+- Segue o livro de regras oficial: Treinadores (1 Apoiador por turno),
+  Estádio, Ferramentas, Habilidades, energias especiais, efeitos de texto
+  de ataques, nocaute no banco, prêmios por tipo (ex/V = 2, Mega ex/VMAX/
+  VSTAR = 3), escolha manual do Ativo/Banco no setup e após nocaute, e
+  Morte Súbita. Os efeitos de cartas são registrados por nome em
+  `engine/effects/` e cobrem os 20 decks do meta em `examples/decks/top/`;
+  cartas fora deles podem ficar sem efeito (ver `tools/effect_coverage.py`).
+- Regras de torneio (tempo, deck check) não são aplicadas.
 - O reconhecimento de cartas por câmera é feito por hashing perceptual
   contra o pool do deck importado do jogador — não contra o card pool
   inteiro. Quando a confiança do reconhecimento é baixa, o app pede

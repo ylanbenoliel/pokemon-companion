@@ -226,8 +226,10 @@ class PokemonToken(QGraphicsObject):
         self.slot: object = "active"
         self.card: Card = mon.card
         self._art = scaled_art(art, 122, 116)
-        self._max_hp = mon.card.hp or 1
+        self._max_hp = mon.max_hp
         self._hp_display = float(mon.current_hp)
+        self._tool: str | None = mon.tool.name if mon.tool is not None else None
+        self._ability_ready = False
         self._energies: list[str] = list(mon.attached_energies)
         self._hidden_energies = 0
         self._status = mon.status.name
@@ -312,10 +314,24 @@ class PokemonToken(QGraphicsObject):
     def update_from(self, mon: PokemonInPlay) -> None:
         """Atualiza energias/status/carta. HP visual é animado à parte."""
         self.card = mon.card
-        self._max_hp = mon.card.hp or 1
+        self._max_hp = mon.max_hp
         self._energies = list(mon.attached_energies)
         self._status = mon.status.name
+        self._tool = mon.tool.name if mon.tool is not None else None
         self.update()
+
+    @property
+    def tool_name(self) -> str | None:
+        return self._tool
+
+    @property
+    def ability_ready(self) -> bool:
+        return self._ability_ready
+
+    def set_ability_ready(self, ready: bool) -> None:
+        if ready != self._ability_ready:
+            self._ability_ready = ready
+            self.update()
 
     def stage_evolution(self, mon: PokemonInPlay, art: QPixmap | None) -> None:
         self._pending = (mon, art)
@@ -443,6 +459,28 @@ class PokemonToken(QGraphicsObject):
             painter.drawRoundedRect(badge, 9, 9)
             painter.setPen(QColor("white"))
             draw_text(painter, badge, label)
+
+        if self._tool:
+            painter.setFont(ui_font(8))
+            label = QFontMetricsF(painter.font()).elidedText(
+                self._tool, Qt.TextElideMode.ElideRight, 110
+            )
+            width = QFontMetricsF(painter.font()).horizontalAdvance(label) + 14
+            pill = QRectF(-width / 2, 22, width, 17)
+            painter.setPen(QPen(QColor("white"), 1))
+            painter.setBrush(QColor(TRAINER_COLORS["Tool"]))
+            painter.drawRoundedRect(pill, 8.5, 8.5)
+            painter.setPen(QColor("white"))
+            draw_text(painter, pill, label)
+
+        if self._ability_ready:
+            badge = QRectF(card.right() - 44, card.top() + 6, 38, 18)
+            painter.setPen(QPen(QColor("white"), 1.2))
+            painter.setBrush(QColor("#c2185b"))
+            painter.drawRoundedRect(badge, 9, 9)
+            painter.setPen(QColor("white"))
+            painter.setFont(ui_font(8))
+            draw_text(painter, badge, "HAB.")
 
         if self._flash > 0:
             overlay = QColor(self._flash_color)
@@ -1274,7 +1312,7 @@ class EndTurnButton(GameButton):
 
     def set_mode(self, mode: str) -> None:
         self._mode = mode
-        self.set_enabled(mode in ("play", "done"))
+        self.set_enabled(mode in ("play", "done", "setup"))
         self.set_highlight(mode == "done")
         self.update()
 
@@ -1293,6 +1331,8 @@ class EndTurnButton(GameButton):
             "done": "FIM DO TURNO",
             "ai": "TURNO DA IA",
             "watch": "ESPECTADOR",
+            "setup": "PRONTO",
+            "choose": "ESCOLHA",
         }.get(self._mode, "FIM DE JOGO")
         draw_outlined_text(
             painter,
@@ -1784,3 +1824,190 @@ class GameOverOverlay(QGraphicsObject):
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent | None) -> None:
         if event is not None:
             event.accept()  # bloqueia cliques no tabuleiro por trás
+
+
+# --------------------------------------------------------------------------
+# escolhas e Estádio
+
+
+class ChoicePanel(QGraphicsObject):
+    """Painel modal com uma pergunta e botões de opção (alvo de um efeito,
+    Habilidade a usar, modo de um ataque...). Emite `chosen(índice)`, ou
+    `chosen(-1)` ao cancelar."""
+
+    chosen = pyqtSignal(int)
+
+    BUTTON_W = 330.0
+    BUTTON_H = 44.0
+    GAP = 10.0
+
+    def __init__(self, width: float, height: float, title: str, options: list[str]) -> None:
+        super().__init__()
+        self._w = width
+        self._h = height
+        self.title = title
+        self.options = list(options)
+        columns = 1 if len(options) <= 6 else 2
+        rows = -(-len(options) // columns)
+        panel_w = columns * self.BUTTON_W + (columns + 1) * 24
+        panel_h = 96 + rows * (self.BUTTON_H + self.GAP) + self.BUTTON_H + 30
+        self._panel = QRectF(width / 2 - panel_w / 2, height / 2 - panel_h / 2, panel_w, panel_h)
+        self.buttons: list[GameButton] = []
+        for index, label in enumerate(options):
+            column, row = divmod(index, rows)
+            button = self._button(label, QColor("#3a8dff"), QColor("#1c4fc4"))
+            x = self._panel.left() + 24 + self.BUTTON_W / 2 + column * (self.BUTTON_W + 24)
+            y = self._panel.top() + 86 + self.BUTTON_H / 2 + row * (self.BUTTON_H + self.GAP)
+            button.setPos(x, y)
+            button.clicked.connect(lambda i=index: self.chosen.emit(i))
+            self.buttons.append(button)
+        self.cancel_button = self._button("CANCELAR", QColor("#6b7488"), QColor("#454d60"))
+        self.cancel_button.setPos(width / 2, self._panel.bottom() - 16 - self.BUTTON_H / 2)
+        self.cancel_button.clicked.connect(lambda: self.chosen.emit(-1))
+
+    def _button(self, label: str, top: QColor, bottom: QColor) -> GameButton:
+        button = GameButton(self.BUTTON_W, self.BUTTON_H)
+        button.setParentItem(self)
+
+        def paint_label(painter: QPainter) -> None:
+            painter.setPen(QColor("white"))
+            painter.setFont(ui_font(11, QFont.Weight.Bold))
+            text = QFontMetricsF(painter.font()).elidedText(
+                label, Qt.TextElideMode.ElideRight, self.BUTTON_W - 24
+            )
+            draw_text(painter, button.rect(), text)
+
+        button.paint_content = paint_label  # type: ignore[method-assign]
+        button.base_colors = lambda: (top, bottom)  # type: ignore[method-assign]
+        return button
+
+    def boundingRect(self) -> QRectF:
+        return QRectF(0, 0, self._w, self._h)
+
+    def paint(
+        self,
+        painter: QPainter | None,
+        option: QStyleOptionGraphicsItem | None,
+        widget: QWidget | None = None,
+    ) -> None:
+        if painter is None:
+            return
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.fillRect(self.boundingRect(), QColor(4, 8, 20, 150))
+        paint_soft_shadow(painter, self._panel, 20)
+        gradient = QLinearGradient(self._panel.topLeft(), self._panel.bottomLeft())
+        gradient.setColorAt(0.0, QColor("#1d2b4f"))
+        gradient.setColorAt(1.0, QColor("#0e1630"))
+        painter.setPen(QPen(QColor(GOLD), 2))
+        painter.setBrush(QBrush(gradient))
+        painter.drawRoundedRect(self._panel, 20, 20)
+        painter.setPen(QColor("white"))
+        painter.setFont(ui_font(15, QFont.Weight.Black))
+        draw_text(
+            painter,
+            QRectF(self._panel.left() + 16, self._panel.top() + 18, self._panel.width() - 32, 44),
+            self.title,
+            wrap=True,
+        )
+
+    def mousePressEvent(self, event: QGraphicsSceneMouseEvent | None) -> None:
+        if event is not None:
+            event.accept()  # modal: bloqueia o tabuleiro por trás
+
+
+class StadiumCard(QGraphicsObject):
+    """Estádio em jogo, no meio do tabuleiro. Brilha quando o seu efeito de
+    "uma vez por turno" pode ser usado; clicar usa o efeito."""
+
+    clicked = pyqtSignal()
+    RECT = QRectF(-70, -48, 140, 96)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._card: Card | None = None
+        self._owner_label = ""
+        self._glow = 0.0
+        self._pulse: QPropertyAnimation | None = None
+        self._usable = False
+        self.setAcceptHoverEvents(True)
+
+    def _get_glow(self) -> float:
+        return self._glow
+
+    def _set_glow(self, value: float) -> None:
+        self._glow = value
+        self.update()
+
+    glow = pyqtProperty(float, fget=_get_glow, fset=_set_glow)
+
+    @property
+    def card(self) -> Card | None:
+        return self._card
+
+    @property
+    def usable(self) -> bool:
+        return self._usable
+
+    def set_stadium(self, card: Card | None, owner_label: str) -> None:
+        self._card = card
+        self._owner_label = owner_label
+        self.setVisible(card is not None)
+        self.update()
+
+    def set_usable(self, usable: bool) -> None:
+        if usable == self._usable:
+            return
+        self._usable = usable
+        if self._pulse is not None:
+            self._pulse.stop()
+            self._pulse = None
+        if usable:
+            self._pulse = _pulse_animation(self, b"glow")
+            if self._pulse is None:
+                self.glow = 1.0
+            else:
+                self._pulse.start()
+        else:
+            self.glow = 0.0
+        self.setCursor(Qt.CursorShape.PointingHandCursor if usable else Qt.CursorShape.ArrowCursor)
+
+    def boundingRect(self) -> QRectF:
+        return self.RECT.adjusted(-16, -16, 16, 16)
+
+    def paint(
+        self,
+        painter: QPainter | None,
+        option: QStyleOptionGraphicsItem | None,
+        widget: QWidget | None = None,
+    ) -> None:
+        if painter is None or self._card is None:
+            return
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.RECT
+        paint_glow(painter, rect, 12, GOLD, self._glow)
+        paint_soft_shadow(painter, rect, 12, 4)
+        accent = QColor(TRAINER_COLORS["Stadium"])
+        gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        gradient.setColorAt(0.0, accent.lighter(130))
+        gradient.setColorAt(1.0, accent.darker(150))
+        painter.setPen(QPen(QColor(255, 255, 255, 150), 1.5))
+        painter.setBrush(QBrush(gradient))
+        painter.drawRoundedRect(rect, 12, 12)
+        painter.setPen(QColor(255, 255, 255, 200))
+        painter.setFont(ui_font(8, QFont.Weight.Bold))
+        draw_text(painter, QRectF(rect.left(), rect.top() + 6, rect.width(), 14), "ESTÁDIO")
+        painter.setPen(QColor("white"))
+        painter.setFont(ui_font(11, QFont.Weight.Black))
+        draw_text(painter, rect.adjusted(8, 18, -8, -20), self._card.name, wrap=True)
+        painter.setFont(ui_font(8))
+        painter.setPen(QColor(255, 255, 255, 180))
+        hint = "CLIQUE PARA USAR" if self._usable else self._owner_label
+        draw_text(painter, QRectF(rect.left(), rect.bottom() - 20, rect.width(), 14), hint)
+
+    def mousePressEvent(self, event: QGraphicsSceneMouseEvent | None) -> None:
+        if event is not None:
+            event.accept()
+
+    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent | None) -> None:
+        if self._usable:
+            self.clicked.emit()

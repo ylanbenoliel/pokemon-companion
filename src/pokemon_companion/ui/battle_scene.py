@@ -49,6 +49,7 @@ from pokemon_companion.ui.items import (
     AttackButton,
     Banner,
     CardPile,
+    ChoicePanel,
     DiscardPile,
     EndTurnButton,
     EnergyOrbItem,
@@ -62,6 +63,7 @@ from pokemon_companion.ui.items import (
     PrizeGrid,
     RetreatButton,
     Ring,
+    StadiumCard,
     Toast,
     ZoneHighlight,
     draw_text,
@@ -111,8 +113,10 @@ HAND_BASE_Y = 848.0
 
 BENCH_ZONE = QRectF(350, 630, 580, 142)
 ACTIVE_ZONE = QRectF(556, 424, 168, 196)
+PLAY_ZONE = QRectF(300, 190, 680, 440)  # soltar Treinadores/Estádios "no tabuleiro"
+STADIUM_POS = QPointF(1000, 305)
 
-Target = tuple[str, object]  # ("token", id(mon)) | ("zone", "bench" | "active")
+Target = tuple[str, object]  # ("token", id(mon)) | ("zone", "bench" | "active" | "play")
 ItemT = TypeVar("ItemT", bound=QGraphicsObject)
 
 
@@ -163,6 +167,8 @@ class BattleScene(QGraphicsScene):
     end_turn_clicked = pyqtSignal()
     restart_clicked = pyqtSignal()
     background_clicked = pyqtSignal()
+    stadium_clicked = pyqtSignal()
+    choice_made = pyqtSignal(int)
 
     def __init__(
         self, art: ArtProvider, opponent_label: str = "IA", player_label: str = "VOCÊ"
@@ -204,6 +210,14 @@ class BattleScene(QGraphicsScene):
         self.retreat_button.hide()
 
         self.attack_buttons: list[AttackButton] = []
+
+        self.stadium_item = StadiumCard()
+        self.stadium_item.setPos(STADIUM_POS)
+        self.stadium_item.setZValue(250)
+        self.stadium_item.clicked.connect(self.stadium_clicked.emit)
+        self.stadium_item.hide()
+        self.addItem(self.stadium_item)
+        self._choice: ChoicePanel | None = None
 
         self.inspect = InspectPanel()
         self.inspect.setPos(INSPECT_POS)
@@ -304,6 +318,7 @@ class BattleScene(QGraphicsScene):
         if self._game_over is not None:
             self.removeItem(self._game_over)
             self._game_over = None
+        self.close_choice()
         self.player_prizes.set_count(6)
         self.opponent_prizes.set_count(6)
 
@@ -334,7 +349,7 @@ class BattleScene(QGraphicsScene):
                 if (
                     token.side == side
                     and token.slot == slot
-                    and mon.card.evolves_from == token.card.name
+                    and token.card.name in {card.name for card in mon.prior_cards}
                 ):
                     del self.tokens[old_key]
                     del vanished[old_key]
@@ -374,6 +389,8 @@ class BattleScene(QGraphicsScene):
 
         animations.append(self._sync_hand(state.player.hand, animate))
         self.opponent_hand.set_count(len(state.opponent.hand))
+        owner = "" if state.stadium_owner is None else self.name_of(state.stadium_owner)
+        self.stadium_item.set_stadium(state.stadium, owner)
         animations.append(
             self._sync_piles(
                 state.player,
@@ -852,7 +869,12 @@ class BattleScene(QGraphicsScene):
         retreat_mode: bool,
         playable_hand: set[int],
         end_turn_mode: str,
+        ability_tokens: frozenset[int] = frozenset(),
+        stadium_usable: bool = False,
     ) -> None:
+        for key, token in self.tokens.items():
+            token.set_ability_ready(key in ability_tokens and my_turn)
+        self.stadium_item.set_usable(stadium_usable and my_turn)
         for item in self.hand_items:
             item.set_playable(item.hand_index in playable_hand, my_turn)
         self.end_turn_button.set_mode(end_turn_mode)
@@ -896,8 +918,10 @@ class BattleScene(QGraphicsScene):
                     token.set_targetable(True)
                     self._targets[target] = token
             elif kind == "zone":
-                rect = BENCH_ZONE if value == "bench" else ACTIVE_ZONE
-                label = "SOLTE NO BANCO" if value == "bench" else "SOLTE AQUI"
+                rect, label = {
+                    "bench": (BENCH_ZONE, "SOLTE NO BANCO"),
+                    "play": (PLAY_ZONE, "SOLTE PARA JOGAR"),
+                }.get(cast(str, value), (ACTIVE_ZONE, "SOLTE AQUI"))
                 zone = ZoneHighlight(rect, label)
                 zone.setZValue(5)
                 self.addItem(zone)
@@ -952,6 +976,31 @@ class BattleScene(QGraphicsScene):
 
     def _hide_inspect(self, token: PokemonToken) -> None:
         self.inspect.hide()
+
+    # -- escolhas ---------------------------------------------------------
+    def show_choice(self, title: str, options: list[str]) -> ChoicePanel:
+        self.close_choice()
+        panel = ChoicePanel(SCENE_W, SCENE_H, title, options)
+        panel.setZValue(4000)
+        panel.chosen.connect(self._on_choice)
+        self.addItem(panel)
+        self._choice = panel
+        return panel
+
+    def _on_choice(self, index: int) -> None:
+        self.close_choice()
+        self.choice_made.emit(index)
+
+    def close_choice(self) -> None:
+        if self._choice is not None:
+            self._choice.hide()
+            if self._choice.scene() is self:
+                self.removeItem(self._choice)
+            self._choice = None
+
+    @property
+    def choice_panel(self) -> ChoicePanel | None:
+        return self._choice
 
     # -- fim de jogo ----------------------------------------------------
     def show_game_over(self, title: str, won: bool) -> None:

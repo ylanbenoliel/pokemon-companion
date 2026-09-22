@@ -36,22 +36,18 @@ def test_knockout_of_v_pokemon_awards_two_prizes(charmander, squirtle):
 
 
 def test_registered_attack_effect_discards_energy_on_heads(monkeypatch, charmander, squirtle):
-    # Efeito registrado em basic_effects.py para ("demo-charmander", "Brasa").
-    brasa_card = dataclasses.replace(
+    # "Whirlpool" (Goldeen): cara -> descarta 1 energia do Ativo do oponente.
+    whirl_card = dataclasses.replace(
         charmander,
-        id="demo-charmander",
-        attacks=[
-            *charmander.attacks,
-            dataclasses.replace(charmander.attacks[0], name="Brasa", damage="40"),
-        ],
+        attacks=[dataclasses.replace(charmander.attacks[0], name="Whirlpool", damage="10")],
     )
-    state = build_state(player_active=brasa_card, opponent_active=squirtle)
+    state = build_state(player_active=whirl_card, opponent_active=squirtle)
     state.player.active.attached_energies.append("Fire")
     state.opponent.active.attached_energies = ["Water"]
 
-    monkeypatch.setattr("pokemon_companion.engine.status_conditions.random.random", lambda: 0.0)
+    monkeypatch.setattr("pokemon_companion.engine.effects.core.random.random", lambda: 0.0)
 
-    attack_index = next(i for i, a in enumerate(brasa_card.attacks) if a.name == "Brasa")
-    rules.apply_action(state, UseAttack(attack_index=attack_index))
+    rules.apply_action(state, UseAttack(attack_index=0))
 
     assert state.opponent.active.attached_energies == []
+    assert state.opponent.discard[-1].name == "Water Energy"

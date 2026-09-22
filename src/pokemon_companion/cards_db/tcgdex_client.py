@@ -50,7 +50,9 @@ def tcgdex_card_to_card(data: dict) -> Card:
     trainer_type = data.get("trainerType")
     if trainer_type:
         subtypes.append(trainer_type)  # Item, Supporter, Stadium, Tool
-    if data.get("energyType") == "Special":
+    is_energy = str(data.get("category", "")).lower() == "energy"
+    if data.get("energyType") == "Special" or (is_energy and data.get("effect")):
+        # Algumas especiais recentes vêm sem energyType; energia com texto é especial.
         subtypes.append("Special")
     if str(data.get("rarity", "")).upper().startswith("ACE SPEC"):
         subtypes.append("ACE SPEC")

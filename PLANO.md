@@ -11,7 +11,7 @@ trabalho avançar.
 ```bash
 cd ~/pokemon_companion
 uv sync                 # instala dependências em .venv
-uv run pytest -v        # confirma que tudo continua passando (125 testes)
+uv run pytest -v        # confirma que tudo continua passando (153 testes)
 uv run mypy src          # type-check
 uv run black --check . && uv run ruff check .   # formatação/lint
 
@@ -28,6 +28,13 @@ uv run python -m pokemon_companion.ui.app --difficulty hard
 uv run python -m pokemon_companion.ui.app --spectate --difficulty hard --player-difficulty hard \
   --player-deck examples/decks/dragapult_ex.txt --opponent-deck examples/decks/ns_zoroark_ex.txt \
   --speed 1.5 --record-history data/partida.json
+
+# Torneio IA vs IA (round robin, sem interface, paralelo) com os 20 decks do meta:
+uv run python tools/tournament.py examples/decks/top --games 4 --level hard
+# Quais textos de cartas dos decks ainda não têm efeito implementado:
+uv run python tools/effect_coverage.py examples/decks/top
+# Atualizar os 20 decks do meta a partir do limitlesstcg.com:
+uv run python tools/fetch_top_decks.py
 ```
 
 ## Status — todas as 5 fases do plano original têm código funcional
@@ -37,7 +44,7 @@ uv run python -m pokemon_companion.ui.app --spectate --difficulty hard --player-
 - ✅ **Fase 2 — Banco de cartas + decklist**: API `pokemontcg.io` + cache SQLite + parser Limitless/PTCGO.
 - ✅ **Fase 3 — UI gráfica (PyQt6)**: tabuleiro de jogo em `QGraphicsScene` (ver "Tabuleiro estilo Hearthstone/TCG Pocket" abaixo). Testado headless com `pytest-qt` e validado por screenshots/quadros de animação renderizados offscreen.
 - ✅ **Fase 4 — Visão computacional (building blocks)**: captura de câmera multiplataforma, calibração por homografia, mapeamento de zonas, detecção de ocupação/estabilidade, reconhecimento por pHash, download+cache de imagens de carta, e um widget de calibração/debug. **Todos os módulos têm testes unitários com dados sintéticos** (sem precisar de câmera real).
-- ✅ **Fase 5 — Polimento (parcial, ver detalhes)**: prêmios diferenciados por raridade (ex/GX/V=2, VMAX/VSTAR=3), exemplo funcional de efeito de ataque registrado (`engine/effects/basic_effects.py`, testado de ponta a ponta via o registry real), histórico de partida exportável em JSON (`--record-history`).
+- ✅ **Fase 5 — Polimento (parcial, ver detalhes)**: prêmios diferenciados por raridade (ex/GX/V=2, VMAX/VSTAR=3), motor de efeitos completo para o meta atual (ver "Regras completas" abaixo), histórico de partida exportável em JSON (`--record-history`).
 - ✅ **Tabuleiro estilo Hearthstone/TCG Pocket (pós-plano, a pedido do usuário)**:
   a UI foi reconstruída sobre `QGraphicsScene` (padrão do Qt para jogos 2D:
   posicionamento absoluto, rotação, z-order e animação por propriedade), após
@@ -117,6 +124,91 @@ uv run python -m pokemon_companion.ui.app --spectate --difficulty hard --player-
   a ilustração recortada, o tipo (Item/Apoiador/Estádio/Ferramenta) e o
   texto no painel de detalhes, com o aviso de que o efeito ainda não é
   aplicado; se a busca falhar, viram carta local só com nome, sem erro.
+
+## Regras completas e motor de efeitos (09/2026)
+
+Revisão contra o livro de regras oficial, tudo implementado e testado
+(`tests/test_effects.py`):
+
+- **Treinadores**: 1 Apoiador por turno, nenhum no 1º turno de quem começa
+  (exceto Team Rocket's Proton); Itens podem ser bloqueados (Itchy Pollen);
+  ACE SPEC bloqueável (ACE Nullifier); **Estádio** em jogo (substitui o
+  anterior, 1 por turno, efeito "uma vez por turno" via `UseStadium`);
+  **Ferramentas** anexadas (1 por Pokémon).
+- **Habilidades** ativadas, gatilhos "ao jogar no banco"/"ao evoluir" (como
+  ação opcional no turno) e passivas (efeitos contínuos em `passives.py`);
+  limites "não mais de 1 Habilidade X por turno".
+- **Energias especiais** (Legacy, Neo Upper, Team Rocket's, Mist, Spiky,
+  Enriching, Boomerang, Ignition, Telepathic/Growing/Rocky tipadas).
+- **Efeitos de texto dos ataques**: dano variável, moedas, condições,
+  contadores no banco, dano em alvo escolhido, recuo, "não pode atacar no
+  próximo turno", cópia de ataques (Night Joker, Seek Inspiration...).
+- **Nocaute de qualquer Pokémon** (banco inclusive) com descarte de tudo o
+  que estava anexado e prêmios ajustados (Lillie's Pearl, Legacy, Briar).
+- **Escolhas do humano**: montagem do setup (Ativo + Banco, botão PRONTO) e
+  escolha do novo Ativo após nocaute (`state.manual_choices`,
+  `rules.decision_player`). A IA decide por heurística.
+- **Morte Súbita** quando os dois vencem ao mesmo tempo.
+- Não existe limite de cartas na mão (confirmado no livro de regras).
+
+Arquitetura: `engine/effects/` — `core.py` (primitivas: comprar, buscar,
+trocar, dano com Fraqueza/Resistência e prevenções), `attacks.py`,
+`abilities.py`, `trainers.py` (registros por nome), `passives.py`,
+`cardinfo.py` (Tera/Antigo/Futuro por nome). Escolhas estratégicas viram
+alvos da ação (`target`), para a IA avaliar cada opção e a UI mostrar
+destaques/painel. `tools/effect_coverage.py` mostra 100% dos textos das
+cartas do top 20 cobertos.
+
+UI: Treinadores soltos no tabuleiro ou sobre o Pokémon alvo; painel de
+escolha para opções que não são um Pokémon; selo "HAB." nos Pokémon com
+Habilidade disponível (clique para usar); carta do Estádio à direita
+(brilha quando pode ser usada); Ferramenta como etiqueta no token.
+
+## Torneio IA vs IA — top 20 do meta (resultados e ajustes)
+
+`tools/tournament.py` joga um round robin headless (IA difícil nos dois
+lados, 4 partidas por par alternando quem começa, 1 processo por núcleo) e
+grava `data/tournament/*/results.json` + `summary.txt`.
+
+| Rodada | Partidas | Erros | Decididas | Deck-out | Quem começa vence | Faixa de vitória |
+|---|---|---|---|---|---|---|
+| 1ª (motor novo) | 380 | 54 | 326 | 63 | 55% | 18% – 71% |
+| 2ª | 380 | 0 | 380 | 18 | 52% | 18% – 74% |
+| final | 760 | 0 | 760 | 42 | 51% | 33% – 72% |
+
+Final: média de 19 turnos por partida (≈ 9–10 de cada jogador); decisão
+da IA com média de 65 ms (p99 0,4 s). Topo: Crustle 72%, Cynthia's
+Garchomp 68%, Basic Box 67%, Lillie's Clefairy 66%. Fundo: Festival Lead,
+Toxtricity e Team Rocket's Honchkrow com 33–34%.
+
+Ajustes feitos a partir das partidas:
+1. **Bugs**: índice da mão do Rare Candy (a própria carta sai da mão antes
+   do efeito; o alvo agora usa o nome do Estágio 2) e Rapid Vernier
+   usável depois de o Pokémon já ter ido para o Ativo.
+2. **IA comprava até o deck-out** (17% das partidas): penalidade
+   quadrática abaixo de 12 cartas no deck e limite de 8 cartas no valor da
+   mão (deck-out caiu para 5%).
+3. **IA deixava de nocautear** (efeito horizonte): a IA difícil só avaliava
+   depois da resposta do oponente, e o oponente simulado (guloso, 1 passo)
+   promove um atacante pronto quando leva KO, mas não sabe recuar para ele
+   sozinho. A avaliação agora é 60% fim do próprio turno + 40% após a
+   resposta (`OPPONENT_REPLY_WEIGHT`).
+4. **Energias especiais sem a marca "Special" na TCGdex** (Ignition,
+   Telepathic Psychic, Growing Grass, Rocky Fighting) viravam energias de
+   tipo inexistente: classificação corrigida e efeitos implementados.
+5. **Empate infinito com Academy at Night**: devolver uma carta ao topo do
+   deck "diminuía" a penalidade de deck acabando e os dois lados travavam.
+   O efeito do Estádio agora fica só para o humano.
+6. `weights.yaml` passou a ser carregado de fato por `build_ai` (antes era
+   ignorado), com os pesos calibrados.
+
+Pontos em aberto: "passou podendo atacar" restante é quase sempre decisão
+legítima (ex: não nocautear um Pokémon preso no Ativo sem energia para
+recuar); a IA simula com informação completa (vê a mão do oponente e a
+ordem do deck); os decks mais fracos no torneio dependem de sequências
+longas (Festival Lead com dois ataques, Hide 'n' Sneak contando descarte)
+que a busca de um turno não enxerga bem. Pequena fonte de não-determinismo
+entre processos: a mesma seed nem sempre reproduz a partida.
 
 ## O que foi e não foi validado neste ambiente de trabalho
 
@@ -240,13 +332,16 @@ por isso ficou para quando você puder testar com hardware real.
 
 ## Simplificações do MVP (lembrete, ver README.md)
 
-- Efeitos de Trainer/Item complexos, GX/V/VSTAR especiais, abilities
-  passivas complexas, ACE SPEC e regras de torneio ficam fora de escopo.
+- Efeitos de cartas cobrem os 20 decks do meta; cartas fora deles podem não
+  ter efeito (Treinador sem registro é jogado sem efeito e avisa no log;
+  ataque sem registro causa só o dano base). Rode `tools/effect_coverage.py`
+  ao adicionar decks. Tera/Antigo/Futuro são listas por nome em `cardinfo.py`.
+- Escolhas internas de efeitos (qual carta buscar, onde colocar contadores)
+  são feitas por heurística também para o humano; só as escolhas
+  estratégicas (alvos de Boss's Orders, Ferramentas, ataques com alvo...)
+  são perguntadas.
 - Prêmios: ex/GX/V = 2, VMAX/VSTAR = 3, demais = 1 (implementado na Fase 5;
   raridades mais raras como TAG TEAM ainda contam como 1).
-- Ativo inicial de cada jogador é escolhido automaticamente (primeiro
-  básico da mão); promoção pós-knockout também é automática (primeiro do
-  banco) — nenhuma exige escolha manual do jogador ainda.
 - Reconhecimento de câmera usa a imagem inteira da carta baixada da API
   (não um recorte só da arte) — mais simples, funciona bem com pHash, mas
   exige enquadramento de câmera relativamente consistente.
