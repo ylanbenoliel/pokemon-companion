@@ -1,14 +1,32 @@
 from __future__ import annotations
 
+import dataclasses
+
+from PyQt6.QtCore import QEvent, QPointF, Qt
+from PyQt6.QtGui import QMouseEvent
+
 from pokemon_companion.ai.heuristics_easy import EasyAI
 from pokemon_companion.cards_db.models import Card
 from pokemon_companion.demo_data import build_demo_deck
 from pokemon_companion.engine import rules, turn_manager
+from pokemon_companion.engine.actions import Retreat, UseAttack
 from pokemon_companion.engine.game_state import PlayerState, PokemonInPlay
 from pokemon_companion.ui.app import AI_TURN_DELAY_MS, MainWindow
 from pokemon_companion.ui.board_view import BoardView
 from pokemon_companion.ui.confirmation_dialog import ConfirmationDialog
-from pokemon_companion.ui.pokemon_card_widget import PokemonCardWidget
+from pokemon_companion.ui.pokemon_card_widget import AttackRow, PokemonCardWidget
+
+
+def _left_click(widget) -> None:
+    event = QMouseEvent(
+        QEvent.Type.MouseButtonPress,
+        QPointF(1, 1),
+        QPointF(1, 1),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    widget.mousePressEvent(event)
 
 
 def test_board_view_shows_active_bench_and_hand(qtbot, charmander, squirtle):
@@ -26,8 +44,8 @@ def test_board_view_shows_active_bench_and_hand(qtbot, charmander, squirtle):
     assert view._active_card.name_label.text() == "Charmander"
     assert view._bench_cards[0].name_label.text() == "Squirtle"
     assert view._bench_cards[1].property("empty") is True
-    assert view._hand_label is not None
-    assert "Squirtle" in view._hand_label.text()
+    assert view.hand_view is not None
+    assert view.hand_view._layout.count() == 2  # 1 carta + 1 stretch
 
 
 def test_board_view_prize_pips_reflect_remaining_prizes(qtbot, charmander):
@@ -75,16 +93,80 @@ def test_pokemon_card_widget_shows_attacks_with_readiness(qtbot, charmander):
     assert widget._attacks_container is not None
 
     not_ready = PokemonInPlay(card=charmander)  # sem energia anexada
-    widget.update_pokemon(not_ready)
-    assert widget._attacks_container.count() == 1
+    widget.update_pokemon(not_ready, interactive=True)
     row = widget._attacks_container.itemAt(0).widget()
     assert row.name_label.text() == charmander.attacks[0].name
     assert "0.45" in row.name_label.styleSheet()  # esmaecido: não tem energia
 
     ready = PokemonInPlay(card=charmander, attached_energies=["Fire"])
-    widget.update_pokemon(ready)
+    widget.update_pokemon(ready, interactive=True)
     row = widget._attacks_container.itemAt(0).widget()
     assert "#263238" in row.name_label.styleSheet()  # pronto para atacar
+
+
+def test_attack_not_clickable_when_not_interactive(qtbot, charmander):
+    # Mesmo com energia suficiente, o card do oponente (interactive=False)
+    # não deve reagir a clique — só informa visualmente que está "pronto".
+    widget = PokemonCardWidget()
+    qtbot.addWidget(widget)
+    mon = PokemonInPlay(card=charmander, attached_energies=["Fire"])
+
+    widget.update_pokemon(mon, interactive=False)
+    row = widget._attacks_container.itemAt(0).widget()
+
+    assert "#263238" in row.name_label.styleSheet()  # "pronto" continua verdadeiro
+    received = []
+    row.clicked.connect(received.append)
+    _left_click(row)
+    assert received == []  # mas não é clicável
+
+
+def test_attack_row_click_emits_only_when_clickable(qtbot, charmander):
+    row = AttackRow()
+    qtbot.addWidget(row)
+    row.update_attack(charmander.attacks[0], ready=True, clickable=False)
+    fired = []
+    row.clicked.connect(lambda: fired.append(True))
+
+    _left_click(row)
+    assert fired == []
+
+    row.update_attack(charmander.attacks[0], ready=True, clickable=True)
+    _left_click(row)
+    assert fired == [True]
+
+
+def test_pokemon_card_widget_attack_clicked_forwards_index(qtbot, charmander):
+    two_attacks = dataclasses.replace(
+        charmander, attacks=[*charmander.attacks, charmander.attacks[0]]
+    )
+    widget = PokemonCardWidget()
+    qtbot.addWidget(widget)
+    mon = PokemonInPlay(card=two_attacks, attached_energies=["Fire"])
+    widget.update_pokemon(mon, interactive=True)
+
+    received: list[int] = []
+    widget.attack_clicked.connect(received.append)
+    second_row = widget._attacks_container.itemAt(1).widget()
+    _left_click(second_row)
+
+    assert received == [1]
+
+
+def test_bench_card_clicked_only_when_targetable(qtbot, charmander):
+    widget = PokemonCardWidget(compact=True)
+    qtbot.addWidget(widget)
+    widget.update_pokemon(PokemonInPlay(card=charmander))
+
+    received = []
+    widget.clicked.connect(lambda: received.append(True))
+    _left_click(widget)
+    assert received == []  # não targetable ainda
+
+    widget.set_clickable(True)
+    _left_click(widget)
+    assert received == [True]
+    assert widget.property("targetable") is True
 
 
 def test_compact_pokemon_card_widget_has_no_attacks_container(qtbot, charmander):
@@ -122,6 +204,59 @@ def test_main_window_populates_actions_on_player_turn(qtbot):
 
     assert window.action_list.count() > 0
     assert window.play_button.isEnabled()
+
+
+def test_main_window_attack_click_applies_use_attack(qtbot):
+    from pokemon_companion.engine.game_state import PlayerId
+
+    state = turn_manager.start_new_game(build_demo_deck(), build_demo_deck())
+    window = MainWindow(state, EasyAI())
+    qtbot.addWidget(window)
+    window._current_actions = [UseAttack(attack_index=0)]
+
+    window._on_attack_clicked(0)
+
+    # Atacar sempre encerra o turno nas nossas regras — sinal inequívoco de
+    # que a ação foi realmente aplicada, não só removida da lista.
+    assert state.active_player == PlayerId.OPPONENT
+
+
+def test_main_window_attack_click_ignored_when_not_players_turn(qtbot):
+    state = turn_manager.start_new_game(build_demo_deck(), build_demo_deck())
+    window = MainWindow(state, EasyAI())
+    qtbot.addWidget(window)
+    from pokemon_companion.engine.game_state import PlayerId
+
+    state.active_player = PlayerId.OPPONENT
+    window._current_actions = [UseAttack(attack_index=0)]
+
+    window._on_attack_clicked(0)
+
+    assert window._current_actions == [UseAttack(attack_index=0)]  # nada mudou
+
+
+def test_main_window_bench_click_applies_retreat(qtbot, charmander, squirtle):
+    state = turn_manager.start_new_game(build_demo_deck(), build_demo_deck())
+    window = MainWindow(state, EasyAI())
+    qtbot.addWidget(window)
+    state.player.bench = [PokemonInPlay(card=squirtle)]
+    window._current_actions = [Retreat(bench_index=0)]
+
+    window._on_bench_clicked(0)
+
+    assert state.player.active is not None
+    assert state.player.active.card.name == "Squirtle"
+
+
+def test_main_window_hand_click_applies_unambiguous_action(qtbot):
+    state = turn_manager.start_new_game(build_demo_deck(), build_demo_deck())
+    window = MainWindow(state, EasyAI())
+    qtbot.addWidget(window)
+    hand_before = list(state.player.hand)
+
+    window._on_hand_card_clicked(0)
+
+    assert state.player.hand != hand_before  # a carta 0 foi jogada
 
 
 def test_full_game_playable_end_to_end_via_ui(qtbot):

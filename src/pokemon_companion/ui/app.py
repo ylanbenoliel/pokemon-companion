@@ -1,6 +1,12 @@
 """Aplicação PyQt6: mesma lógica de jogo do CLI (`main.py`), com o board do
 jogador ainda controlado por clique manual — a câmera só substitui isso na
-Fase 4. Board da IA sempre vem do `GameState` virtual."""
+Fase 4. Board da IA sempre vem do `GameState` virtual.
+
+Interação estilo Hearthstone/TCG Pocket: clique num ataque pronto no seu
+card ativo para atacar, clique num Pokémon do banco (quando destacado) para
+recuar, clique numa carta na mão para jogá-la. A lista de ações continua
+disponível como método completo/alternativo (e para desempatar quando o
+clique é ambíguo, ex: em qual Pokémon anexar energia)."""
 
 from __future__ import annotations
 
@@ -24,7 +30,7 @@ from PyQt6.QtWidgets import (
 from pokemon_companion.ai.opponent import AIPlayer, build_ai
 from pokemon_companion.deck_loading import DeckLoadError, load_decks
 from pokemon_companion.engine import rules, turn_manager
-from pokemon_companion.engine.actions import Action
+from pokemon_companion.engine.actions import Action, Retreat, UseAttack
 from pokemon_companion.engine.game_state import GameState, PlayerId
 from pokemon_companion.engine.history import MatchRecorder
 from pokemon_companion.presentation import describe_action
@@ -73,11 +79,15 @@ class MainWindow(QMainWindow):
 
         self.opponent_view = BoardView("Oponente (IA)", show_hand=False)
         self.player_view = BoardView("Você", show_hand=True)
+        self.player_view.active_attack_clicked.connect(self._on_attack_clicked)
+        self.player_view.bench_clicked.connect(self._on_bench_clicked)
+        if self.player_view.hand_view is not None:
+            self.player_view.hand_view.card_clicked.connect(self._on_hand_card_clicked)
         layout.addWidget(self.opponent_view)
         layout.addWidget(_divider())
         layout.addWidget(self.player_view)
 
-        actions_title = QLabel("AÇÕES DISPONÍVEIS")
+        actions_title = QLabel("AÇÕES DISPONÍVEIS (lista completa)")
         actions_title.setObjectName("sectionTitle")
         layout.addWidget(actions_title)
         self.action_list = QListWidget()
@@ -104,12 +114,16 @@ class MainWindow(QMainWindow):
         self.log_view.scrollToBottom()
 
     def refresh(self) -> None:
-        self.opponent_view.update_state(self._state.opponent)
-        self.player_view.update_state(self._state.player)
+        is_player_turn = (
+            not rules.is_game_over(self._state) and self._state.active_player == PlayerId.PLAYER
+        )
+        self.opponent_view.update_state(self._state.opponent, interactive=False)
+        self.player_view.update_state(self._state.player, interactive=is_player_turn)
 
         if rules.is_game_over(self._state):
             self.action_list.clear()
             self.play_button.setEnabled(False)
+            self.player_view.set_bench_targetable(set())
             assert self._state.winner is not None
             self.log_message(f"Fim de jogo! Vencedor: {self._state.winner.value}")
             if self._recorder is not None and self._history_path is not None:
@@ -117,12 +131,19 @@ class MainWindow(QMainWindow):
                 self.log_message(f"Histórico salvo em {self._history_path}")
             return
 
-        if self._state.active_player == PlayerId.PLAYER:
+        if is_player_turn:
             self._populate_actions()
             self.play_button.setEnabled(True)
+            retreat_targets = {
+                action.bench_index
+                for action in self._current_actions
+                if isinstance(action, Retreat)
+            }
+            self.player_view.set_bench_targetable(retreat_targets)
         else:
             self.action_list.clear()
             self.play_button.setEnabled(False)
+            self.player_view.set_bench_targetable(set())
             QTimer.singleShot(AI_TURN_DELAY_MS, self._play_ai_turn)
 
     def _populate_actions(self) -> None:
@@ -138,6 +159,44 @@ class MainWindow(QMainWindow):
         if not (0 <= row < len(self._current_actions)):
             return
         self._apply(self._current_actions[row])
+
+    def _on_attack_clicked(self, attack_index: int) -> None:
+        if self._state.active_player != PlayerId.PLAYER:
+            return
+        matching = [
+            action
+            for action in self._current_actions
+            if isinstance(action, UseAttack) and action.attack_index == attack_index
+        ]
+        if matching:
+            self._apply(matching[0])
+
+    def _on_bench_clicked(self, bench_index: int) -> None:
+        if self._state.active_player != PlayerId.PLAYER:
+            return
+        matching = [
+            action
+            for action in self._current_actions
+            if isinstance(action, Retreat) and action.bench_index == bench_index
+        ]
+        if matching:
+            self._apply(matching[0])
+
+    def _on_hand_card_clicked(self, hand_index: int) -> None:
+        if self._state.active_player != PlayerId.PLAYER:
+            return
+        matching = [
+            action
+            for action in self._current_actions
+            if getattr(action, "hand_index", None) == hand_index
+        ]
+        if len(matching) == 1:
+            self._apply(matching[0])
+        elif matching:
+            # Ambíguo (ex: anexar energia no ativo vs num banco específico)
+            # — pré-seleciona a primeira opção pro jogador escolher o alvo
+            # usando "Jogar ação selecionada" logo abaixo.
+            self.action_list.setCurrentRow(self._current_actions.index(matching[0]))
 
     def _play_ai_turn(self) -> None:
         if rules.is_game_over(self._state):
@@ -191,7 +250,7 @@ def main() -> None:
         QMessageBox.critical(None, "Erro ao carregar deck", str(exc))
         sys.exit(1)
 
-    window.resize(520, 700)
+    window.resize(560, 860)
     window.show()
     sys.exit(app.exec())
 

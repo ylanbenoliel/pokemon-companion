@@ -18,6 +18,20 @@ ENERGY_COLORS: dict[str, str] = {
     "Colorless": "#bdbdbd",
 }
 
+ENERGY_EMOJI: dict[str, str] = {
+    "Grass": "🌿",
+    "Fire": "🔥",
+    "Water": "💧",
+    "Lightning": "⚡",
+    "Psychic": "🔮",
+    "Fighting": "🥊",
+    "Darkness": "🌑",
+    "Metal": "⚙",
+    "Fairy": "🎀",
+    "Dragon": "🐉",
+    "Colorless": "⭐",
+}
+
 STATUS_LABELS: dict[str, str] = {
     "ASLEEP": "DORMINDO",
     "CONFUSED": "CONFUSO",
@@ -29,6 +43,10 @@ STATUS_LABELS: dict[str, str] = {
 
 def energy_color(energy_type: str) -> str:
     return ENERGY_COLORS.get(energy_type, ENERGY_COLORS["Colorless"])
+
+
+def energy_emoji(energy_type: str) -> str:
+    return ENERGY_EMOJI.get(energy_type, ENERGY_EMOJI["Colorless"])
 
 
 def hp_bar_color(current: int, maximum: int) -> str:
@@ -81,12 +99,32 @@ QFrame#pokemonCard[empty="true"] {{
     border: 2px dashed rgba(255, 255, 255, 0.35);
 }}
 {_ENERGY_BORDER_RULES}
+QFrame#pokemonCard[targetable="true"] {{
+    border: 3px solid #ffca28;
+}}
 
 /* A cor/peso do nome (#cardName) é definida diretamente em
    pokemon_card_widget.py, não aqui — um seletor QSS descendente
    `[empty="true"] QLabel#cardName` não se reavalia de forma confiável
    quando só o QFrame pai é repolido, deixando o texto preso na cor do
    estado anterior. */
+
+QFrame#handCard {{
+    background-color: rgba(255, 255, 255, 0.96);
+    border-radius: 10px;
+    border: 2px solid #cfd8dc;
+}}
+QFrame#handCard:hover {{
+    border: 2px solid #ffca28;
+}}
+
+QScrollArea#handView {{
+    background: transparent;
+    border: none;
+}}
+QScrollArea#handView > QWidget > QWidget {{
+    background: transparent;
+}}
 
 QProgressBar#hpBar {{
     border: none;

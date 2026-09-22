@@ -20,6 +20,7 @@ def _basic(
     hp: int,
     energy_type: str,
     weak_to: str,
+    image_url: str | None = None,
 ) -> Card:
     return Card(
         id=f"basic-{name.lower()}",
@@ -34,14 +35,30 @@ def _basic(
         ],
         weaknesses=[WeaknessResistance(weak_to, "×2")],
         retreat_cost=["Colorless"],
+        image_url=image_url,
     )
 
 
 def build_demo_deck() -> list[Card]:
     """Deck simples de 20 cartas (menor que os 60 oficiais) só para
     demonstrar uma partida completa de ponta a ponta via CLI."""
-    fire_mon = _basic("Charmander", hp=60, energy_type="Fire", weak_to="Water")
-    water_mon = _basic("Squirtle", hp=60, energy_type="Water", weak_to="Lightning")
+    # URLs reais da arte (Base Set 1999) — só para a demo ficar visualmente
+    # equivalente ao que um deck real importado via decklist mostraria; a
+    # carta em si continua mockada (regras/ataques não batem com a oficial).
+    fire_mon = _basic(
+        "Charmander",
+        hp=60,
+        energy_type="Fire",
+        weak_to="Water",
+        image_url="https://images.pokemontcg.io/base1/46_hires.png",
+    )
+    water_mon = _basic(
+        "Squirtle",
+        hp=60,
+        energy_type="Water",
+        weak_to="Lightning",
+        image_url="https://images.pokemontcg.io/base1/63_hires.png",
+    )
     fire_energy = _energy("Fire Energy", "Fire")
     water_energy = _energy("Water Energy", "Water")
 

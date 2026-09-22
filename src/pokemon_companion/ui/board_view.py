@@ -1,12 +1,15 @@
-"""Board de um lado da partida: ativo + banco como `PokemonCardWidget`,
-prêmios como pips coloridos, mão como chip de texto — substitui o antigo
-label monoespaçado por um layout mais próximo do Pokémon TCG Pocket."""
+"""Board de um lado da partida: ativo + banco como `PokemonCardWidget` com
+arte real, prêmios como pips coloridos, mão como fileira de cartas em
+miniatura (`HandView`) — layout inspirado no Pokémon TCG Pocket/Hearthstone
+em vez do antigo label de texto monoespaçado."""
 
 from __future__ import annotations
 
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from pokemon_companion.engine.game_state import MAX_BENCH_SIZE, PRIZE_COUNT, PlayerState
+from pokemon_companion.ui.hand_view import HandView
 from pokemon_companion.ui.pokemon_card_widget import PokemonCardWidget
 
 
@@ -30,6 +33,11 @@ class PrizeTracker(QWidget):
 
 
 class BoardView(QWidget):
+    #: índice do ataque clicado no card ativo (ver PokemonCardWidget.attack_clicked)
+    active_attack_clicked = pyqtSignal(int)
+    #: índice do slot do banco clicado (usado para recuar)
+    bench_clicked = pyqtSignal(int)
+
     def __init__(self, title: str, show_hand: bool = False) -> None:
         super().__init__()
 
@@ -52,29 +60,29 @@ class BoardView(QWidget):
         board_row = QHBoxLayout()
         board_row.setSpacing(8)
         self._active_card = PokemonCardWidget()
+        self._active_card.attack_clicked.connect(self.active_attack_clicked.emit)
         board_row.addWidget(self._active_card)
 
         bench_row = QHBoxLayout()
         bench_row.setSpacing(4)
         self._bench_cards = [PokemonCardWidget(compact=True) for _ in range(MAX_BENCH_SIZE)]
-        for card_widget in self._bench_cards:
+        for i, card_widget in enumerate(self._bench_cards):
+            card_widget.clicked.connect(lambda index=i: self.bench_clicked.emit(index))
             bench_row.addWidget(card_widget)
         board_row.addLayout(bench_row, 2)
         outer.addLayout(board_row)
 
         if show_hand:
-            self._hand_label: QLabel | None = QLabel()
-            self._hand_label.setObjectName("prizesLabel")
-            self._hand_label.setWordWrap(True)
-            outer.addWidget(self._hand_label)
+            self.hand_view: HandView | None = HandView()
+            outer.addWidget(self.hand_view)
         else:
-            self._hand_label = None
+            self.hand_view = None
 
-    def update_state(self, player: PlayerState) -> None:
+    def update_state(self, player: PlayerState, interactive: bool = False) -> None:
         self._prizes.update_count(len(player.prizes))
 
         if player.active is not None:
-            self._active_card.update_pokemon(player.active)
+            self._active_card.update_pokemon(player.active, interactive=interactive)
         else:
             self._active_card.set_empty()
 
@@ -84,6 +92,9 @@ class BoardView(QWidget):
             else:
                 card_widget.set_empty()
 
-        if self._hand_label is not None:
-            names = ", ".join(card.name for card in player.hand) or "(vazia)"
-            self._hand_label.setText(f"Mão: {names}")
+        if self.hand_view is not None:
+            self.hand_view.update_hand(player.hand)
+
+    def set_bench_targetable(self, indices: set[int]) -> None:
+        for i, card_widget in enumerate(self._bench_cards):
+            card_widget.set_clickable(i in indices)

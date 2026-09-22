@@ -1,31 +1,40 @@
-"""Widget de uma carta de Pokémon em jogo (ativo ou banco): nome, barra de
-HP colorida por porcentagem, pips de energia anexada, badge de status e
-(no card ativo) a lista de ataques com custo de energia e dano — visual
-inspirado em cards do Pokémon TCG Pocket em vez de texto corrido."""
+"""Widget de uma carta de Pokémon em jogo (ativo ou banco): arte da carta,
+nome, barra de HP colorida por porcentagem, pips de energia anexada (com
+emoji por tipo), badge de status e (no card ativo) a lista de ataques com
+custo de energia e dano — clicável para atacar/recuar, estilo "toque para
+agir" (Hearthstone/TCG Pocket) em vez de só uma lista de texto."""
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QMouseEvent
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QProgressBar, QVBoxLayout, QWidget
 
 from pokemon_companion.cards_db.models import Attack
 from pokemon_companion.engine.game_state import PokemonInPlay
 from pokemon_companion.engine.rules import energy_satisfies_cost
-from pokemon_companion.ui.theme import STATUS_LABELS, energy_color, hp_bar_color
+from pokemon_companion.engine.status_conditions import can_attack
+from pokemon_companion.ui.card_art import card_art_provider
+from pokemon_companion.ui.theme import STATUS_LABELS, energy_color, energy_emoji, hp_bar_color
 
 _NAME_COLOR_FILLED = "#263238"
 _NAME_COLOR_EMPTY = "rgba(255, 255, 255, 0.55)"
 _ATTACK_READY_COLOR = "#263238"
 _ATTACK_NOT_READY_COLOR = "rgba(38, 50, 56, 0.45)"
 
+_ART_SIZE_FULL = 108
+_ART_SIZE_COMPACT = 52
+
 
 class EnergyPip(QLabel):
-    def __init__(self, energy_type: str, size: int = 14) -> None:
-        super().__init__()
+    def __init__(self, energy_type: str, size: int = 18) -> None:
+        super().__init__(energy_emoji(energy_type))
         self.setFixedSize(size, size)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setStyleSheet(
             f"background-color: {energy_color(energy_type)}; "
-            f"border-radius: {size // 2}px; border: 1px solid rgba(0, 0, 0, 0.25);"
+            f"border-radius: {size // 2}px; border: 1px solid rgba(0, 0, 0, 0.25); "
+            f"font-size: {max(int(size * 0.6), 8)}px;"
         )
         self.setToolTip(energy_type)
 
@@ -33,21 +42,31 @@ class EnergyPip(QLabel):
 class AttackRow(QWidget):
     """Uma linha: pips do custo de energia + nome do ataque + dano.
 
-    Fica esmaecida quando a energia atualmente anexada não é suficiente
-    para usar o ataque — resposta direta a "não dá pra saber quantas
-    energias meu pokémon precisa pra atacar"."""
+    Fica esmaecida quando a energia anexada (ou o status do Pokémon, ex:
+    dormindo/paralisado) não permite usar o ataque agora — resposta direta
+    a "não dá pra saber quantas energias meu pokémon precisa pra atacar".
+
+    "Pronto" (estilo em negrito) e "clicável" (reage a clique) são coisas
+    separadas: o card do oponente também mostra quando um ataque dele
+    está pronto (informação útil sobre a ameaça), mas nunca é clicável;
+    o card do jogador só fica clicável no turno dele."""
+
+    clicked = pyqtSignal()
 
     def __init__(self) -> None:
         super().__init__()
+        self._clickable = False
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(4)
 
         self._cost_row = QHBoxLayout()
         self._cost_row.setSpacing(2)
         cost_container = QWidget()
         cost_container.setLayout(self._cost_row)
-        cost_container.setMinimumWidth(46)
+        cost_container.setMinimumWidth(50)
         layout.addWidget(cost_container)
 
         self.name_label = QLabel()
@@ -63,12 +82,18 @@ class AttackRow(QWidget):
                 continue
             widget = item.widget()
             if widget is not None:
+                widget.hide()
                 widget.deleteLater()
 
-    def update_attack(self, attack: Attack, ready: bool) -> None:
+    def update_attack(self, attack: Attack, ready: bool, clickable: bool) -> None:
+        self._clickable = clickable
+        self.setCursor(
+            Qt.CursorShape.PointingHandCursor if clickable else Qt.CursorShape.ArrowCursor
+        )
+
         self._clear_cost_pips()
         for energy_type in attack.cost:
-            self._cost_row.addWidget(EnergyPip(energy_type, size=10))
+            self._cost_row.addWidget(EnergyPip(energy_type, size=14))
         self._cost_row.addStretch(1)
 
         color = _ATTACK_READY_COLOR if ready else _ATTACK_NOT_READY_COLOR
@@ -80,20 +105,39 @@ class AttackRow(QWidget):
         self.name_label.setText(attack.name)
         self.damage_label.setText(attack.damage or "0")
         tooltip = attack.text or f"Custo: {', '.join(attack.cost) or 'nenhum'}"
+        if clickable:
+            tooltip += " — clique para atacar"
         self.setToolTip(tooltip)
+
+    def mousePressEvent(self, event: QMouseEvent | None) -> None:
+        if event is not None and self._clickable:
+            self.clicked.emit()
+        super().mousePressEvent(event)
 
 
 class PokemonCardWidget(QFrame):
+    #: emitido com o índice do ataque quando uma AttackRow pronta é clicada
+    attack_clicked = pyqtSignal(int)
+    #: emitido quando o card inteiro é clicado (usado para recuar para o banco)
+    clicked = pyqtSignal()
+
     def __init__(self, compact: bool = False) -> None:
         super().__init__()
         self.setObjectName("pokemonCard")
         self._compact = compact
-        self.setMinimumWidth(92 if compact else 160)
-        self.setMinimumHeight(72 if compact else 100)
+        self._clickable = False
+        self.setMinimumWidth(96 if compact else 170)
+        self.setMinimumHeight(110 if compact else 190)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(3)
+
+        self._art_size = _ART_SIZE_COMPACT if compact else _ART_SIZE_FULL
+        self.art_label = QLabel()
+        self.art_label.setFixedSize(self._art_size, self._art_size)
+        self.art_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.art_label, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         self.name_label = QLabel("(vazio)")
         self.name_label.setObjectName("cardName")
@@ -128,9 +172,7 @@ class PokemonCardWidget(QFrame):
         layout.addWidget(self.status_label)
 
         # A lista de ataques só aparece no card ativo (não no banco, que é
-        # pequeno demais e não pode atacar de qualquer forma) — mostra
-        # custo de energia (pips) e dano de cada ataque, esmaecendo os que
-        # ainda não têm energia suficiente anexada.
+        # pequeno demais e não pode atacar de qualquer forma).
         self._attacks_container: QVBoxLayout | None = None
         if not compact:
             self._attacks_container = QVBoxLayout()
@@ -153,6 +195,7 @@ class PokemonCardWidget(QFrame):
                 continue
             widget = item.widget()
             if widget is not None:
+                widget.hide()
                 widget.deleteLater()
 
     def _clear_attack_rows(self) -> None:
@@ -164,11 +207,29 @@ class PokemonCardWidget(QFrame):
                 continue
             widget = item.widget()
             if widget is not None:
+                widget.hide()
                 widget.deleteLater()
+
+    def set_clickable(self, clickable: bool) -> None:
+        """Controla se o card inteiro reage a clique (usado só para recuar
+        um Pokémon do banco para a posição ativa) — realça com borda
+        amarela quando é um alvo válido no momento."""
+        self._clickable = clickable
+        self.setCursor(
+            Qt.CursorShape.PointingHandCursor if clickable else Qt.CursorShape.ArrowCursor
+        )
+        self.setProperty("targetable", clickable)
+        self._repolish()
+
+    def mousePressEvent(self, event: QMouseEvent | None) -> None:
+        if event is not None and self._clickable:
+            self.clicked.emit()
+        super().mousePressEvent(event)
 
     def set_empty(self) -> None:
         self.setProperty("empty", True)
         self.setProperty("energyType", None)
+        self.art_label.clear()
         self.name_label.setText("(vazio)")
         self.name_label.setToolTip("")
         self.name_label.setStyleSheet(f"color: {_NAME_COLOR_EMPTY}; font-weight: 700;")
@@ -179,10 +240,12 @@ class PokemonCardWidget(QFrame):
         self._clear_energy_pips()
         self._clear_attack_rows()
         self.status_label.hide()
+        self.set_clickable(False)
         self._repolish()
 
-    def update_pokemon(self, mon: PokemonInPlay) -> None:
+    def update_pokemon(self, mon: PokemonInPlay, interactive: bool = False) -> None:
         self.setProperty("empty", False)
+        self.art_label.setPixmap(card_art_provider.get_pixmap(mon.card, self._art_size))
         self.name_label.setText(self._display_name(mon.card.name))
         self.name_label.setToolTip(mon.card.name)
         # Cor definida diretamente aqui (não via seletor QSS descendente
@@ -217,10 +280,14 @@ class PokemonCardWidget(QFrame):
 
         if self._attacks_container is not None:
             self._clear_attack_rows()
-            for attack in mon.card.attacks:
+            pokemon_can_attack = can_attack(mon)
+            for i, attack in enumerate(mon.card.attacks):
                 row = AttackRow()
-                ready = energy_satisfies_cost(mon.attached_energies, attack.cost)
-                row.update_attack(attack, ready)
+                ready = pokemon_can_attack and energy_satisfies_cost(
+                    mon.attached_energies, attack.cost
+                )
+                row.update_attack(attack, ready=ready, clickable=ready and interactive)
+                row.clicked.connect(lambda index=i: self.attack_clicked.emit(index))
                 self._attacks_container.addWidget(row)
 
         self._repolish()
