@@ -343,6 +343,34 @@ def test_full_game_via_controller_reaches_game_over(qtbot, offline_art):
     qtbot.waitUntil(lambda: scene.game_over_overlay is not None, timeout=2000)
 
 
+def test_spectator_mode_plays_a_full_game_between_two_ais(qtbot, offline_art):
+    random.seed(11)
+    scene = BattleScene(offline_art, "DECK B", "DECK A")
+    scene.set_names("Deck A", "Deck B")
+    ctrl = BattleController(
+        scene,
+        state_factory=lambda: turn_manager.start_new_game(build_demo_deck(), build_demo_deck()),
+        ai_factory=EasyAI,
+        player_ai_factory=EasyAI,
+    )
+
+    assert ctrl.spectating and not ctrl.is_player_turn
+    assert scene.end_turn_button.mode == "watch"
+    qtbot.waitUntil(lambda: rules.is_game_over(ctrl.state), timeout=15000)
+    qtbot.waitUntil(lambda: scene.game_over_overlay is not None, timeout=2000)
+    assert scene.game_over_overlay.title.endswith("VENCE!")
+
+
+def test_spectator_ignores_human_input(controller, offline_art):
+    state = _state(_deck_card("Charmander"), _deck_card("Squirtle"), hand=[_energy("Fire")])
+    scene = BattleScene(offline_art)
+    ctrl = BattleController(scene, lambda: state, EasyAI, player_ai_factory=EasyAI)
+    ctrl._ai_timer.stop()
+
+    assert ctrl.legal_actions() == []
+    assert ctrl.targets_for_hand(0) == {}
+
+
 def test_restart_starts_fresh_game(controller):
     state_holder = {"n": 0}
 

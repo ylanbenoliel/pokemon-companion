@@ -9,7 +9,7 @@ from pokemon_companion.ai.heuristics_medium import MediumAI
 from pokemon_companion.cards_db.models import Attack
 from pokemon_companion.demo_data import build_demo_deck
 from pokemon_companion.engine import rules, turn_manager
-from pokemon_companion.engine.actions import UseAttack
+from pokemon_companion.engine.actions import Retreat, UseAttack
 from pokemon_companion.engine.game_state import PlayerId, PokemonInPlay
 
 from .test_rules import build_state
@@ -73,3 +73,16 @@ def test_self_play_medium_vs_medium_terminates_without_exceptions():
 def test_self_play_hard_vs_medium_terminates_without_exceptions():
     rng = random.Random(99)
     _play_full_game(HardAI(), MediumAI(), rng)
+
+
+def test_hard_ai_does_not_retreat_just_to_dump_energy(charmander, squirtle):
+    # Regressão: a IA difícil recuava em loop porque só simulava a resposta
+    # do oponente para ações que encerram o turno.
+    state = build_state(player_active=charmander, opponent_active=squirtle)
+    state.player.active.attached_energies = ["Fire"]
+    state.player.bench = [PokemonInPlay(card=squirtle)]
+
+    actions = [a for a in rules.legal_actions(state) if not isinstance(a, UseAttack)]
+    chosen = HardAI().choose_action(state, actions)
+
+    assert not isinstance(chosen, Retreat)

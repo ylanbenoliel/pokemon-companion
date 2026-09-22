@@ -7,6 +7,8 @@ medium:
   board_presence: 5.0
   damage_dealt: 1.0
   lose_own_active: 80.0
+  energy_attached: 4.0
+  board_hp: 0.1
 
 hard:
   win: 1000.0
@@ -14,3 +16,5 @@ hard:
   board_presence: 5.0
   damage_dealt: 1.5
   lose_own_active: 100.0
+  energy_attached: 5.0
+  board_hp: 0.12

@@ -41,9 +41,43 @@ def test_parse_decklist_text_handles_sections_and_basic_energy():
 
     assert not errors
     assert entries == [
-        DecklistEntry(quantity=4, name="Charmander", set_code="SVI", number="26"),
-        DecklistEntry(quantity=8, name="Fire Energy", set_code=None, number=None),
+        DecklistEntry(4, "Charmander", "SVI", "26", "Pokémon"),
+        DecklistEntry(8, "Fire Energy", None, None, "Energy"),
     ]
+
+
+def test_parse_limitless_export_format():
+    text = """# Dragapult by Alguém – Limitless
+    Pokémon (2)
+    4 Dreepy TWM 128
+    Trainer (1)
+    4 Buddy-Buddy Poffin TEF 144
+    Energy (2)
+    3 Fire Energy MEE 2
+    2 Basic {P} Energy SVE 5
+    """
+
+    entries, errors = parse_decklist_text(text)
+
+    assert not errors
+    assert entries == [
+        DecklistEntry(4, "Dreepy", "TWM", "128", "Pokémon"),
+        DecklistEntry(4, "Buddy-Buddy Poffin", "TEF", "144", "Trainer"),
+        DecklistEntry(3, "Fire Energy", None, None, "Energy"),
+        DecklistEntry(2, "Psychic Energy", None, None, "Energy"),
+    ]
+
+
+def test_trainers_resolve_locally_without_api(tmp_path):
+    entry = DecklistEntry(4, "Ultra Ball", "MEG", "131", "Trainer")
+    api = FakeApiClient({})
+
+    cards, errors = resolve_entries([entry], FakeCache(), api)
+
+    assert not errors
+    assert len(cards) == 4
+    assert cards[0].supertype.value == "Trainer"
+    assert api.calls == 0
 
 
 def test_parse_decklist_text_reports_unrecognized_line():

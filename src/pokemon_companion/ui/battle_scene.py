@@ -131,10 +131,10 @@ def fan_layout(count: int) -> list[tuple[QPointF, float]]:
     return layout
 
 
-def humanize(message: str) -> str:
+def humanize(message: str, player: str = "Você", opponent: str = "IA") -> str:
     """Troca os ids internos do motor por nomes amigáveis na tela."""
-    message = re.sub(r"\bplayer\b", "Você", message)
-    return re.sub(r"\bopponent\b", "IA", message)
+    message = re.sub(r"\bplayer\b", player, message)
+    return re.sub(r"\bopponent\b", opponent, message)
 
 
 class BoardRoot(QGraphicsObject):
@@ -164,10 +164,12 @@ class BattleScene(QGraphicsScene):
     restart_clicked = pyqtSignal()
     background_clicked = pyqtSignal()
 
-    def __init__(self, art: ArtProvider, opponent_label: str = "IA") -> None:
+    def __init__(
+        self, art: ArtProvider, opponent_label: str = "IA", player_label: str = "VOCÊ"
+    ) -> None:
         super().__init__(0, 0, SCENE_W, SCENE_H)
         self.art = art
-        self._opponent_label = opponent_label
+        self._names = {PlayerId.PLAYER: "Você", PlayerId.OPPONENT: "IA"}
         self.root = BoardRoot()
         self.addItem(self.root)
 
@@ -180,7 +182,7 @@ class BattleScene(QGraphicsScene):
         self._toast_animations: list[QAbstractAnimation] = []
         self._game_over: GameOverOverlay | None = None
 
-        self.player_prizes = self._board_item(PrizeGrid("VOCÊ"), PLAYER_PRIZES)
+        self.player_prizes = self._board_item(PrizeGrid(player_label), PLAYER_PRIZES)
         self.opponent_prizes = self._board_item(PrizeGrid(opponent_label), OPPONENT_PRIZES)
         self.player_deck = self._board_item(CardPile("DECK"), PLAYER_DECK)
         self.opponent_deck = self._board_item(CardPile("DECK"), OPPONENT_DECK)
@@ -208,6 +210,13 @@ class BattleScene(QGraphicsScene):
         self.inspect.setZValue(2000)
         self.inspect.hide()
         self.addItem(self.inspect)
+
+    def set_names(self, player: str, opponent: str) -> None:
+        """Nomes usados nas mensagens/banners (ex: nomes dos decks no modo espectador)."""
+        self._names = {PlayerId.PLAYER: player, PlayerId.OPPONENT: opponent}
+
+    def name_of(self, side: PlayerId) -> str:
+        return self._names[side]
 
     def _board_item(self, item: ItemT, pos: QPointF) -> ItemT:
         item.setParentItem(self.root)
@@ -785,7 +794,9 @@ class BattleScene(QGraphicsScene):
     # ------------------------------------------------------------------
     # toasts (mensagens do motor), não bloqueiam o jogo
     def show_toast(self, message: str) -> None:
-        toast = Toast(humanize(message))
+        toast = Toast(
+            humanize(message, self._names[PlayerId.PLAYER], self._names[PlayerId.OPPONENT])
+        )
         toast.setZValue(2200)
         toast.setPos(TOAST_ANCHOR)
         toast.setOpacity(0.0)
@@ -932,10 +943,10 @@ class BattleScene(QGraphicsScene):
         self.inspect.hide()
 
     # -- fim de jogo ----------------------------------------------------
-    def show_game_over(self, won: bool) -> None:
+    def show_game_over(self, title: str, won: bool) -> None:
         if self._game_over is not None:
             return
-        overlay = GameOverOverlay(SCENE_W, SCENE_H, won)
+        overlay = GameOverOverlay(SCENE_W, SCENE_H, title, GOLD if won else QColor("#ff6b6b"))
         overlay.setZValue(5000)
         overlay.button.clicked.connect(self.restart_clicked.emit)
         overlay.setOpacity(0.0)

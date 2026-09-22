@@ -63,6 +63,11 @@ class Card:
     image_local_path: str | None = None
     national_pokedex_numbers: list[int] = field(default_factory=list)
 
+    def __deepcopy__(self, memo: dict[int, object]) -> Card:
+        # Carta é imutável: as simulações da IA (deepcopy do GameState) podem
+        # compartilhar a mesma instância em vez de copiar ~120 cartas por jogada.
+        return self
+
     @property
     def is_basic(self) -> bool:
         return self.supertype == Supertype.POKEMON and self.evolves_from is None

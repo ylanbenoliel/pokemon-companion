@@ -1229,9 +1229,12 @@ class EndTurnButton(GameButton):
         return QColor("#3aa0ff"), QColor("#1f5fd1")
 
     def paint_content(self, painter: QPainter) -> None:
-        text = {"play": "FIM DO TURNO", "done": "FIM DO TURNO", "ai": "TURNO DA IA"}.get(
-            self._mode, "FIM DE JOGO"
-        )
+        text = {
+            "play": "FIM DO TURNO",
+            "done": "FIM DO TURNO",
+            "ai": "TURNO DA IA",
+            "watch": "ESPECTADOR",
+        }.get(self._mode, "FIM DE JOGO")
         draw_outlined_text(
             painter,
             QPointF(0, 0),
@@ -1640,11 +1643,12 @@ class ZoneHighlight(QGraphicsObject):
 
 
 class GameOverOverlay(QGraphicsObject):
-    def __init__(self, width: float, height: float, won: bool) -> None:
+    def __init__(self, width: float, height: float, title: str, color: QColor) -> None:
         super().__init__()
         self._w = width
         self._h = height
-        self.won = won
+        self.title = title
+        self._color = QColor(color)
         self.button = GameButton(240, 60)
         self.button.setParentItem(self)
         self.button.setPos(width / 2, height / 2 + 90)
@@ -1671,14 +1675,12 @@ class GameOverOverlay(QGraphicsObject):
         if painter is None:
             return
         painter.fillRect(self.boundingRect(), QColor(4, 8, 20, 185))
-        title = "VITÓRIA!" if self.won else "DERROTA"
-        color = GOLD if self.won else QColor("#ff6b6b")
         draw_outlined_text(
             painter,
             QPointF(self._w / 2, self._h / 2 - 20),
-            title,
-            ui_font(64, QFont.Weight.Black),
-            color,
+            self.title,
+            ui_font(64 if len(self.title) <= 12 else 46, QFont.Weight.Black),
+            self._color,
             QColor(0, 0, 0, 200),
             10,
         )

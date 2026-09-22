@@ -11,7 +11,7 @@ trabalho avançar.
 ```bash
 cd ~/pokemon_companion
 uv sync                 # instala dependências em .venv
-uv run pytest -v        # confirma que tudo continua passando (105 testes)
+uv run pytest -v        # confirma que tudo continua passando (115 testes)
 uv run mypy src          # type-check
 uv run black --check . && uv run ruff check .   # formatação/lint
 
@@ -23,6 +23,10 @@ uv run python -m pokemon_companion.main --player-deck data/decks/meu_deck.txt --
 
 # Tabuleiro gráfico (PyQt6) — arrastar/clicar, animações; board do jogador ainda sem câmera:
 uv run python -m pokemon_companion.ui.app --difficulty hard
+
+# Modo espectador: duas IAs no difícil com decks competitivos (Regional de Baltimore, 09/2026):
+uv run python -m pokemon_companion.ui.app --spectate --difficulty hard --player-difficulty hard \
+  --player-deck examples/decks/dragapult_ex.txt --opponent-deck examples/decks/ns_zoroark_ex.txt --speed 1.5
 ```
 
 ## Status — todas as 5 fases do plano original têm código funcional
@@ -62,7 +66,30 @@ uv run python -m pokemon_companion.ui.app --difficulty hard
     vitória/derrota com "Jogar de novo".
   Ícones de energia são vetoriais (QPainter), não emoji — iguais em todo SO.
 
-105 testes passando (`uv run pytest`), `black`/`ruff`/`mypy` limpos.
+115 testes passando (`uv run pytest`), `black`/`ruff`/`mypy` limpos.
+
+- ✅ **Decks competitivos + modo espectador (pós-plano)**: duas listas reais do
+  Limitless em `examples/decks/` (Dragapult ex, 3º no Regional de Baltimore;
+  N's Zoroark ex). Parser aceita o export atual do Limitless (`Pokémon (19)`,
+  `3 Fire Energy MEE 2`, comentários `#`). Cartas via pokemontcg.io com
+  fallback automático para a TCGdex (`cards_db/tcgdex_client.py`,
+  `cards_db/lookup.py`) — a pokemontcg.io estava fora do ar (500/502) nesta
+  sessão e as 120 cartas foram resolvidas pela TCGdex. `--spectate` põe uma
+  IA também no lado de baixo; `--speed` acelera as animações.
+  **Limitação importante com decks competitivos**: Treinadores (≈ 33 de 60
+  cartas), habilidades e efeitos de ataque não são aplicados pelo motor. Os
+  Treinadores entram no deck como cartas sem efeito (resolvidas localmente,
+  sem rede). Na prática, as partidas simuladas (10 jogos IA difícil × IA
+  difícil) quase sempre terminam em deck-out por volta do turno 96: com ~8
+  energias por deck e sem busca/compra, os ex de 280–320 HP raramente caem.
+  Próximo passo natural: motor de Treinadores com os efeitos das cartas
+  dessas duas listas (compra, busca de básicos, Boss's Orders, Crispin...).
+- ✅ **Correção na IA difícil**: o lookahead só simulava o oponente para ações
+  que encerram o turno, então qualquer ação que não encerrasse (ex: recuar,
+  descartando energia) parecia melhor que passar a vez — ela recuava em
+  loop. Agora cada candidata é avaliada após completar o próprio turno e o
+  turno inteiro do oponente; a avaliação também valoriza energia anexada e
+  HP em campo. Nos 10 jogos simulados: recuos 76 → 16, ataques 133 → 263.
 
 ## O que foi e não foi validado neste ambiente de trabalho
 
@@ -116,6 +143,8 @@ pokemon_companion/
 │   ├── config/settings.yaml
 │   ├── cards_db/                    # Fase 2 — completo
 │   │   ├── models.py, api_client.py, cache.py, basic_energies.py, decklist_parser.py
+│   │   ├── tcgdex_client.py         # fonte alternativa (TCGdex), usada quando a pokemontcg.io cai
+│   │   └── lookup.py                # CardLookup (Protocol) + FallbackLookup
 │   ├── engine/                      # Fase 1 — completo
 │   │   ├── game_state.py, actions.py, rules.py, status_conditions.py, turn_manager.py
 │   │   ├── history.py               # Fase 5 — MatchRecorder (JSON)

@@ -132,11 +132,14 @@ _DOUBLE_PRIZE_SUBTYPES = {"ex", "EX", "GX", "V", "BREAK"}
 def prize_count_for(card: Card) -> int:
     """Quantos prêmios o oponente leva ao nocautear esta carta.
 
-    Simplificação do MVP: cobre só os casos mais comuns (ex/GX/V = 2,
-    VMAX/VSTAR = 3); outras raridades especiais (ex: TAG TEAM) contam como 1.
+    Simplificação do MVP: cobre os casos mais comuns (ex/GX/V = 2,
+    VMAX/VSTAR/Mega Evolução ex = 3); outras raridades especiais (ex: TAG
+    TEAM) contam como 1.
     """
     subtypes = set(card.subtypes)
     if subtypes & _TRIPLE_PRIZE_SUBTYPES:
+        return 3
+    if "Mega" in subtypes and "ex" in subtypes:
         return 3
     if subtypes & _DOUBLE_PRIZE_SUBTYPES:
         return 2

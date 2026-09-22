@@ -13,7 +13,7 @@ from typing import Any
 import yaml
 
 from pokemon_companion.engine import rules
-from pokemon_companion.engine.actions import Action
+from pokemon_companion.engine.actions import Action, Retreat
 from pokemon_companion.engine.game_state import GameState, PlayerId
 
 DEFAULT_WEIGHTS: dict[str, float] = {
@@ -22,6 +22,10 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "board_presence": 5.0,
     "damage_dealt": 1.0,
     "lose_own_active": 80.0,
+    # Sem estes dois termos, recuar (que descarta energia) e evoluir (que dá
+    # mais HP) pontuavam igual a "não fazer nada" — a IA recuava em loop.
+    "energy_attached": 4.0,
+    "board_hp": 0.1,
 }
 
 
@@ -48,6 +52,14 @@ def evaluate_state(state: GameState, perspective: PlayerId, weights: dict[str, f
     score += weights["board_presence"] * len(me.bench)
     score -= weights["board_presence"] * len(opponent.bench)
 
+    my_mons, their_mons = me.all_pokemon_in_play(), opponent.all_pokemon_in_play()
+    energy_weight = weights.get("energy_attached", 0.0)
+    score += energy_weight * sum(len(m.attached_energies) for m in my_mons)
+    score -= energy_weight * sum(len(m.attached_energies) for m in their_mons)
+    hp_weight = weights.get("board_hp", 0.0)
+    score += hp_weight * sum(m.current_hp for m in my_mons)
+    score -= hp_weight * sum(m.current_hp for m in their_mons)
+
     score += weights["damage_dealt"] * sum(
         m.damage_counters for m in opponent.all_pokemon_in_play()
     )
@@ -59,6 +71,12 @@ def evaluate_state(state: GameState, perspective: PlayerId, weights: dict[str, f
     return score
 
 
+def retreats_last(actions: list[Action]) -> list[Action]:
+    """Em caso de empate de pontuação, prefere qualquer coisa a recuar (o
+    primeiro melhor vence) — evita trocas de ativo sem propósito."""
+    return sorted(actions, key=lambda action: isinstance(action, Retreat))
+
+
 class MediumAI:
     def __init__(self, weights: dict[str, float] | None = None) -> None:
         self._weights = weights or DEFAULT_WEIGHTS
@@ -67,7 +85,7 @@ class MediumAI:
         perspective = state.active_player
         best_action = legal_actions[0]
         best_score = float("-inf")
-        for action in legal_actions:
+        for action in retreats_last(legal_actions):
             simulated = copy.deepcopy(state)
             rules.apply_action(simulated, action)
             score = evaluate_state(simulated, perspective, self._weights)

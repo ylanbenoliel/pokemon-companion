@@ -9,7 +9,9 @@ from pathlib import Path
 from pokemon_companion.cards_db.api_client import PokemonTcgApiClient
 from pokemon_companion.cards_db.cache import CardCache
 from pokemon_companion.cards_db.decklist_parser import load_deck
+from pokemon_companion.cards_db.lookup import CardLookup, FallbackLookup
 from pokemon_companion.cards_db.models import Card
+from pokemon_companion.cards_db.tcgdex_client import TcgdexClient
 from pokemon_companion.demo_data import build_demo_deck
 
 
@@ -18,7 +20,7 @@ class DeckLoadError(Exception):
 
 
 def _load_deck_file(
-    path: Path, cache: CardCache, api_client: PokemonTcgApiClient
+    path: Path, cache: CardCache, api_client: CardLookup
 ) -> tuple[list[Card], list[str]]:
     if not path.is_file():
         raise DeckLoadError(f"Arquivo de decklist não encontrado: {path}")
@@ -43,7 +45,8 @@ def load_decks(
 
     warnings: list[str] = []
     with CardCache() as cache:
-        api_client = PokemonTcgApiClient()
+        # pokemontcg.io primeiro; se estiver fora do ar, TCGdex (uma falha só).
+        api_client = FallbackLookup([PokemonTcgApiClient(max_retries=1), TcgdexClient()])
 
         if player_deck_path is not None:
             player_deck, player_warnings = _load_deck_file(player_deck_path, cache, api_client)

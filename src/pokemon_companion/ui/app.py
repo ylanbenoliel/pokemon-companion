@@ -11,6 +11,9 @@ cartas digital (Hearthstone / Pokémon TCG Pocket).
 
 `BattleController` é a ponte entre input, motor de regras e animações: nada
 aqui decide regras — tudo passa por `rules.legal_actions`/`apply_action`.
+
+Modo espectador (`--spectate`): uma segunda IA controla o lado de baixo e o
+jogo corre sozinho, com as mesmas animações — útil para testar decks.
 """
 
 from __future__ import annotations
@@ -56,11 +59,14 @@ class BattleController(QObject):
         state_factory: Callable[[], GameState],
         ai_factory: Callable[[], AIPlayer],
         history_path: Path | None = None,
+        player_ai_factory: Callable[[], AIPlayer] | None = None,
     ) -> None:
         super().__init__()
         self.scene = scene
         self._state_factory = state_factory
         self._ai_factory = ai_factory
+        self._player_ai_factory = player_ai_factory
+        self.player_ai: AIPlayer | None = None
         self._history_path = history_path
         self.queue = AnimationQueue()
         self.queue.idle.connect(self._on_idle)
@@ -92,6 +98,7 @@ class BattleController(QObject):
         self._ai_timer.stop()
         self.state = self._state_factory()
         self.ai = self._ai_factory()
+        self.player_ai = self._player_ai_factory() if self._player_ai_factory else None
         self.recorder = MatchRecorder() if self._history_path else None
         self._game_over_shown = False
         self._cancel_modes()
@@ -104,8 +111,17 @@ class BattleController(QObject):
         return self.queue.busy
 
     @property
+    def spectating(self) -> bool:
+        return self._player_ai_factory is not None
+
+    @property
     def is_player_turn(self) -> bool:
-        return not rules.is_game_over(self.state) and self.state.active_player == PlayerId.PLAYER
+        """Vez do humano agir (sempre falso no modo espectador)."""
+        return (
+            not self.spectating
+            and not rules.is_game_over(self.state)
+            and self.state.active_player == PlayerId.PLAYER
+        )
 
     def legal_actions(self) -> list[Action]:
         return rules.legal_actions(self.state) if self.is_player_turn else []
@@ -118,20 +134,31 @@ class BattleController(QObject):
                 self._game_over_shown = True
                 if self.recorder is not None and self._history_path is not None:
                     self.recorder.save(self._history_path)
-                self.scene.show_game_over(self.state.winner == PlayerId.PLAYER)
+                self._show_game_over()
             return
         self._refresh_controls()
         if not self.is_player_turn:
             self._ai_timer.start(Animator.ms(AI_THINK_MS))
 
+    def _show_game_over(self) -> None:
+        winner = self.state.winner
+        if self.spectating and winner is not None:
+            self.scene.show_game_over(f"{self.scene.name_of(winner).upper()} VENCE!", won=True)
+        else:
+            won = winner == PlayerId.PLAYER
+            self.scene.show_game_over("VITÓRIA!" if won else "DERROTA", won=won)
+
     def _push_turn_banner(self) -> None:
         if rules.is_game_over(self.state):
             self.queue.push(lambda: None)
             return
-        if self.is_player_turn:
-            self.queue.push(lambda: self.scene.banner("SEU TURNO", QColor("#1f6fe0")))
+        bottom = self.state.active_player == PlayerId.PLAYER
+        color = QColor("#1f6fe0") if bottom else QColor("#c0392b")
+        if self.spectating:
+            title = f"VEZ DE {self.scene.name_of(self.state.active_player).upper()}"
         else:
-            self.queue.push(lambda: self.scene.banner("TURNO DA IA", QColor("#c0392b")))
+            title = "SEU TURNO" if bottom else "TURNO DA IA"
+        self.queue.push(lambda: self.scene.banner(title, color))
 
     # ------------------------------------------------------------------
     # controles
@@ -140,6 +167,8 @@ class BattleController(QObject):
         my_turn = self.is_player_turn and not self.busy
         if rules.is_game_over(self.state):
             mode = "over"
+        elif self.spectating:
+            mode = "watch"
         elif not self.is_player_turn:
             mode = "ai"
         elif all(isinstance(action, EndTurn) for action in legal):
@@ -164,7 +193,9 @@ class BattleController(QObject):
             can_retreat=False,
             retreat_mode=False,
             playable_hand=set(),
-            end_turn_mode="ai" if not self.is_player_turn else "play",
+            end_turn_mode=(
+                "watch" if self.spectating else ("ai" if not self.is_player_turn else "play")
+            ),
         )
 
     def _cancel_modes(self) -> None:
@@ -282,6 +313,14 @@ class BattleController(QObject):
         self._lock_controls()
         actor = self.state.active_player
         actor_state = self.state.state_of(actor)
+        hand_index = getattr(action, "hand_index", None)
+        if (
+            card_source is None
+            and actor == PlayerId.PLAYER
+            and hand_index is not None
+            and 0 <= hand_index < len(self.scene.hand_items)
+        ):
+            card_source = self.scene.hand_items[hand_index].scenePos()
         if isinstance(action, UseAttack) and actor_state.active is not None:
             attacker = actor_state.active
             defender = self.state.state_of(actor.other).active
@@ -325,9 +364,11 @@ class BattleController(QObject):
     def _ai_step(self) -> None:
         if self.busy or rules.is_game_over(self.state) or self.is_player_turn:
             return
+        bottom = self.state.active_player == PlayerId.PLAYER
+        ai = self.player_ai if bottom else self.ai
         actions = rules.legal_actions(self.state)
-        if actions:
-            self.perform(self.ai.choose_action(self.state, actions))
+        if actions and ai is not None:
+            self.perform(ai.choose_action(self.state, actions))
 
 
 class BattleView(QGraphicsView):
@@ -367,16 +408,27 @@ class MainWindow(QMainWindow):
         opponent_label: str = "IA",
         art: ArtProvider | None = None,
         history_path: Path | None = None,
+        player_ai_factory: Callable[[], AIPlayer] | None = None,
+        player_label: str = "VOCÊ",
     ) -> None:
         super().__init__()
         self.setWindowTitle("Pokémon Companion")
-        self.scene = BattleScene(art or ArtProvider(), opponent_label)
+        self.scene = BattleScene(art or ArtProvider(), opponent_label, player_label)
+        if player_ai_factory is not None:
+            self.scene.set_names(player_label.title(), opponent_label.title())
         self.view = BattleView(self.scene)
         self.setCentralWidget(self.view)
-        self.controller = BattleController(self.scene, state_factory, ai_factory, history_path)
+        self.controller = BattleController(
+            self.scene, state_factory, ai_factory, history_path, player_ai_factory
+        )
 
     def log_message(self, message: str) -> None:
         self.scene.show_toast(message)
+
+
+def deck_label(path: Path | None, fallback: str) -> str:
+    """Nome curto para a tela a partir do arquivo: "ns_zoroark_ex" → "NS ZOROARK EX"."""
+    return path.stem.replace("_", " ").upper() if path is not None else fallback
 
 
 def build_main_window(
@@ -385,14 +437,23 @@ def build_main_window(
     opponent_deck_path: Path | None,
     history_path: Path | None = None,
     art: ArtProvider | None = None,
+    player_difficulty: str | None = None,
 ) -> MainWindow:
+    """`player_difficulty` definido = modo espectador (IA também no lado de baixo)."""
     player_deck, opponent_deck, warnings = load_decks(player_deck_path, opponent_deck_path)
+    spectate = player_difficulty is not None
     window = MainWindow(
         state_factory=lambda: turn_manager.start_new_game(list(player_deck), list(opponent_deck)),
         ai_factory=lambda: build_ai(difficulty),
-        opponent_label=DIFFICULTY_LABELS.get(difficulty, "IA"),
+        opponent_label=(
+            deck_label(opponent_deck_path, "IA 2")
+            if spectate
+            else DIFFICULTY_LABELS.get(difficulty, "IA")
+        ),
         art=art,
         history_path=history_path,
+        player_ai_factory=(lambda: build_ai(player_difficulty)) if player_difficulty else None,
+        player_label=deck_label(player_deck_path, "IA 1") if spectate else "VOCÊ",
     )
     for warning in warnings:
         window.log_message(f"! {warning}")
@@ -405,14 +466,28 @@ def main() -> None:
     parser.add_argument("--player-deck", type=Path, default=None)
     parser.add_argument("--opponent-deck", type=Path, default=None)
     parser.add_argument("--record-history", type=Path, default=None, metavar="ARQUIVO.json")
+    parser.add_argument(
+        "--spectate",
+        action="store_true",
+        help="IA contra IA: assista a partida (o lado de baixo usa --player-difficulty).",
+    )
+    parser.add_argument("--player-difficulty", choices=["easy", "medium", "hard"], default="hard")
+    parser.add_argument(
+        "--speed", type=float, default=1.0, help="Velocidade das animações (2 = 2x mais rápido)."
+    )
     args = parser.parse_args()
 
     app = QApplication(sys.argv)
     app.setFont(ui_font(10))
+    Animator.speed = 1.0 / max(args.speed, 0.1)
 
     try:
         window = build_main_window(
-            args.difficulty, args.player_deck, args.opponent_deck, args.record_history
+            args.difficulty,
+            args.player_deck,
+            args.opponent_deck,
+            args.record_history,
+            player_difficulty=args.player_difficulty if args.spectate else None,
         )
     except DeckLoadError as exc:
         QMessageBox.critical(None, "Erro ao carregar deck", str(exc))
