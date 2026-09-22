@@ -11,7 +11,7 @@ trabalho avançar.
 ```bash
 cd ~/pokemon_companion
 uv sync                 # instala dependências em .venv
-uv run pytest -v        # confirma que tudo continua passando (153 testes)
+uv run pytest -v        # confirma que tudo continua passando (210 testes)
 uv run mypy src          # type-check
 uv run black --check . && uv run ruff check .   # formatação/lint
 
@@ -34,12 +34,12 @@ uv run python -m pokemon_companion.ui.app --spectate --difficulty hard --player-
   --player-deck examples/decks/dragapult_ex.txt --opponent-deck examples/decks/ns_zoroark_ex.txt \
   --speed 1.5 --record-history data/partida.json
 
-# Torneio IA vs IA (round robin, sem interface, paralelo) com os 20 decks do meta:
+# Torneio IA vs IA (round robin, sem interface, paralelo) com os 25 decks do meta:
 uv run python tools/tournament.py examples/decks/top --games 4 --level hard
 # Quais textos de cartas dos decks ainda não têm efeito implementado:
 uv run python tools/effect_coverage.py examples/decks/top
-# Atualizar os 20 decks do meta a partir do limitlesstcg.com:
-uv run python tools/fetch_top_decks.py
+# Atualizar os decks do meta a partir do limitlesstcg.com (o ranking tem 25):
+uv run python tools/fetch_top_decks.py --top 25
 # Reproduzir o top cut de um torneio real (padrão: Mundial 2026):
 uv run python tools/replay_top_cut.py --series 40
 ```
@@ -131,6 +131,15 @@ uv run python tools/replay_top_cut.py --series 40
   a ilustração recortada, o tipo (Item/Apoiador/Estádio/Ferramenta) e o
   texto no painel de detalhes, com o aviso de que o efeito ainda não é
   aplicado; se a busca falhar, viram carta local só com nome, sem erro.
+- ✅ **Importar deck sem sair do app** (`cards_db/limitless.py` +
+  `ui/deck_import.py`): botão "Importar deck" na tela inicial abre um
+  diálogo com três caminhos — procurar o arquétipo pelo nome no Limitless
+  (baixa a melhor lista publicada), colar o link de uma lista/arquétipo, ou
+  colar o texto da decklist. O HTML é lido por regex (o site não tem API
+  pública), então o parsing é testável sem rede; só `fetch()` faz requisição
+  de verdade, isolado por injeção nos testes. O deck importado é salvo em
+  `data/decks/` e a tira da tela inicial se atualiza na hora, já selecionado
+  para o lado armado.
 
 ## Regras completas e motor de efeitos (09/2026)
 
@@ -169,7 +178,7 @@ trocar, dano com Fraqueza/Resistência e prevenções), `attacks.py`,
 `cardinfo.py` (Tera/Antigo/Futuro por nome). Escolhas estratégicas viram
 alvos da ação (`target`), para a IA avaliar cada opção e a UI mostrar
 destaques/painel. `tools/effect_coverage.py` mostra 100% dos textos das
-cartas do top 20 cobertos.
+cartas dos 25 decks do meta cobertos (todo o ranking do Limitless).
 
 ### Direção visual (skill `frontend-design`, .claude/skills/)
 
@@ -202,6 +211,30 @@ UI: Treinadores soltos no tabuleiro ou sobre o Pokémon alvo; painel de
 escolha para opções que não são um Pokémon; selo "HAB." nos Pokémon com
 Habilidade disponível (clique para usar); carta do Estádio à direita
 (brilha quando pode ser usada); Ferramenta como etiqueta no token.
+
+### Meta completo: decks 21–25 (09/2026)
+
+O ranking de arquétipos do Limitless tem só 25 decks; os 20 primeiros já
+estavam 100% cobertos, mas os 5 restantes (Mega Absol Box, Mega Chandelure
+ex, Mega Starmie ex, Mega Kangaskhan ex, Greninja ex) tinham 34 textos sem
+efeito (~23% das cartas). Todos implementados. Mecanismos novos, genéricos
+(não amarrados a uma carta):
+
+- **Revide** (`PokemonInPlay.retaliation` + `attacks.retaliate_next_turn`):
+  "no próximo turno do oponente, se sofrer dano de ataque, N contadores no
+  atacante" — aplicado em `core.deal_damage`.
+- **Redução contínua de dano** (`passives.static_damage_reduction`, Curly
+  Wall), **recuo maior do Ativo adversário** (Binding Flame em
+  `passives.retreat_cost`) e **bônus contra Pokémon com Habilidade**
+  (Compound Eyes em `passives.attacker_bonus`).
+- Helpers de ataque: `discard_own_energy`, `attach_from_deck`,
+  `opp_hand_damage`; valores lidos do texto da carta (`number_in_text`) para
+  que versões diferentes do mesmo efeito reusem a mesma função (Shadow
+  Bullet/Jetting Blow, Psychic/Ear Force...).
+- Bubbly Water Energy fornece {W} e protege/cura Pokémon de Água.
+
+Torneio só entre os 5 novos (40 partidas, IA difícil): 0 erros, Mega Starmie
+81% e Mega Chandelure 25%.
 
 ## Torneio IA vs IA — top 20 do meta (resultados e ajustes)
 
@@ -415,7 +448,7 @@ por isso ficou para quando você puder testar com hardware real.
 
 ## Simplificações do MVP (lembrete, ver README.md)
 
-- Efeitos de cartas cobrem os 20 decks do meta; cartas fora deles podem não
+- Efeitos de cartas cobrem os 25 decks do meta; cartas fora deles podem não
   ter efeito (Treinador sem registro é jogado sem efeito e avisa no log;
   ataque sem registro causa só o dano base). Rode `tools/effect_coverage.py`
   ao adicionar decks. Tera/Antigo/Futuro são listas por nome em `cardinfo.py`.

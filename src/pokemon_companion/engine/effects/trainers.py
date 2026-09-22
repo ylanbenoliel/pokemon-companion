@@ -390,6 +390,42 @@ def _wally(ctx: Ctx) -> None:
         ctx.me.hand.append(core.detach_energy(mon, energy))
 
 
+@trainer("Colress's Tenacity")
+def _colress_tenacity(ctx: Ctx) -> None:
+    core.search_deck(ctx, _is_kind("Stadium"), 1)
+    core.search_deck(ctx, lambda c: c.supertype.value == "Energy", 1)
+
+
+@trainer("AZ's Tranquility", lambda ctx: bool(ctx.me.bench), own_bench_options)
+def _az_tranquility(ctx: Ctx) -> None:
+    leaving = ctx.me.active
+    own_switch(ctx, target_index(ctx))
+    if leaving is not None and "ex" in leaving.card.subtypes and core.heal(leaving, 80):
+        ctx.log(f"{leaving.card.name} curou 80 ao ir para o Banco.")
+
+
+def _evolutions_in_deck(ctx: Ctx, mon: PokemonInPlay) -> list[Card]:
+    return [
+        c
+        for c in ctx.me.deck
+        if c.is_pokemon and not c.abilities and c.evolves_from == mon.card.name
+    ]
+
+
+@trainer(
+    "Salvatore",
+    lambda ctx: any(_evolutions_in_deck(ctx, m) for m in ctx.me.all_pokemon_in_play()),
+)
+def _salvatore(ctx: Ctx) -> None:
+    """Evolui direto do deck, inclusive Pokémon que entraram neste turno."""
+    options = [(m, c) for m in ctx.me.all_pokemon_in_play() for c in _evolutions_in_deck(ctx, m)]
+    mon, card = max(options, key=lambda o: (o[0] is ctx.me.active, o[1].hp or 0))
+    ctx.me.deck.remove(card)
+    core.evolve_into(ctx.state, ctx.me, mon, card)
+    core.shuffle_deck(ctx.me)
+    ctx.log(f"{mon.card.name} evoluiu para {card.name} (Salvatore).")
+
+
 @trainer("Briar", lambda ctx: len(ctx.opp.prizes) == 2)
 def _briar(ctx: Ctx) -> None:
     ctx.me.extra_prize_turn = ctx.turn
@@ -739,6 +775,76 @@ def _energy_search(ctx: Ctx) -> None:
     core.search_deck(ctx, is_basic_energy, 1)
 
 
+@trainer("Mega Signal", lambda ctx: any(c.is_pokemon and is_mega(c) for c in ctx.me.deck))
+def _mega_signal(ctx: Ctx) -> None:
+    core.search_deck(ctx, lambda c: c.is_pokemon and is_mega(c), 1)
+
+
+def _actives_hit_by_dark_bell(ctx: Ctx) -> list[tuple[PlayerId, PokemonInPlay]]:
+    return [
+        (pid, mon)
+        for pid in (ctx.player_id, ctx.opp_id)
+        if (mon := ctx.state.state_of(pid).active) is not None
+        and pokemon_type(mon.card) != "Darkness"
+    ]
+
+
+@trainer("Dark Bell", lambda ctx: bool(_actives_hit_by_dark_bell(ctx)))
+def _dark_bell(ctx: Ctx) -> None:
+    for pid, mon in _actives_hit_by_dark_bell(ctx):
+        core.set_status(ctx, pid, mon, StatusCondition.CONFUSED)
+
+
+def _damaged_options(ctx: Ctx) -> list[Target | None]:
+    return [("own", p) for p in core.positions(ctx.me) if core.mon_at(ctx.me, p).damage_counters]  # type: ignore[union-attr]
+
+
+@trainer("Super Potion", lambda ctx: bool(_damaged_options(ctx)), _damaged_options)
+def _super_potion(ctx: Ctx) -> None:
+    mon = core.mon_at(ctx.me, target_index(ctx, -1))
+    if mon is not None and core.heal(mon, 60):
+        core.discard_energy(ctx.me, mon)
+
+
+def _blowtorch_options(ctx: Ctx) -> list[Target | None]:
+    """("opp", posição) para Ferramenta/Energia Especial, ou ("stadium",)."""
+    options: list[Target | None] = [
+        ("opp", p)
+        for p in core.positions(ctx.opp)
+        if (mon := core.mon_at(ctx.opp, p)) is not None
+        and (mon.tool is not None or mon.special_energy_cards)
+    ]
+    if ctx.state.stadium is not None:
+        options.append(("stadium",))
+    return options
+
+
+@trainer(
+    "Blowtorch",
+    lambda ctx: any(core.type_filter("Fire")(c) for c in ctx.me.hand)
+    and bool(_blowtorch_options(ctx)),
+    _blowtorch_options,
+)
+def _blowtorch(ctx: Ctx) -> None:
+    cost = next(c for c in ctx.me.hand if core.type_filter("Fire")(c))
+    ctx.me.hand.remove(cost)
+    ctx.me.discard.append(cost)
+    if ctx.target and ctx.target[0] == "stadium":
+        discard_stadium(ctx.state)
+        return
+    mon = core.mon_at(ctx.opp, target_index(ctx, -1))
+    if mon is None:
+        return
+    if mon.tool is not None:
+        ctx.opp.discard.append(mon.tool)
+        ctx.log(f"{mon.tool.name} de {mon.card.name} foi descartada.")
+        mon.tool = None
+    elif mon.special_energy_cards:
+        card = mon.special_energy_cards[0]
+        ctx.opp.discard.append(core.detach_energy(mon, card.name))
+        ctx.log(f"{card.name} de {mon.card.name} foi descartada.")
+
+
 # ---------------------------------------------------------------------------
 # Estádios: efeito "uma vez durante o turno de cada jogador"
 
@@ -783,6 +889,41 @@ def _rocket_factory(ctx: Ctx) -> None:
 def _lumiose_city(ctx: Ctx) -> None:
     core.search_deck(ctx, lambda c: c.is_basic, 1, destination="bench")
     ctx.ends_turn = True
+
+
+def _next_stage(ctx: Ctx, mon: PokemonInPlay, stage: str) -> Card | None:
+    options = [
+        c
+        for c in ctx.me.deck
+        if c.is_pokemon and stage_of(c) == stage and c.evolves_from == mon.card.name
+    ]
+    return max(options, key=lambda c: c.hp or 0, default=None)
+
+
+def _grand_tree_basics(ctx: Ctx) -> list[PokemonInPlay]:
+    if ctx.turn <= 2:
+        return []
+    return [
+        m
+        for m in ctx.me.all_pokemon_in_play()
+        if stage_of(m.card) == "Basic"
+        and m.turn_played < ctx.turn
+        and _next_stage(ctx, m, "Stage 1") is not None
+    ]
+
+
+@stadium("Grand Tree", lambda ctx: bool(_grand_tree_basics(ctx)))
+def _grand_tree(ctx: Ctx) -> None:
+    """Evolui um Básico para o Estágio 1 e, se der, para o Estágio 2."""
+    mon = max(_grand_tree_basics(ctx), key=lambda m: m is ctx.me.active)
+    for stage in ("Stage 1", "Stage 2"):
+        card = _next_stage(ctx, mon, stage)
+        if card is None:
+            break
+        ctx.me.deck.remove(card)
+        ctx.log(f"{mon.card.name} evoluiu para {card.name} (Grand Tree).")
+        mon = core.evolve_into(ctx.state, ctx.me, mon, card)
+    core.shuffle_deck(ctx.me)
 
 
 def ace_spec_blocked(state: GameState, player_id: PlayerId) -> bool:

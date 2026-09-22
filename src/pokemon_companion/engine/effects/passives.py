@@ -87,6 +87,10 @@ def retreat_cost(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> int:
         cost -= 2
     if stage_of(mon.card) == "Basic" and any_ability_in_play(state, owner, "Skyliner"):
         cost = 0
+    if mon is state.state_of(owner).active and any_ability_in_play(
+        state, owner.other, "Binding Flame"
+    ):
+        cost += 1
     return max(cost, 0)
 
 
@@ -243,7 +247,23 @@ def attacker_bonus(
         )
     if attacker.attack_debuff and attacker.attack_debuff[1] == state.turn_number:
         bonus -= attacker.attack_debuff[0]
+    if ability_active(state, attacker, "Compound Eyes") and defender.card.abilities:
+        bonus += 50
     return bonus
+
+
+def static_damage_reduction(
+    state: GameState, defender_owner: PlayerId, defender: PokemonInPlay
+) -> int:
+    """Reduções contínuas de dano vindas de Habilidades passivas (Curly
+    Wall: seus Básicos {C} tomam 60 a menos com outro Bouffalant em jogo)."""
+    if stage_of(defender.card) != "Basic" or pokemon_type(defender.card) != "Colorless":
+        return 0
+    team = state.state_of(defender_owner).all_pokemon_in_play()
+    walls = sum(1 for mon in team if ability_active(state, mon, "Curly Wall"))
+    if walls - (1 if ability_active(state, defender, "Curly Wall") else 0) >= 1:
+        return 60
+    return 0
 
 
 def damage_prevented(
@@ -311,4 +331,6 @@ def prevents_ability_effects(state: GameState, defender: PokemonInPlay) -> bool:
 
 
 def immune_to_special_conditions(state: GameState, mon: PokemonInPlay) -> bool:
-    return stadium_is(state, "Festival Grounds") and bool(mon.attached_energies)
+    if stadium_is(state, "Festival Grounds") and bool(mon.attached_energies):
+        return True
+    return "Bubbly Water Energy" in mon.attached_energies and pokemon_type(mon.card) == "Water"

@@ -433,3 +433,154 @@ def test_tera_pokemon_takes_no_attack_damage_on_bench(state):
     state.active_player = PlayerId.PLAYER
     rules.apply_action(state, UseAttack(attack_index=0, target=("opp", -1)))
     assert state.opponent.active.damage_counters == 100
+
+
+# --------------------------------------------------------------------------
+# decks 21–25 do meta: mecanismos novos
+
+
+def _attacker(state, name: str, damage: str, ability: str | None = None) -> None:
+    card = with_attack(mon("Attacker", hp=300), name, ["Colorless"], damage)
+    if ability:
+        card = with_ability(card, ability)
+    state.player.active = PokemonInPlay(card=card, attached_energies=["Colorless"])
+
+
+def test_retaliation_puts_counters_on_the_next_attacker(state):
+    _attacker(state, "Ready to Ram", "40")
+    state.opponent.active = PokemonInPlay(
+        card=mon("Defender", hp=200), attached_energies=["Colorless"]
+    )
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+    rules.apply_action(state, UseAttack(attack_index=0))  # oponente revida com Tackle
+
+    assert state.player.active.damage_counters == 20
+    assert state.opponent.active.damage_counters == 40 + 60
+
+
+def test_curly_wall_needs_another_bouffalant(state):
+    _attacker(state, "Smash", "100")
+    wall = with_ability(mon("Bouffalant", hp=200), "Curly Wall")
+    state.opponent.active = PokemonInPlay(card=wall)
+    assert passives.static_damage_reduction(state, PlayerId.OPPONENT, state.opponent.active) == 0
+
+    state.opponent.bench = [PokemonInPlay(card=wall)]
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.damage_counters == 40
+
+
+def test_binding_flame_raises_retreat_and_phantom_maze_scales_with_it(state):
+    _attacker(state, "Phantom Maze", "130+", ability="Binding Flame")
+    state.opponent.active = PokemonInPlay(card=mon("Defender", hp=400))
+    assert passives.retreat_cost(state, PlayerId.OPPONENT, state.opponent.active) == 2
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.damage_counters == 130 + 50 * 2
+
+
+def test_compound_eyes_bonus_only_against_ability_pokemon(state):
+    _attacker(state, "Tackle", "20", ability="Compound Eyes")
+    state.opponent.active = PokemonInPlay(card=with_ability(mon("Target"), "Anything"))
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.damage_counters == 70
+
+
+def test_damage_per_card_in_opponents_hand(state):
+    _attacker(state, "Mind Ruler", "30×")
+    state.opponent.active = PokemonInPlay(card=mon("Defender", hp=300))
+    state.opponent.hand = [mon("A"), mon("B"), mon("C")]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.damage_counters == 90
+
+
+def test_bubbly_water_energy_cures_and_protects_water_pokemon(state):
+    from pokemon_companion.engine.effects import core
+    from pokemon_companion.engine.game_state import StatusCondition
+
+    bubbly = dataclasses.replace(make_energy("Bubbly Water Energy", "Water"), subtypes=["Special"])
+    water = PokemonInPlay(
+        card=make_basic_pokemon("Wet", 300, "Water"), status=StatusCondition.ASLEEP
+    )
+    core.attach_energy_card(water, bubbly)
+    assert water.status == StatusCondition.NONE
+    assert passives.provided_energy(state, PlayerId.OPPONENT, water) == ["Water"]
+
+    state.opponent.active = water
+    _attacker(state, "Absolute Snow", "150")
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert water.damage_counters == 150
+    assert water.status == StatusCondition.NONE
+
+
+def test_bench_damage_amount_comes_from_the_card_text(state):
+    text = "This attack also does 50 damage to 1 of your opponent's Benched Pokémon."
+    starmie = dataclasses.replace(
+        mon("Mega Starmie ex", hp=330),
+        attacks=[Attack(name="Jetting Blow", cost=["Colorless"], damage="120", text=text)],
+    )
+    state.player.active = PokemonInPlay(card=starmie, attached_energies=["Colorless"])
+    state.opponent.active = PokemonInPlay(card=mon("Defender", hp=300))
+    state.opponent.bench = [PokemonInPlay(card=mon("Frail", hp=50))]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.damage_counters == 120
+    assert state.opponent.bench == []
+
+
+def test_az_tranquility_heals_the_ex_sent_to_the_bench(state):
+    ex_card = dataclasses.replace(mon("Big ex", hp=250), subtypes=["Basic", "ex"])
+    state.player.active = PokemonInPlay(card=ex_card, damage_counters=100)
+    state.player.bench = [PokemonInPlay(card=mon("Pivot"))]
+    state.player.hand = [trainer("AZ's Tranquility", "Supporter")]
+
+    rules.apply_action(state, PlayTrainer(hand_index=0, target=("own", 0)))
+
+    assert state.player.active.card.name == "Pivot"
+    assert state.player.bench[0].damage_counters == 20
+
+
+def test_blowtorch_costs_a_fire_energy_and_can_discard_the_stadium(state):
+    state.stadium = trainer("Prism Tower", "Stadium")
+    state.stadium_owner = PlayerId.OPPONENT
+    state.player.hand = [trainer("Blowtorch"), make_energy("Fire Energy", "Fire")]
+    options = {a.target for a in rules.legal_actions(state) if isinstance(a, PlayTrainer)}
+    assert ("stadium",) in options
+
+    rules.apply_action(state, PlayTrainer(hand_index=0, target=("stadium",)))
+
+    assert state.stadium is None
+    assert [c.name for c in state.player.hand] == []
+    assert "Fire Energy" in [c.name for c in state.player.discard]
+
+
+def test_grand_tree_evolves_twice_from_the_deck(state):
+    stage1 = make_evolution("Middle", "Attacker", 120, "Colorless", "30")
+    stage2 = dataclasses.replace(
+        make_evolution("Top", "Middle", 200, "Colorless", "90"), subtypes=["Stage 2"]
+    )
+    state.player.deck = [stage1, stage2, mon("Filler")]
+    state.stadium = trainer("Grand Tree", "Stadium", "ACE SPEC")
+
+    rules.apply_action(state, UseStadium())
+
+    assert state.player.active.card.name == "Top"
+    assert [c.name for c in state.player.active.prior_cards] == ["Middle", "Attacker"]
+
+
+def test_salvatore_evolves_a_pokemon_played_this_turn(state):
+    state.player.bench = [PokemonInPlay(card=mon("Fresh"), turn_played=state.turn_number)]
+    state.player.deck = [make_evolution("Grown", "Fresh", 150, "Colorless", "60")]
+    state.player.hand = [trainer("Salvatore", "Supporter")]
+
+    rules.apply_action(state, PlayTrainer(hand_index=0))
+
+    assert state.player.bench[0].card.name == "Grown"

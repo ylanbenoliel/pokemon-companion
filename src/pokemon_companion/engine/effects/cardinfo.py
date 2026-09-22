@@ -100,6 +100,7 @@ TYPED_SPECIAL_ENERGIES = {
     "Telepathic Psychic Energy": "Psychic",
     "Growing Grass Energy": "Grass",
     "Rocky Fighting Energy": "Fighting",
+    "Bubbly Water Energy": "Water",
 }
 
 

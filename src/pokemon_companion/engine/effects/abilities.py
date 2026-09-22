@@ -177,6 +177,12 @@ def _lunar_cycle(ctx: Ctx) -> None:
     core.draw(ctx.me, 3)
 
 
+@ability("Alluring Light", lambda ctx: bool(ctx.me.deck))
+def _alluring_light(ctx: Ctx) -> None:
+    core.draw(ctx.me, 1)
+    core.draw(ctx.opp, 1)
+
+
 @ability("Psychic Draw", trigger="evolve")
 def _psychic_draw(ctx: Ctx) -> None:
     assert ctx.source is not None

@@ -15,6 +15,9 @@ from pokemon_companion.cards_db.models import Card
 
 TRAINERS_PT: dict[str, str] = {
     # Apoiadores
+    "AZ's Tranquility": "Troca o seu Ativo; se um Pokémon ex foi para o Banco, cura 80 dele.",
+    "Colress's Tenacity": "Busca 1 Estádio e 1 Energia no deck.",
+    "Salvatore": "Evolui 1 Pokémon seu com uma carta sem Habilidade do deck, mesmo recém-jogado.",
     "Bianca's Devotion": "Cura todo o dano de 1 Pokémon seu com 30 de HP ou menos.",
     "Black Belt's Training": "Neste turno, seus ataques dão +40 no Pokémon ex Ativo do oponente.",
     "Boss's Orders": "Puxa 1 Pokémon do Banco do oponente para o Ativo.",
@@ -45,6 +48,10 @@ TRAINERS_PT: dict[str, str] = {
     "Wally's Compassion": "Cura todo o dano de 1 Mega ex seu e devolve as energias dele à mão.",
     "Xerosic's Machinations": "O oponente descarta até ficar com 3 cartas na mão.",
     # Itens
+    "Blowtorch": "Descarta 1 energia de Fogo da mão: tira 1 Ferramenta/Energia Especial do oponente ou o Estádio.",
+    "Dark Bell": "Os dois Ativos que não são de Escuridão ficam Confusos.",
+    "Mega Signal": "Busca 1 Pokémon Mega ex no deck.",
+    "Super Potion": "Cura 60 de 1 Pokémon seu e descarta 1 energia dele.",
     "Buddy-Buddy Poffin": "Busca até 2 Básicos com 70 de HP ou menos e põe no Banco.",
     "Bug Catching Set": "Olha as 7 do topo e pega até 2 Pokémon/energias de Planta.",
     "Crushing Hammer": "Cara: descarta 1 energia de 1 Pokémon do oponente.",
@@ -81,6 +88,7 @@ TRAINERS_PT: dict[str, str] = {
     "Battle Cage": "Impede contadores de dano no Banco vindos de ataques e Habilidades.",
     "Festival Grounds": "Pokémon com energia anexada não sofrem condições especiais.",
     "Forest of Vitality": "Pokémon de Planta podem evoluir no mesmo turno em que entram.",
+    "Grand Tree": "Uma vez por turno, cada jogador evolui 1 Básico até o Estágio 2 direto do deck.",
     "Gravity Mountain": "Todo Pokémon de Estágio 2 em jogo perde 30 de HP.",
     "Jamming Tower": "Nenhuma Ferramenta anexada tem efeito.",
     "Lumiose City": "Uma vez por turno: busca 1 Básico e põe no Banco, mas encerra o turno.",
@@ -104,6 +112,10 @@ TRAINERS_PT: dict[str, str] = {
 
 ABILITIES_PT: dict[str, str] = {
     "ACE Nullifier": "Com Ferramenta anexada, o oponente não pode jogar cartas ACE SPEC.",
+    "Alluring Light": "Uma vez por turno: os dois jogadores compram 1 carta.",
+    "Binding Flame": "O Ativo do oponente precisa de 1 energia a mais para recuar.",
+    "Compound Eyes": "Ataques deste Pokémon dão +50 no Ativo do oponente que tem Habilidade.",
+    "Curly Wall": "Com outro Bouffalant em jogo, seus Básicos Incolores tomam 60 a menos.",
     "Adrena-Brain": "Com energia de Escuridão: move até 3 contadores de dano seus para o oponente.",
     "Attract Customers": "No Ativo: olha as 6 do topo e pega 1 Apoiador.",
     "Boom Boom Groove": "Com Festival Lead no Ativo: busca qualquer carta no deck.",

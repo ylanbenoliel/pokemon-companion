@@ -61,6 +61,8 @@ class PokemonInPlay:
     #: turno em que foi jogado da mão para o banco (Habilidades "quando você
     #: jogar este Pokémon da mão no seu banco")
     played_from_hand_turn: int | None = None
+    #: contadores postos no atacante se este Pokémon sofrer dano de ataque
+    retaliation: tuple[int, int] | None = None  # (contadores, turno)
 
     @property
     def max_hp(self) -> int:

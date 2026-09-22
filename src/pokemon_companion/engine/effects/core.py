@@ -197,6 +197,8 @@ def attach_energy_card(mon: PokemonInPlay, card: Card) -> None:
     mon.attached_energies.append(energy_type_of(card))
     if is_special_energy(card):
         mon.special_energy_cards.append(card)
+    if card.name == "Bubbly Water Energy" and pokemon_type(mon.card) == "Water":
+        mon.status = StatusCondition.NONE
 
 
 def detach_energy(mon: PokemonInPlay, energy: str) -> Card:
@@ -528,10 +530,17 @@ def deal_damage(
             amount = 0
         if defender.damage_reduction and defender.damage_reduction[1] == state.turn_number:
             amount -= defender.damage_reduction[0]
+        amount -= passives.static_damage_reduction(state, owner, defender)
     amount = max(amount, 0)
     if amount:
         defender.damage_counters += amount
         ctx.log(f"{defender.card.name} sofreu {amount} de dano.")
+        retaliation = defender.retaliation
+        if attacker is not None and retaliation and retaliation[1] == state.turn_number:
+            attacker.damage_counters += 10 * retaliation[0]
+            ctx.log(
+                f"{defender.card.name} revidou: {retaliation[0]} contador(es) em {attacker.card.name}."
+            )
     return amount
 
 

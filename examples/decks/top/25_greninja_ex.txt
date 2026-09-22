@@ -1,0 +1,34 @@
+# Greninja ex — #25 do meta (0.29% dos pontos)
+# Greninja by Jacob Avchen – Limitless
+# fonte: https://limitlesstcg.com/decks/list/29335
+Pokémon (21)
+3 Froakie CRI 20
+2 Frogadier CRI 21
+2 Greninja ex TWM 106
+3 Duskull PRE 35
+2 Dusclops PRE 36
+2 Dusknoir PRE 37
+2 Meowth ex POR 62
+1 Staryu POR 20
+1 Mega Starmie ex POR 21
+1 Budew ASC 16
+1 Fezandipiti ex ASC 142
+1 Latias ex SSP 76
+Trainer (30)
+4 Lillie's Determination MEG 119
+2 Colress's Tenacity SFA 57
+2 Boss's Orders MEG 114
+2 Hilda WHT 84
+1 Judge POR 76
+1 Salvatore TEF 160
+4 Buddy-Buddy Poffin TEF 144
+4 Ultra Ball MEG 131
+3 Poké Pad POR 81
+2 Rare Candy MEG 125
+2 Night Stretcher ASC 196
+1 Special Red Card CRI 82
+1 Grand Tree SCR 136
+1 Gravity Mountain SSP 177
+Energy (9)
+6 Water Energy MEE 3
+3 Ignition Energy WHT 86

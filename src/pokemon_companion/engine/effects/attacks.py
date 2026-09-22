@@ -236,6 +236,34 @@ def defending_cant_retreat(ctx: Ctx) -> None:
         defender.cannot_retreat_turn = ctx.turn + 1
 
 
+def retaliate_next_turn(ctx: Ctx, counters: int) -> None:
+    """ "No próximo turno do oponente, se este Pokémon sofrer dano de um
+    ataque, coloque N contadores no Pokémon atacante"."""
+    if ctx.source is not None:
+        ctx.source.retaliation = (counters, ctx.turn + 1)
+
+
+def discard_own_energy(ctx: Ctx, count: int) -> int:
+    mon = ctx.source
+    discarded = 0
+    while mon is not None and mon.attached_energies and discarded < count:
+        ctx.me.discard.append(core.detach_energy(mon, core.least_useful_energy(mon)))
+        discarded += 1
+    return discarded
+
+
+def attach_from_deck(ctx: Ctx, predicate: core.CardFilter, count: int) -> int:
+    """ "Procure no deck até N energias e anexe aos seus Pokémon como quiser"."""
+    attached = core.attach_from(ctx, ctx.me.deck, predicate, count)
+    core.shuffle_deck(ctx.me)
+    return attached
+
+
+def opp_hand_damage(ctx: Ctx, a: Attack) -> int:
+    """ "N de dano para cada carta na mão do oponente"."""
+    return a.base_damage * len(ctx.opp.hand)
+
+
 def recoil(ctx: Ctx, amount: int) -> None:
     if ctx.source is not None:
         ctx.source.damage_counters += amount
@@ -294,7 +322,7 @@ def _comet_punch(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, 30 * heads)
 
 
-@attack("Tumbling Attack")
+@attack("Tumbling Attack", "Play Rough")
 def _tumbling(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage + (20 if core.coin() else 0))
 
@@ -432,8 +460,8 @@ def number_in_text(attack_: Attack, pattern: str, default: int) -> int:
     return int(match.group(1)) if match else default
 
 
-@attack("Psychic")
-def _psychic(ctx: Ctx, a: Attack) -> None:
+@attack("Psychic", "Ear Force")
+def _per_defender_energy(ctx: Ctx, a: Attack) -> None:
     defender = ctx.opp.active
     per_energy = number_in_text(a, r"(\d+) more damage for each Energy", 30)
     hit_active(
@@ -543,6 +571,34 @@ def _rock_hurl(ctx: Ctx, a: Attack) -> None:
 @attack("Superb Scissors", "Spiky Hopper", "Shred")
 def _ignore_defender_effects(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage, ignore_effects=True)
+
+
+@attack("Nebula Beam")
+def _ignore_everything(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, a.base_damage, weakness=False, resistance=False, ignore_effects=True)
+
+
+@attack("Mind Ruler", "Resentful Refrain", estimate=opp_hand_damage)
+def _opp_hand(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, opp_hand_damage(ctx, a))
+
+
+def _retreat_bonus(ctx: Ctx, a: Attack) -> int:
+    defender = ctx.opp.active
+    cost = passives.retreat_cost(ctx.state, ctx.opp_id, defender) if defender else 0
+    return a.base_damage + number_in_text(a, r"(\d+) more damage for each", 50) * cost
+
+
+@attack("Phantom Maze", estimate=_retreat_bonus)
+def _phantom_maze(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, _retreat_bonus(ctx, a))
+
+
+@attack("Shocking Web")
+def _shocking_web(ctx: Ctx, a: Attack) -> None:
+    assert ctx.source is not None
+    bonus = 80 if "Lightning" in ctx.source.attached_energies else 0
+    hit_active(ctx, a.base_damage + bonus)
 
 
 # ---------------------------------------------------------------------------
@@ -700,12 +756,20 @@ def _phantom_dive(ctx: Ctx, a: Attack) -> None:
     core.spread_counters(ctx, ctx.opp_id, 6, bench_only=True)
 
 
-@attack("Shadow Bullet")
-def _shadow_bullet(ctx: Ctx, a: Attack) -> None:
+@attack("Shadow Bullet", "Jetting Blow")
+def _also_bench(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
-    targets = best_damage_targets(ctx, 30, 1, bench_only=True)
+    amount = number_in_text(a, r"also does (\d+) damage to 1 of your opponent's Benched", 30)
+    targets = best_damage_targets(ctx, amount, 1, bench_only=True)
     if targets:
-        hit(ctx, targets[0], 30)
+        hit(ctx, targets[0], amount)
+
+
+@attack("Mirage Barrage", estimate=lambda ctx, a: 240)
+def _mirage_barrage(ctx: Ctx, a: Attack) -> None:
+    discard_own_energy(ctx, 2)
+    for position in best_damage_targets(ctx, 120, 2):
+        hit(ctx, position, 120)
 
 
 @attack("Matcha Spin")
@@ -759,10 +823,22 @@ for _name, _amount in (
     ATTACKS[_name] = AttackSpec(_recoil_attack(_amount))
 
 
-@attack("Eon Blade", "Prism Edge", "Blood Moon", "Rampaging Thunder")
+@attack("Eon Blade", "Prism Edge", "Blood Moon", "Rampaging Thunder", "Boundless Power")
 def _cant_attack(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
     cant_attack_next_turn(ctx)
+
+
+@attack("Smashing Headbutt")
+def _discard_two_after(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, a.base_damage)
+    discard_own_energy(ctx, 2)
+
+
+@attack("Ready to Ram")
+def _ready_to_ram(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, a.base_damage)
+    retaliate_next_turn(ctx, number_in_text(a, r"put (\d+) damage counters", 6))
 
 
 @attack("Accelerating Stab", "Mega Brave")
@@ -824,6 +900,12 @@ def _mind_bend(ctx: Ctx, a: Attack) -> None:
     status_on_defender(ctx, StatusCondition.CONFUSED)
 
 
+@attack("Absolute Snow")
+def _absolute_snow(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, a.base_damage)
+    status_on_defender(ctx, StatusCondition.ASLEEP)
+
+
 @attack("Poison Spray")
 def _poison_spray(ctx: Ctx, a: Attack) -> None:
     status_on_defender(ctx, StatusCondition.POISONED)
@@ -851,6 +933,17 @@ def _tantrum(ctx: Ctx, a: Attack) -> None:
 def _switch_self_attack(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
     switch_self(ctx)
+
+
+@attack("Follow Me", options=opp_bench)
+def _gust_attack(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, a.base_damage)
+    if ctx.opp.bench:
+        index = target_index(ctx, -2)
+        if index < 0:
+            index = core.gust_target(ctx.state, ctx.opp_id) or 0
+        core.switch_active(ctx.state, ctx.opp, index)
+        ctx.log(f"{ctx.opp.active.card.name} foi puxado para o Ativo.")  # type: ignore[union-attr]
 
 
 @attack("Bounce Back", "Push Down")
@@ -884,9 +977,29 @@ def _draw_two(ctx: Ctx, a: Attack) -> None:
     core.draw(ctx.me, 2)
 
 
-@attack("Filch")
+@attack("Filch", "Collect")
 def _filch(ctx: Ctx, a: Attack) -> None:
     core.draw(ctx.me, 1)
+
+
+@attack("Flower Shower")
+def _both_draw(ctx: Ctx, a: Attack) -> None:
+    count = number_in_text(a, r"Each player draws (\d+)", 3)
+    core.draw(ctx.me, count)
+    core.draw(ctx.opp, count)
+
+
+@attack("Spreading Light")
+def _same_name_to_bench(ctx: Ctx, a: Attack) -> None:
+    assert ctx.source is not None
+    name = ctx.source.card.name
+    count = number_in_text(a, r"up to (\d+)", 3)
+    core.search_deck(ctx, lambda c: c.name == name, count, destination="bench")
+
+
+@attack("Summoning Jutsu")
+def _search_pokemon(ctx: Ctx, a: Attack) -> None:
+    core.search_deck(ctx, lambda c: c.is_pokemon, number_in_text(a, r"up to (\d+)", 3))
 
 
 @attack("Burst Roar")
@@ -912,7 +1025,7 @@ def _deceit(ctx: Ctx, a: Attack) -> None:
     core.search_deck(ctx, lambda c: trainer_kind(c) == "Supporter", 1)
 
 
-@attack("Puppet Pull")
+@attack("Puppet Pull", "Shinobi Blade")
 def _puppet_pull(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
     core.search_deck(ctx, lambda c: True, 1)
@@ -971,6 +1084,20 @@ def _aura_jab(ctx: Ctx, a: Attack) -> None:
         3,
         allowed=lambda m: any(m is b for b in bench),
     )
+
+
+@attack("Kaleidowaltz")
+def _kaleidowaltz(ctx: Ctx, a: Attack) -> None:
+    heads = sum(core.coin() for _ in range(3))
+    ctx.log(f"{heads} cara(s).")
+    attach_from_deck(ctx, is_basic_energy, 2 * heads)
+
+
+@attack("Jolting Charge")
+def _jolting_charge(ctx: Ctx, a: Attack) -> None:
+    for energy_type in ("Grass", "Lightning"):
+        core.attach_from(ctx, ctx.me.deck, core.type_filter(energy_type), 2)
+    core.shuffle_deck(ctx.me)
 
 
 @attack("Draconic Buster")
