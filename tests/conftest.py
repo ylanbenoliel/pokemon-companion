@@ -1,11 +1,21 @@
 """Fixtures compartilhadas: cartas mockadas para testar o motor de regras
-sem depender da API pokemontcg.io (isso só é introduzido na Fase 2)."""
+sem depender da API pokemontcg.io, e configuração de ambiente headless para
+os testes de UI (PyQt6) rodarem sem display real."""
 
 from __future__ import annotations
 
-import pytest
+import os
 
-from pokemon_companion.cards_db.models import Attack, Card, Supertype, WeaknessResistance
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+import pytest  # noqa: E402
+
+from pokemon_companion.cards_db.models import (  # noqa: E402
+    Attack,
+    Card,
+    Supertype,
+    WeaknessResistance,
+)
 
 
 def make_energy(name: str, energy_type: str) -> Card:

@@ -125,6 +125,24 @@ def _energy_type_of(card: Card) -> str:
     return card.types[0] if card.types else card.name.replace(" Energy", "")
 
 
+_TRIPLE_PRIZE_SUBTYPES = {"VMAX", "VSTAR"}
+_DOUBLE_PRIZE_SUBTYPES = {"ex", "EX", "GX", "V", "BREAK"}
+
+
+def prize_count_for(card: Card) -> int:
+    """Quantos prêmios o oponente leva ao nocautear esta carta.
+
+    Simplificação do MVP: cobre só os casos mais comuns (ex/GX/V = 2,
+    VMAX/VSTAR = 3); outras raridades especiais (ex: TAG TEAM) contam como 1.
+    """
+    subtypes = set(card.subtypes)
+    if subtypes & _TRIPLE_PRIZE_SUBTYPES:
+        return 3
+    if subtypes & _DOUBLE_PRIZE_SUBTYPES:
+        return 2
+    return 1
+
+
 def _check_and_process_knockout(state: GameState, owner_id: PlayerId) -> list[str]:
     messages: list[str] = []
     owner = state.state_of(owner_id)
@@ -132,15 +150,20 @@ def _check_and_process_knockout(state: GameState, owner_id: PlayerId) -> list[st
     opponent = state.state_of(opponent_id)
 
     if owner.active and owner.active.is_knocked_out:
-        messages.append(f"{owner.active.card.name} ({owner_id.value}) foi nocauteado!")
-        owner.discard.append(owner.active.card)
+        knocked_out_card = owner.active.card
+        messages.append(f"{knocked_out_card.name} ({owner_id.value}) foi nocauteado!")
+        owner.discard.append(knocked_out_card)
         owner.active = None
-        if opponent.prizes:
-            prize = opponent.prizes.pop()
-            opponent.hand.append(prize)
+
+        prize_count = min(prize_count_for(knocked_out_card), len(opponent.prizes))
+        for _ in range(prize_count):
+            opponent.hand.append(opponent.prizes.pop())
+        if prize_count:
             messages.append(
-                f"{opponent_id.value} pegou um prêmio ({len(opponent.prizes)} restantes)."
+                f"{opponent_id.value} pegou {prize_count} prêmio(s) "
+                f"({len(opponent.prizes)} restantes)."
             )
+
         if owner.bench:
             owner.active = owner.bench.pop(0)
         if not opponent.prizes or not owner.has_pokemon_in_play():

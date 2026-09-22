@@ -9,35 +9,13 @@ import argparse
 import sys
 from pathlib import Path
 
-from pokemon_companion.ai.heuristics_easy import EasyAI
-from pokemon_companion.ai.heuristics_hard import HardAI
-from pokemon_companion.ai.heuristics_medium import MediumAI
-from pokemon_companion.ai.opponent import AIPlayer
-from pokemon_companion.cards_db.api_client import PokemonTcgApiClient
-from pokemon_companion.cards_db.cache import CardCache
-from pokemon_companion.cards_db.decklist_parser import load_deck
-from pokemon_companion.cards_db.models import Card
-from pokemon_companion.demo_data import build_demo_deck
+from pokemon_companion.ai.opponent import AIPlayer, build_ai
+from pokemon_companion.deck_loading import DeckLoadError, load_decks
 from pokemon_companion.engine import rules, turn_manager
-from pokemon_companion.engine.actions import (
-    Action,
-    AttachEnergy,
-    EndTurn,
-    Evolve,
-    PlayBasicToActive,
-    PlayBasicToBench,
-    Retreat,
-    UseAttack,
-)
+from pokemon_companion.engine.actions import Action
 from pokemon_companion.engine.game_state import GameState, PlayerId, PokemonInPlay
-
-
-def build_ai(difficulty: str) -> AIPlayer:
-    if difficulty == "easy":
-        return EasyAI()
-    if difficulty == "hard":
-        return HardAI()
-    return MediumAI()
+from pokemon_companion.engine.history import MatchRecorder
+from pokemon_companion.presentation import describe_action
 
 
 def render_pokemon(label: str, mon: PokemonInPlay | None) -> str:
@@ -65,30 +43,16 @@ def render_state(state: GameState) -> str:
     return "\n".join(lines)
 
 
-def describe_action(state: GameState, action: Action) -> str:
-    player = state.state_of(state.active_player)
-    if isinstance(action, PlayBasicToActive):
-        return f"Jogar {player.hand[action.hand_index].name} como ativo"
-    if isinstance(action, PlayBasicToBench):
-        return f"Jogar {player.hand[action.hand_index].name} no banco"
-    if isinstance(action, Evolve):
-        target = "ativo" if action.target_is_active else f"banco {action.bench_index}"
-        return f"Evoluir {target} para {player.hand[action.hand_index].name}"
-    if isinstance(action, AttachEnergy):
-        target = "ativo" if action.target_is_active else f"banco {action.bench_index}"
-        return f"Anexar {player.hand[action.hand_index].name} no {target}"
-    if isinstance(action, UseAttack):
-        assert player.active is not None
-        attack = player.active.card.attacks[action.attack_index]
-        return f"Atacar com {attack.name} ({attack.damage} dano)"
-    if isinstance(action, Retreat):
-        return f"Recuar para {player.bench[action.bench_index].card.name}"
-    if isinstance(action, EndTurn):
-        return "Passar o turno"
-    return str(action)
+def _apply_and_record(
+    state: GameState, action: Action, recorder: MatchRecorder | None
+) -> list[str]:
+    messages = rules.apply_action(state, action)
+    if recorder is not None:
+        recorder.record(state, action, messages)
+    return messages
 
 
-def human_turn(state: GameState) -> None:
+def human_turn(state: GameState, recorder: MatchRecorder | None) -> None:
     print(render_state(state))
     actions = rules.legal_actions(state)
     for i, action in enumerate(actions):
@@ -102,63 +66,50 @@ def human_turn(state: GameState) -> None:
         else:
             print("Entrada inválida.")
 
-    for message in rules.apply_action(state, chosen):
+    for message in _apply_and_record(state, chosen, recorder):
         print(f"  -> {message}")
 
 
-def ai_turn(state: GameState, ai: AIPlayer) -> None:
+def ai_turn(state: GameState, ai: AIPlayer, recorder: MatchRecorder | None) -> None:
     actions = rules.legal_actions(state)
     chosen = ai.choose_action(state, actions)
     print(f"IA escolheu: {describe_action(state, chosen)}")
-    for message in rules.apply_action(state, chosen):
+    for message in _apply_and_record(state, chosen, recorder):
         print(f"  -> {message}")
 
 
-def _load_deck_or_exit(path: Path, cache: CardCache, api_client: PokemonTcgApiClient) -> list[Card]:
-    if not path.is_file():
-        print(f"Arquivo de decklist não encontrado: {path}")
-        sys.exit(1)
-    cards, errors = load_deck(path, cache, api_client)
-    for error in errors:
-        print(f"  ! {error}")
-    if not cards:
-        print(f"Não foi possível resolver nenhuma carta de {path}. Abortando.")
-        sys.exit(1)
-    return cards
-
-
 def run_game(
-    difficulty: str, player_deck_path: Path | None, opponent_deck_path: Path | None
+    difficulty: str,
+    player_deck_path: Path | None,
+    opponent_deck_path: Path | None,
+    history_path: Path | None = None,
 ) -> None:
-    if player_deck_path or opponent_deck_path:
-        with CardCache() as cache:
-            api_client = PokemonTcgApiClient()
-            player_deck = (
-                _load_deck_or_exit(player_deck_path, cache, api_client)
-                if player_deck_path
-                else build_demo_deck()
-            )
-            opponent_deck = (
-                _load_deck_or_exit(opponent_deck_path, cache, api_client)
-                if opponent_deck_path
-                else build_demo_deck()
-            )
-    else:
-        player_deck = build_demo_deck()
-        opponent_deck = build_demo_deck()
+    try:
+        player_deck, opponent_deck, warnings = load_decks(player_deck_path, opponent_deck_path)
+    except DeckLoadError as exc:
+        print(str(exc))
+        sys.exit(1)
+
+    for warning in warnings:
+        print(f"  ! {warning}")
 
     state = turn_manager.start_new_game(player_deck, opponent_deck)
     ai = build_ai(difficulty)
+    recorder = MatchRecorder() if history_path else None
     print(f"Nova partida iniciada (dificuldade da IA: {difficulty}).")
 
     while not rules.is_game_over(state):
         if state.active_player == PlayerId.PLAYER:
-            human_turn(state)
+            human_turn(state, recorder)
         else:
-            ai_turn(state, ai)
+            ai_turn(state, ai, recorder)
 
     assert state.winner is not None
     print(f"\nFim de jogo! Vencedor: {state.winner.value}")
+
+    if recorder is not None and history_path is not None:
+        recorder.save(history_path)
+        print(f"Histórico da partida salvo em {history_path}")
 
 
 def main() -> None:
@@ -179,10 +130,17 @@ def main() -> None:
         default=None,
         help="Arquivo de decklist para o deck da IA. Sem isso, usa um deck mockado.",
     )
+    parser.add_argument(
+        "--record-history",
+        type=Path,
+        default=None,
+        metavar="ARQUIVO.json",
+        help="Salva o histórico de ações da partida em JSON ao final.",
+    )
     args = parser.parse_args()
 
     try:
-        run_game(args.difficulty, args.player_deck, args.opponent_deck)
+        run_game(args.difficulty, args.player_deck, args.opponent_deck, args.record_history)
     except (EOFError, KeyboardInterrupt):
         print("\nPartida interrompida.")
         sys.exit(1)
