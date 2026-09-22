@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 from pokemon_companion.engine.actions import Action
-from pokemon_companion.engine.game_state import GameState
+from pokemon_companion.engine.game_state import PlayerId
 
 
 def _action_to_dict(action: Action) -> dict:
@@ -25,11 +25,16 @@ class MatchRecorder:
     def __init__(self) -> None:
         self._entries: list[dict] = []
 
-    def record(self, state: GameState, action: Action, messages: list[str]) -> None:
+    def record(
+        self, turn_number: int, actor: PlayerId, action: Action, messages: list[str]
+    ) -> None:
+        """Registre com o turno e o jogador de *antes* de aplicar a ação:
+        atacar e passar a vez trocam o jogador ativo, então ler do estado
+        depois da ação atribuía a jogada ao turno/jogador seguinte."""
         self._entries.append(
             {
-                "turn_number": state.turn_number,
-                "active_player": state.active_player.value,
+                "turn_number": turn_number,
+                "active_player": actor.value,
                 "action": _action_to_dict(action),
                 "messages": messages,
             }

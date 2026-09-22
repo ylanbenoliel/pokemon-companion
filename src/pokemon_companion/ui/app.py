@@ -334,9 +334,10 @@ class BattleController(QObject):
 
     def _apply_step(self, action: Action, card_source: QPointF | None) -> QAbstractAnimation | None:
         before = self.state.active_player
+        turn = self.state.turn_number
         messages = rules.apply_action(self.state, action)
         if self.recorder is not None:
-            self.recorder.record(self.state, action, messages)
+            self.recorder.record(turn, before, action, messages)
         for message in messages:
             self.scene.show_toast(message)
         animation = self.scene.sync(

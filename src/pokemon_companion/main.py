@@ -47,9 +47,10 @@ def render_state(state: GameState) -> str:
 def _apply_and_record(
     state: GameState, action: Action, recorder: MatchRecorder | None
 ) -> list[str]:
+    turn, actor = state.turn_number, state.active_player
     messages = rules.apply_action(state, action)
     if recorder is not None:
-        recorder.record(state, action, messages)
+        recorder.record(turn, actor, action, messages)
     return messages
 
 
