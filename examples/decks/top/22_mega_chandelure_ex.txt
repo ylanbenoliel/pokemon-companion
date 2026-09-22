@@ -26,6 +26,6 @@ Trainer (30)
 2 Air Balloon ASC 181
 Energy (9)
 4 Telepathic Psychic Energy POR 88
-3 Fire Energy MEE 2
-1 Psychic Energy MEE 5
+3 Fire Energy MEE 10
+1 Psychic Energy MEE 13
 1 Legacy Energy TWM 167

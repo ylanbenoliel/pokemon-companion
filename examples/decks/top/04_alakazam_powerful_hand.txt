@@ -30,5 +30,5 @@ Trainer (32)
 1 Battle Cage PFL 85
 Energy (7)
 4 Telepathic Psychic Energy POR 88
-2 Psychic Energy MEE 5
+2 Psychic Energy MEE 13
 1 Enriching Energy SSP 191

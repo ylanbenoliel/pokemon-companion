@@ -26,6 +26,6 @@ Trainer (34)
 2 Prism Tower CRI 80
 1 Team Rocket's Factory DRI 173
 Energy (11)
-6 Grass Energy MEE 1
+6 Grass Energy MEE 9
 4 Team Rocket's Energy DRI 182
-1 Psychic Energy MEE 5
+1 Psychic Energy MEE 13

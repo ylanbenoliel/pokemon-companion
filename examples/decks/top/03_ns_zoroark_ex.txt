@@ -32,4 +32,4 @@ Trainer (35)
 2 Team Rocket's Watchtower DRI 180
 1 Gravity Mountain SSP 177
 Energy (8)
-8 Darkness Energy MEE 7
+8 Darkness Energy MEE 15

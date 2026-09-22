@@ -26,6 +26,6 @@ Trainer (33)
 1 Special Red Card CRI 82
 2 Risky Ruins MEG 127
 Energy (8)
-3 Fire Energy MEE 2
-3 Psychic Energy MEE 5
-2 Darkness Energy MEE 7
+3 Fire Energy MEE 10
+3 Psychic Energy MEE 13
+2 Darkness Energy MEE 15

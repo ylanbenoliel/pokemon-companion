@@ -22,6 +22,6 @@ Trainer (27)
 3 Night Stretcher ASC 196
 3 Prism Tower CRI 80
 Energy (7)
-3 Psychic Energy MEE 5
+3 Psychic Energy MEE 13
 3 Telepathic Psychic Energy POR 88
 1 Legacy Energy TWM 167

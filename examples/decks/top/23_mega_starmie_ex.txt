@@ -29,6 +29,6 @@ Trainer (35)
 1 Hero's Cape TEF 152
 3 Battle Cage PFL 85
 Energy (8)
-4 Water Energy MEE 3
+4 Water Energy MEE 11
 3 Ignition Energy WHT 86
 1 Bubbly Water Energy CRI 84

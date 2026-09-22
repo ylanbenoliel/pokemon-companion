@@ -25,5 +25,5 @@ Trainer (28)
 2 Jamming Tower TWM 153
 Energy (6)
 4 Telepathic Psychic Energy POR 88
-1 Psychic Energy MEE 5
+1 Psychic Energy MEE 13
 1 Enriching Energy SSP 191

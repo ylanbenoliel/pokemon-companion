@@ -30,4 +30,4 @@ Trainer (29)
 3 Spikemuth Gym DRI 169
 1 Team Rocket's Watchtower DRI 180
 Energy (8)
-8 Darkness Energy MEE 7
+8 Darkness Energy MEE 15

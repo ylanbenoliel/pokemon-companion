@@ -23,4 +23,4 @@ Trainer (32)
 3 Binding Mochi PRE 95
 2 Team Rocket's Watchtower DRI 180
 Energy (9)
-9 Darkness Energy MEE 7
+9 Darkness Energy MEE 15

@@ -25,4 +25,4 @@ Trainer (23)
 1 Energy Recycler DRI 164
 1 Precious Trolley SSP 185
 Energy (17)
-17 Metal Energy MEE 8
+17 Metal Energy MEE 16

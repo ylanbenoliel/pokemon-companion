@@ -29,5 +29,5 @@ Trainer (30)
 4 Academy at Night SFA 54
 Energy (10)
 4 Telepathic Psychic Energy POR 88
-4 Psychic Energy MEE 5
+4 Psychic Energy MEE 13
 2 Boomerang Energy TWM 166

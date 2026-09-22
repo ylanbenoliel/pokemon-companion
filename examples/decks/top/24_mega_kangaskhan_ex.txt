@@ -28,7 +28,7 @@ Trainer (35)
 1 Backtrack Badge PBL 74
 4 Team Rocket's Factory DRI 173
 Energy (12)
-4 Lightning Energy MEE 4
-4 Grass Energy MEE 1
+4 Lightning Energy MEE 12
+4 Grass Energy MEE 9
 2 Mist Energy TEF 161
-2 Darkness Energy MEE 7
+2 Darkness Energy MEE 15

@@ -22,6 +22,6 @@ Trainer (31)
 4 Cynthia's Power Weight DRI 162
 2 Team Rocket's Watchtower DRI 180
 Energy (9)
-4 Fighting Energy MEE 6
+4 Fighting Energy MEE 14
 4 Rocky Fighting Energy POR 87
 1 Neo Upper Energy TEF 162

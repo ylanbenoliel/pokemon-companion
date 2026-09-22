@@ -27,4 +27,4 @@ Trainer (26)
 1 Poké Pad POR 81
 4 Forest of Vitality MEG 117
 Energy (13)
-13 Grass Energy MEE 1
+13 Grass Energy MEE 9

@@ -28,8 +28,8 @@ Trainer (28)
 2 Lillie's Pearl JTG 151
 3 Area Zero Underdepths SCR 131
 Energy (13)
-6 Grass Energy MEE 1
-3 Psychic Energy MEE 5
+6 Grass Energy MEE 9
+3 Psychic Energy MEE 13
 2 Telepathic Psychic Energy POR 88
-1 Water Energy MEE 3
-1 Fire Energy MEE 2
+1 Water Energy MEE 11
+1 Fire Energy MEE 10

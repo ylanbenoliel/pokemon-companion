@@ -32,4 +32,4 @@ Trainer (29)
 1 Team Rocket's Factory DRI 173
 1 Team Rocket's Watchtower DRI 180
 Energy (11)
-11 Darkness Energy MEE 7
+11 Darkness Energy MEE 15

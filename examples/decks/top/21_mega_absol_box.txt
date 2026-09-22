@@ -28,4 +28,4 @@ Trainer (36)
 1 Team Rocket's Watchtower DRI 180
 1 Nighttime Mine ASC 197
 Energy (10)
-10 Darkness Energy MEE 7
+10 Darkness Energy MEE 15

@@ -28,5 +28,5 @@ Trainer (35)
 2 Brave Bangle WHT 80
 4 Festival Grounds TWM 149
 Energy (5)
-4 Grass Energy MEE 1
+4 Grass Energy MEE 9
 1 Growing Grass Energy POR 86

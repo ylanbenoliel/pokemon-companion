@@ -28,4 +28,4 @@ Energy (13)
 4 Growing Grass Energy POR 86
 4 Mist Energy TEF 161
 4 Spiky Energy JTG 159
-1 Grass Energy MEE 1
+1 Grass Energy MEE 9
