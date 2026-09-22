@@ -31,11 +31,18 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import cast
 
-from PyQt6.QtCore import QAbstractAnimation, QObject, QPointF, Qt, QTimer
-from PyQt6.QtGui import QColor, QPainter, QResizeEvent, QShowEvent
-from PyQt6.QtWidgets import QApplication, QGraphicsView, QMainWindow, QMessageBox
+from PyQt6.QtCore import QAbstractAnimation, QObject, QPointF, Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QKeySequence, QPainter, QResizeEvent, QShortcut, QShowEvent
+from PyQt6.QtWidgets import (
+    QApplication,
+    QGraphicsView,
+    QMainWindow,
+    QMessageBox,
+    QStackedWidget,
+)
 
 from pokemon_companion.ai.opponent import AIPlayer, build_ai
+from pokemon_companion.cards_db.models import Card
 from pokemon_companion.deck_loading import DeckLoadError, load_decks
 from pokemon_companion.engine import rules, turn_manager
 from pokemon_companion.engine.actions import (
@@ -59,6 +66,7 @@ from pokemon_companion.engine.history import MatchRecorder
 from pokemon_companion.ui.anim import AnimationQueue, Animator, par
 from pokemon_companion.ui.art import ArtProvider
 from pokemon_companion.ui.battle_scene import BattleScene, Target
+from pokemon_companion.ui.deck_menu import DeckMenu, menu_size_hint, read_entry
 from pokemon_companion.ui.items import HandCard, PokemonToken
 from pokemon_companion.ui.theme import primary_type, ui_font
 
@@ -601,6 +609,98 @@ class MainWindow(QMainWindow):
         self.scene.show_toast(message)
 
 
+class DeckLoader(QThread):
+    """Importa as duas decklists fora da thread da interface (pode ir à rede
+    na primeira vez que um deck é usado)."""
+
+    finished_loading = pyqtSignal(object, object, list, str)
+
+    def __init__(self, player_deck: Path, opponent_deck: Path) -> None:
+        super().__init__()
+        self._paths = (player_deck, opponent_deck)
+
+    def run(self) -> None:
+        try:
+            player, opponent, warnings = load_decks(*self._paths)
+        except (DeckLoadError, OSError) as exc:
+            self.finished_loading.emit(None, None, [], str(exc))
+            return
+        self.finished_loading.emit(player, opponent, warnings, "")
+
+
+class LauncherWindow(QMainWindow):
+    """Janela do app: tela de seleção de decks e, depois, o tabuleiro
+    (Esc volta ao menu)."""
+
+    def __init__(self, art: ArtProvider | None = None, history_path: Path | None = None) -> None:
+        super().__init__()
+        self.setWindowTitle("Pokémon Companion")
+        self._art = art or ArtProvider()
+        self._history_path = history_path
+        self._loader: DeckLoader | None = None
+        self.battle: MainWindow | None = None
+
+        self.setStyleSheet("background: #0d1730;")
+        self.stack = QStackedWidget()
+        self.menu = DeckMenu(art=self._art)
+        self.menu.start_requested.connect(self._load_and_start)
+        self.stack.addWidget(self.menu)
+        self.setCentralWidget(self.stack)
+        self.resize(menu_size_hint())
+
+        back = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        back.activated.connect(self.show_menu)
+
+    def show_menu(self) -> None:
+        self.stack.setCurrentWidget(self.menu)
+        self.menu.play_button.setEnabled(True)
+        self.menu.status.setText("")
+
+    def _load_and_start(self, player_deck: Path, opponent_deck: Path, difficulty: str) -> None:
+        self._difficulty = difficulty
+        self._deck_paths = (player_deck, opponent_deck)
+        self._loader = DeckLoader(player_deck, opponent_deck)
+        self._loader.finished_loading.connect(self._on_decks_loaded)
+        self._loader.start()
+
+    def _on_decks_loaded(
+        self,
+        player: list[Card] | None,
+        opponent: list[Card] | None,
+        warnings: list[str],
+        error: str,
+    ) -> None:
+        if error or player is None or opponent is None:
+            QMessageBox.critical(self, "Erro ao carregar deck", error or "Deck vazio.")
+            self.show_menu()
+            return
+        opponent_path = self._deck_paths[1]
+        window = MainWindow(
+            state_factory=lambda: turn_manager.start_new_game(
+                list(player),
+                list(opponent),
+                first_player=coin_flip_first_player(),
+                manual=frozenset({PlayerId.PLAYER}),
+            ),
+            ai_factory=lambda: build_ai(self._difficulty),
+            opponent_label=f"{read_entry(opponent_path).title.upper()} · "
+            f"{DIFFICULTY_LABELS[self._difficulty].split('·')[-1].strip()}",
+            art=self._art,
+            history_path=self._history_path,
+            player_label="VOCÊ",
+        )
+        window.scene.set_names("Você", read_entry(opponent_path).title)
+        for warning in warnings:
+            window.log_message(f"! {warning}")
+        if self.battle is not None:
+            self.stack.removeWidget(self.battle)
+            self.battle.deleteLater()
+        self.battle = window
+        self.stack.addWidget(window)
+        self.stack.setCurrentWidget(window)
+        self.resize(1280, 900)
+
+
 def display_name(label: str) -> str:
     """ "NS ZOROARK EX" → "Ns Zoroark ex" (o sufixo "ex" é minúsculo nas cartas)."""
     return label.title().replace(" Ex", " ex")
@@ -653,6 +753,11 @@ def build_main_window(
 def main() -> None:
     parser = argparse.ArgumentParser(description="pokemon-companion — tabuleiro gráfico (PyQt6)")
     parser.add_argument("--difficulty", choices=["easy", "medium", "hard"], default="medium")
+    parser.add_argument(
+        "--menu",
+        action="store_true",
+        help="Abre a tela de seleção de decks (padrão quando nenhum deck é informado).",
+    )
     parser.add_argument("--player-deck", type=Path, default=None)
     parser.add_argument("--opponent-deck", type=Path, default=None)
     parser.add_argument("--record-history", type=Path, default=None, metavar="ARQUIVO.json")
@@ -670,6 +775,11 @@ def main() -> None:
     app = QApplication(sys.argv)
     app.setFont(ui_font(10))
     Animator.speed = 1.0 / max(args.speed, 0.1)
+
+    if args.menu or (args.player_deck is None and args.opponent_deck is None and not args.spectate):
+        launcher = LauncherWindow(history_path=args.record_history)
+        launcher.show()
+        sys.exit(app.exec())
 
     try:
         window = build_main_window(

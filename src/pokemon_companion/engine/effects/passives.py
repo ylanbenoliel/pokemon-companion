@@ -257,6 +257,10 @@ def damage_prevented(
         return True
     owner_state = state.state_of(defender_owner)
     if not is_active:
+        # Regra dos Pokémon Tera: no Banco, nenhum dano de ataque os atinge
+        # (contadores de dano colocados por efeitos continuam valendo).
+        if is_tera(defender.card):
+            return True
         if not has_rule_box(defender.card) and any(
             ability_active(state, mon, "Flower Curtain")
             for mon in owner_state.all_pokemon_in_play()

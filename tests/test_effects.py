@@ -413,3 +413,23 @@ def test_cost_progress_counts_partially_paid_cost():
     assert progress(["Fire", "Psychic"], ["Fire", "Colorless"]) == 1.0
     assert progress([], ["Fire"]) == 0.0
     assert progress(["Any"], ["Metal"]) == 1.0
+
+
+def test_tera_pokemon_takes_no_attack_damage_on_bench(state):
+    """Regra Tera: no Banco, dano de ataque não atinge (contadores sim)."""
+    from pokemon_companion.engine.effects import cardinfo
+
+    tera = dataclasses.replace(mon("Dragapult ex", hp=320), subtypes=["Basic", "ex"])
+    assert cardinfo.is_tera(tera)
+    state.opponent.bench = [PokemonInPlay(card=tera)]
+    sniper = with_attack(mon("Sniper"), "Cruel Arrow", ["Colorless"], "")
+    state.player.active = PokemonInPlay(card=sniper, attached_energies=["Colorless"])
+
+    rules.apply_action(state, UseAttack(attack_index=0, target=("opp", 0)))
+    assert state.opponent.bench[0].damage_counters == 0
+
+    # o mesmo Pokémon no Ativo recebe dano normalmente
+    state.opponent.active, state.opponent.bench = state.opponent.bench[0], []
+    state.active_player = PlayerId.PLAYER
+    rules.apply_action(state, UseAttack(attack_index=0, target=("opp", -1)))
+    assert state.opponent.active.damage_counters == 100

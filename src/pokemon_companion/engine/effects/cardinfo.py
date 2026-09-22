@@ -1,8 +1,11 @@
 """Classificação de cartas usada pelos efeitos ("Regra de Prêmio", Tera,
 Antigo/Futuro, Pokémon de treinador como "Team Rocket's", estágio...).
 
-A API não expõe Tera/Antigo/Futuro, então esses grupos são listas por nome,
-cobrindo as cartas dos decks do meta (ampliar ao adicionar decks novos).
+A API não expõe Tera/Antigo/Futuro (nem a pokemontcg.io nem a TCGdex trazem
+essa marca), então esses grupos são listas por nome, cobrindo as cartas dos
+decks do meta — ampliar ao adicionar decks novos. Isso importa: Pokémon Tera
+no Banco não recebem dano de ataques (`passives.damage_prevented`) e liberam
+banco de 8 com Area Zero Underdepths.
 """
 
 from __future__ import annotations

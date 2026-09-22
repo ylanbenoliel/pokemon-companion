@@ -21,8 +21,13 @@ uv run python -m pokemon_companion.main --difficulty medium
 # CLI com decklists reais (precisa de internet; formato Limitless/PTCGO):
 uv run python -m pokemon_companion.main --player-deck data/decks/meu_deck.txt --opponent-deck data/decks/deck_da_ia.txt --record-history data/partida1.json
 
-# Tabuleiro gráfico (PyQt6) — arrastar/clicar, animações; board do jogador ainda sem câmera:
-uv run python -m pokemon_companion.ui.app --difficulty hard
+# Tabuleiro gráfico (PyQt6): sem argumentos abre a tela de seleção de decks
+# (seu deck × deck da IA × dificuldade, estilo TCG Pocket; Esc volta ao menu):
+uv run python -m pokemon_companion.ui.app
+# Direto numa partida, sem passar pelo menu:
+uv run python -m pokemon_companion.ui.app --difficulty hard \
+  --player-deck examples/decks/top/01_dragapult_ex.txt \
+  --opponent-deck examples/decks/worlds2026/1_andrew_hedrick_dragapult.txt
 
 # Modo espectador: duas IAs no difícil com decks competitivos (Regional de Baltimore, 09/2026):
 uv run python -m pokemon_companion.ui.app --spectate --difficulty hard --player-difficulty hard \
@@ -150,6 +155,11 @@ Revisão contra o livro de regras oficial, tudo implementado e testado
 - **Escolhas do humano**: montagem do setup (Ativo + Banco, botão PRONTO) e
   escolha do novo Ativo após nocaute (`state.manual_choices`,
   `rules.decision_player`). A IA decide por heurística.
+- **Regra Tera**: Pokémon Tera no Banco não recebem dano de ataques (mas
+  contadores de dano colocados por efeitos, como Phantom Dive, continuam
+  valendo). A API não marca Tera: a lista está em `cardinfo.TERA_NAMES`.
+- **Mega Evolução ex** (era 2025/2026): evoluem normalmente e podem atacar
+  no mesmo turno; valem 3 prêmios.
 - **Morte Súbita** quando os dois vencem ao mesmo tempo.
 - Não existe limite de cartas na mão (confirmado no livro de regras).
 
@@ -160,6 +170,12 @@ trocar, dano com Fraqueza/Resistência e prevenções), `attacks.py`,
 alvos da ação (`target`), para a IA avaliar cada opção e a UI mostrar
 destaques/painel. `tools/effect_coverage.py` mostra 100% dos textos das
 cartas do top 20 cobertos.
+
+Tela inicial (`ui/deck_menu.py`): grade com os decks de
+`examples/decks/**` e `data/decks/`, arte do Pokémon principal vinda do
+cache local (abre rápido e offline), escolha do seu deck, do deck da IA e da
+dificuldade — dá para treinar contra um arquétipo específico. As cartas são
+importadas numa thread à parte para a tela não travar.
 
 UI: Treinadores soltos no tabuleiro ou sobre o Pokémon alvo; painel de
 escolha para opções que não são um Pokémon; selo "HAB." nos Pokémon com
