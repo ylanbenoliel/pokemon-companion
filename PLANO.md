@@ -11,7 +11,7 @@ trabalho avançar.
 ```bash
 cd ~/pokemon_companion
 uv sync                 # instala dependências em .venv
-uv run pytest -v        # confirma que tudo continua passando (210 testes)
+uv run pytest -v        # confirma que tudo continua passando (233 testes)
 uv run mypy src          # type-check
 uv run black --check . && uv run ruff check .   # formatação/lint
 
@@ -249,6 +249,15 @@ Situação em 22/09/2026 (marcas G–J, 3345 impressões, 1409 nomes): meta com
 0 textos faltando e 0 cartas fora da rotação; pool legal com 881 de 3636
 textos-impressão cobertos — faltam ~1460 efeitos distintos (1125 ataques,
 218 Habilidades, 97 Treinadores, 16 Estádios, 6 energias especiais).
+
+**Lote 1 (22/09/2026)**: ~50 ataques com 5+ impressões, por *modelos de
+texto* em `attacks.py` (uma função por forma de frase: condição especial com
+moeda opcional, descartar N/tipo/todas as energias próprias, dano por moeda,
+cura, redução de dano, recuo, Hide, Round, dano por energia de um tipo...).
+`number_in_text`/`energy_in_text`/`effect_happens` leem valores, ícones
+`{W}`/`[W]` e "Flip a coin. If heads," do texto; versões sem texto do mesmo
+ataque só causam dano. Cobertura do pool: 881 → 1239 de 3636
+textos-impressão; torneio de 600 partidas com os 25 decks, 0 erros.
 
 **Rotina agendada (pendente: precisa do repositório no GitHub)** — segunda
 às 9h de Belém (`0 12 * * 1` UTC), lote de ~40 efeitos por PR. Prompt:

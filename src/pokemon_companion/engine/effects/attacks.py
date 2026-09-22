@@ -243,11 +243,20 @@ def retaliate_next_turn(ctx: Ctx, counters: int) -> None:
         ctx.source.retaliation = (counters, ctx.turn + 1)
 
 
-def discard_own_energy(ctx: Ctx, count: int) -> int:
+def discard_own_energy(ctx: Ctx, count: int, energy: str | None = None) -> int:
+    """Descarta até `count` energias do atacante (só do tipo `energy`, se dado)."""
     mon = ctx.source
     discarded = 0
-    while mon is not None and mon.attached_energies and discarded < count:
-        ctx.me.discard.append(core.detach_energy(mon, core.least_useful_energy(mon)))
+    while mon is not None and discarded < count:
+        if energy is not None:
+            if energy not in mon.attached_energies:
+                break
+            choice = energy
+        elif mon.attached_energies:
+            choice = core.least_useful_energy(mon)
+        else:
+            break
+        ctx.me.discard.append(core.detach_energy(mon, choice))
         discarded += 1
     return discarded
 
@@ -322,9 +331,30 @@ def _comet_punch(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, 30 * heads)
 
 
-@attack("Tumbling Attack", "Play Rough")
-def _tumbling(ctx: Ctx, a: Attack) -> None:
-    hit_active(ctx, a.base_damage + (20 if core.coin() else 0))
+@attack("Tumbling Attack", "Play Rough", "Quick Attack", "Ambush")
+def _coin_bonus(ctx: Ctx, a: Attack) -> None:
+    bonus = number_in_text(a, r"this attack does (\d+) more damage", 20)
+    hit_active(ctx, a.base_damage + (bonus if core.coin() else 0))
+
+
+@attack("Surprise Attack", "Best Punch")
+def _tails_does_nothing(ctx: Ctx, a: Attack) -> None:
+    if core.coin():
+        hit_active(ctx, a.base_damage)
+    else:
+        ctx.log("Coroa: o ataque não faz nada.")
+
+
+@attack(
+    "Fury Swipes",
+    "Double Scratch",
+    "Double Smash",
+    estimate=lambda ctx, a: a.base_damage * number_in_text(a, r"Flip (\d+) coins", 2) // 2,
+)
+def _per_heads(ctx: Ctx, a: Attack) -> None:
+    heads = sum(core.coin() for _ in range(number_in_text(a, r"Flip (\d+) coins", 2)))
+    ctx.log(f"{heads} cara(s).")
+    hit_active(ctx, a.base_damage * heads)
 
 
 @attack(
@@ -412,13 +442,14 @@ def _whirling_envy(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage + bonus, weakness=False)
 
 
-@attack(
-    "Powerful Rage",
-    estimate=lambda ctx, a: 20 * (core.damage_counters_on(ctx.source) if ctx.source else 0),
-)
+def _per_own_counter(ctx: Ctx, a: Attack) -> int:
+    counters = core.damage_counters_on(ctx.source) if ctx.source else 0
+    return (a.base_damage or 20) * counters
+
+
+@attack("Powerful Rage", "Wrathful Hearth", estimate=_per_own_counter)
 def _powerful_rage(ctx: Ctx, a: Attack) -> None:
-    assert ctx.source is not None
-    hit_active(ctx, 20 * core.damage_counters_on(ctx.source))
+    hit_active(ctx, _per_own_counter(ctx, a))
 
 
 @attack("Spiky Wheel")
@@ -455,9 +486,45 @@ def _mirror_attack(ctx: Ctx, a: Attack) -> None:
 
 
 def number_in_text(attack_: Attack, pattern: str, default: int) -> int:
-    """Número do texto do ataque (versões da mesma carta mudam só o valor)."""
+    """Número do texto do ataque (versões da mesma carta mudam só o valor).
+    Aceita "a"/"an" como 1 ("Draw a card", "Discard an Energy")."""
     match = re.search(pattern, attack_.text)
-    return int(match.group(1)) if match else default
+    if not match:
+        return default
+    word = match.group(1)
+    return 1 if word in ("a", "an") else int(word)
+
+
+#: símbolos de energia no texto das cartas: "{W}" ou "[W]"
+ENERGY_SYMBOLS = {
+    "G": "Grass",
+    "R": "Fire",
+    "W": "Water",
+    "L": "Lightning",
+    "P": "Psychic",
+    "F": "Fighting",
+    "D": "Darkness",
+    "M": "Metal",
+    "N": "Dragon",
+    "C": "Colorless",
+}
+SYMBOL = r"[\[{](\w)[\]}]"
+
+
+def energy_in_text(attack_: Attack, pattern: str) -> str | None:
+    """Tipo de energia citado no texto; `pattern` usa `{SYMBOL}` no lugar do ícone."""
+    match = re.search(pattern.replace("{SYMBOL}", SYMBOL), attack_.text)
+    return ENERGY_SYMBOLS.get(match.group(1)) if match else None
+
+
+def effect_happens(attack_: Attack, clause: str) -> bool:
+    """A frase `clause` acontece sempre, ou só com cara se vier logo depois de
+    "Flip a coin. If heads," no texto."""
+    index = attack_.text.lower().find(clause.lower())
+    if index < 0:
+        return False
+    gated = attack_.text[:index].rstrip().endswith("If heads,")
+    return core.coin() if gated else True
 
 
 @attack("Psychic", "Ear Force")
@@ -568,12 +635,12 @@ def _rock_hurl(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage, resistance=False)
 
 
-@attack("Superb Scissors", "Spiky Hopper", "Shred")
+@attack("Superb Scissors", "Spiky Hopper", "Shred", "Sonic Edge")
 def _ignore_defender_effects(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage, ignore_effects=True)
 
 
-@attack("Nebula Beam")
+@attack("Nebula Beam", "Demolish")
 def _ignore_everything(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage, weakness=False, resistance=False, ignore_effects=True)
 
@@ -711,9 +778,13 @@ def _torrential_pump(ctx: Ctx, a: Attack) -> None:
 # alvo livre / banco
 
 
-@attack("Cruel Arrow", options=opp_any, estimate=lambda ctx, a: 100)
-def _cruel_arrow(ctx: Ctx, a: Attack) -> None:
-    hit(ctx, target_index(ctx), 100)
+def _any_target_amount(ctx: Ctx, a: Attack) -> int:
+    return number_in_text(a, r"does (\d+) damage to 1 of your opponent's Pokémon", 100)
+
+
+@attack("Cruel Arrow", "Garnet Volley", options=opp_any, estimate=_any_target_amount)
+def _any_target(ctx: Ctx, a: Attack) -> None:
+    hit(ctx, target_index(ctx), _any_target_amount(ctx, a))
 
 
 @attack("Sonic Ripper", options=opp_any, estimate=lambda ctx, a: 220)
@@ -823,41 +894,76 @@ for _name, _amount in (
     ATTACKS[_name] = AttackSpec(_recoil_attack(_amount))
 
 
-@attack("Eon Blade", "Prism Edge", "Blood Moon", "Rampaging Thunder", "Boundless Power")
+@attack(
+    "Eon Blade",
+    "Prism Edge",
+    "Blood Moon",
+    "Rampaging Thunder",
+    "Boundless Power",
+    "Thunderous Bolt",
+    "Giga Impact",
+)
 def _cant_attack(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
     cant_attack_next_turn(ctx)
 
 
-@attack("Smashing Headbutt")
-def _discard_two_after(ctx: Ctx, a: Attack) -> None:
+@attack(
+    "Smashing Headbutt",
+    "Topaz Bolt",
+    "Flamethrower",
+    "Scorching Fire",
+    "Power Stomp",
+    "Air Slash",
+    "Ember",
+    "Strong Volt",
+    "Thunderbolt",
+    "Illusory Impulse",
+)
+def _discard_own_after(ctx: Ctx, a: Attack) -> None:
+    """ "Discard N/a/an/all [{X}] Energy from this Pokémon" depois do dano.
+    Versões sem texto do mesmo ataque só causam dano."""
     hit_active(ctx, a.base_damage)
-    discard_own_energy(ctx, 2)
+    if "Discard all Energy from this Pokémon" in a.text:
+        discard_all_energy(ctx)
+        return
+    pattern = r"Discard (\d+|an?) (?:{SYMBOL} )?Energy from this"
+    count = number_in_text(a, pattern.replace("{SYMBOL}", SYMBOL), 0)
+    discard_own_energy(ctx, count, energy_in_text(a, r"Discard an? {SYMBOL} Energy"))
 
 
-@attack("Ready to Ram")
-def _ready_to_ram(ctx: Ctx, a: Attack) -> None:
+@attack("Ready to Ram", "Repulsor Axe")
+def _retaliate(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
     retaliate_next_turn(ctx, number_in_text(a, r"put (\d+) damage counters", 6))
 
 
-@attack("Accelerating Stab", "Mega Brave")
+@attack("Accelerating Stab", "Mega Brave", "Flare Strike", "Flashing Bolt")
 def _cant_repeat(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
     cant_use_next_turn(ctx, a)
 
 
-@attack("Shadow Bind", "Sob", "Clutch")
+@attack("Shadow Bind", "Sob", "Clutch", "Corner", "Big Bite", "Bind Down")
 def _no_retreat(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
     defending_cant_retreat(ctx)
 
 
-@attack("Protect Charge")
-def _protect_charge(ctx: Ctx, a: Attack) -> None:
+@attack("Protect Charge", "Guard Press", "Gaia Wave", "Steel Wing", "Ramming Shell")
+def _reduce_damage_next_turn(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
     if ctx.source is not None:
-        ctx.source.damage_reduction = (30, ctx.turn + 1)
+        amount = number_in_text(a, r"takes (\d+) less damage", 30)
+        ctx.source.damage_reduction = (amount, ctx.turn + 1)
+
+
+@attack("Hide")
+def _hide(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, a.base_damage)
+    if ctx.source is not None and effect_happens(a, "during your opponent's next turn, prevent"):
+        ctx.source.protected_turn = ctx.turn + 1
+        ctx.log(f"{ctx.source.card.name} fica protegido no próximo turno.")
 
 
 @attack("Growl")
@@ -929,21 +1035,33 @@ def _tantrum(ctx: Ctx, a: Attack) -> None:
 # trocas
 
 
-@attack("Trading Places", "Teleportation Attack", "Run Around", options=own_bench)
+@attack("Trading Places", "Teleportation Attack", "Run Around", "Strafe", options=own_bench)
 def _switch_self_attack(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
     switch_self(ctx)
 
 
+def gust_opponent(ctx: Ctx) -> None:
+    """ "Switch in 1 of your opponent's Benched Pokémon to the Active Spot"."""
+    if not ctx.opp.bench:
+        return
+    index = target_index(ctx, -2)
+    if index < 0:
+        index = core.gust_target(ctx.state, ctx.opp_id) or 0
+    core.switch_active(ctx.state, ctx.opp, index)
+    ctx.log(f"{ctx.opp.active.card.name} foi puxado para o Ativo.")  # type: ignore[union-attr]
+
+
 @attack("Follow Me", options=opp_bench)
 def _gust_attack(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
-    if ctx.opp.bench:
-        index = target_index(ctx, -2)
-        if index < 0:
-            index = core.gust_target(ctx.state, ctx.opp_id) or 0
-        core.switch_active(ctx.state, ctx.opp, index)
-        ctx.log(f"{ctx.opp.active.card.name} foi puxado para o Ativo.")  # type: ignore[union-attr]
+    gust_opponent(ctx)
+
+
+@attack("Drag Off", options=opp_bench)
+def _gust_then_hit(ctx: Ctx, a: Attack) -> None:
+    gust_opponent(ctx)
+    hit_active(ctx, number_in_text(a, r"does (\d+) damage to the new Active", 20))
 
 
 @attack("Bounce Back", "Push Down")
@@ -977,9 +1095,15 @@ def _draw_two(ctx: Ctx, a: Attack) -> None:
     core.draw(ctx.me, 2)
 
 
-@attack("Filch", "Collect")
-def _filch(ctx: Ctx, a: Attack) -> None:
-    core.draw(ctx.me, 1)
+@attack("Filch", "Collect", "Add On")
+def _draw_from_text(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, a.base_damage)
+    core.draw(ctx.me, number_in_text(a, r"Draw (\d+|a) cards?", 1))
+
+
+@attack("Gather Strength", "Minor Errand-Running")
+def _search_basic_energy(ctx: Ctx, a: Attack) -> None:
+    core.search_deck(ctx, is_basic_energy, number_in_text(a, r"up to (\d+)", 1))
 
 
 @attack("Flower Shower")
@@ -997,9 +1121,9 @@ def _same_name_to_bench(ctx: Ctx, a: Attack) -> None:
     core.search_deck(ctx, lambda c: c.name == name, count, destination="bench")
 
 
-@attack("Summoning Jutsu")
+@attack("Summoning Jutsu", "Find a Friend")
 def _search_pokemon(ctx: Ctx, a: Attack) -> None:
-    core.search_deck(ctx, lambda c: c.is_pokemon, number_in_text(a, r"up to (\d+)", 3))
+    core.search_deck(ctx, lambda c: c.is_pokemon, number_in_text(a, r"up to (\d+)", 1))
 
 
 @attack("Burst Roar")
@@ -1009,7 +1133,7 @@ def _burst_roar(ctx: Ctx, a: Attack) -> None:
     core.draw(ctx.me, 6)
 
 
-@attack("Corkscrew Dive")
+@attack("Corkscrew Dive", "Return")
 def _corkscrew_dive(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
     core.draw_until(ctx.me, 6)
@@ -1248,3 +1372,160 @@ def energy_cards_in(cards: list[Card], energy_type: str | None = None) -> list[C
         for c in cards
         if is_basic_energy(c) and (energy_type is None or energy_type_of(c) == energy_type)
     ]
+
+
+# ---------------------------------------------------------------------------
+# modelos de texto: uma função por forma de frase, valores lidos da carta
+
+STATUSES = {
+    "Asleep": StatusCondition.ASLEEP,
+    "Burned": StatusCondition.BURNED,
+    "Confused": StatusCondition.CONFUSED,
+    "Paralyzed": StatusCondition.PARALYZED,
+    "Poisoned": StatusCondition.POISONED,
+}
+
+
+@attack(
+    "Singe",
+    "Searing Flame",
+    "Thunder Shock",
+    "Perplex",
+    "Body Slam",
+    "Disarming Voice",
+    "Poison Ring",
+)
+def _status_from_text(ctx: Ctx, a: Attack) -> None:
+    """ "[Flip a coin. If heads,] your opponent's Active Pokémon is now X"
+    (e "can't retreat", se o texto disser)."""
+    hit_active(ctx, a.base_damage)
+    match = re.search(r"(?i)your opponent's Active Pokémon is now (\w+)", a.text)
+    if match and match.group(1) in STATUSES and effect_happens(a, match.group(0)):
+        status_on_defender(ctx, STATUSES[match.group(1)])
+    if "can't retreat" in a.text:
+        defending_cant_retreat(ctx)
+
+
+@attack("Mega Drain", "Hold Still", "Absorb", "Jungle Dump")
+def _heal_self(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, a.base_damage)
+    if ctx.source is not None:
+        core.heal(ctx.source, number_in_text(a, r"Heal (\d+) damage from this Pokémon", 30))
+
+
+@attack("Wild Tackle", "Inferno Onrush")
+def _recoil_from_text(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, a.base_damage)
+    recoil(ctx, number_in_text(a, r"also does (\d+) damage to itself", 10))
+
+
+@attack("Tighten Up")
+def _opponent_discards(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, a.base_damage)
+    count = number_in_text(a, r"Your opponent discards (\d+|a) cards?", 1)
+    discarded = core.discard_from_hand(ctx, count, player_id=ctx.opp_id)
+    if discarded:
+        ctx.log(f"{ctx.who(ctx.opp_id)} descartou {', '.join(c.name for c in discarded)}.")
+
+
+def _status_bonus(ctx: Ctx, a: Attack) -> int:
+    """ "If your opponent's Active Pokémon is X, this attack does N more damage"."""
+    match = re.search(r"If your opponent's Active Pokémon is (\w+)", a.text)
+    defender = ctx.opp.active
+    status = STATUSES.get(match.group(1)) if match else None
+    if defender is None or status is None or defender.status != status:
+        return a.base_damage
+    return a.base_damage + number_in_text(a, r"this attack does (\d+) more damage", 0)
+
+
+@attack("Venoshock", estimate=_status_bonus)
+def _venoshock(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, _status_bonus(ctx, a))
+
+
+def _round_damage(ctx: Ctx, a: Attack) -> int:
+    """N para cada Pokémon seu em jogo com um ataque de mesmo nome."""
+    same = sum(
+        1 for m in ctx.me.all_pokemon_in_play() if any(x.name == a.name for x in m.card.attacks)
+    )
+    return a.base_damage * same
+
+
+@attack("Round", estimate=_round_damage)
+def _round(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, _round_damage(ctx, a))
+
+
+@attack("Unified Beatdown", estimate=lambda ctx, a: a.base_damage * len(ctx.me.bench))
+def _per_benched(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, a.base_damage * len(ctx.me.bench))
+
+
+def _per_own_energy(ctx: Ctx, a: Attack) -> int:
+    """ "N more damage for each {X} Energy attached to this Pokémon"."""
+    energy = energy_in_text(a, r"for each {SYMBOL} Energy attached to this Pokémon")
+    if ctx.source is None or energy is None:
+        return a.base_damage
+    per = number_in_text(a, r"(\d+) more damage for each", 0)
+    return a.base_damage + per * ctx.source.attached_energies.count(energy)
+
+
+@attack("Hydro Pump", estimate=_per_own_energy)
+def _hydro_pump(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, _per_own_energy(ctx, a))
+
+
+def _per_team_energy(ctx: Ctx, a: Attack) -> int:
+    """ "N damage for each {X} Energy attached to all of your Pokémon"."""
+    energy = energy_in_text(a, r"for each {SYMBOL} Energy attached to all of your Pokémon")
+    count = sum(m.attached_energies.count(energy or "") for m in ctx.me.all_pokemon_in_play())
+    return a.base_damage * count
+
+
+@attack("Mega Symphonia", estimate=_per_team_energy)
+def _mega_symphonia(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, _per_team_energy(ctx, a))
+
+
+def _per_tool(ctx: Ctx, a: Attack) -> int:
+    return a.base_damage * sum(1 for m in ctx.me.all_pokemon_in_play() if m.tool is not None)
+
+
+@attack("Gadget Show", estimate=_per_tool)
+def _gadget_show(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, _per_tool(ctx, a))
+
+
+@attack("Dragon Pulse")
+def _mill_self(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, a.base_damage)
+    for _ in range(min(number_in_text(a, r"top (\d+) cards", 1), len(ctx.me.deck))):
+        ctx.me.discard.append(ctx.me.deck.pop(0))
+
+
+@attack("Regi Charge")
+def _charge_from_discard(ctx: Ctx, a: Attack) -> None:
+    """ "Attach up to N Basic {X} Energy cards from your discard pile to this Pokémon"."""
+    hit_active(ctx, a.base_damage)
+    energy = energy_in_text(a, r"Basic {SYMBOL} Energy")
+    source = ctx.source
+    if energy is not None and source is not None:
+        count = number_in_text(a, r"up to (\d+)", 1)
+        core.attach_from(
+            ctx, ctx.me.discard, core.type_filter(energy), count, allowed=lambda m: m is source
+        )
+
+
+@attack("Crunch")
+def _discard_defender_energy(ctx: Ctx, a: Attack) -> None:
+    hit_active(ctx, a.base_damage)
+    defender = ctx.opp.active
+    if (
+        defender is not None
+        and defender.attached_energies
+        and effect_happens(a, "discard an Energy from your opponent's Active")
+        and not passives.prevents_attack_effects(ctx.state, ctx.opp_id, defender, True)
+    ):
+        card = core.discard_energy(ctx.opp, defender, defender.attached_energies[0])
+        if card is not None:
+            ctx.log(f"{card.name} de {defender.card.name} foi descartada.")

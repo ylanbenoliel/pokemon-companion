@@ -584,3 +584,192 @@ def test_salvatore_evolves_a_pokemon_played_this_turn(state):
     rules.apply_action(state, PlayTrainer(hand_index=0))
 
     assert state.player.bench[0].card.name == "Grown"
+
+
+# --------------------------------------------------------------------------
+# modelos de texto (lote 1 do pool legal): o efeito vem do texto da carta
+
+
+def _text_attacker(state, name: str, damage: str, text: str, energies=("Colorless",)) -> None:
+    attack = Attack(name=name, cost=["Colorless"], damage=damage, text=text)
+    card = dataclasses.replace(mon("Attacker", hp=300), attacks=[attack])
+    state.player.active = PokemonInPlay(card=card, attached_energies=list(energies))
+    state.opponent.active = PokemonInPlay(card=mon("Defender", hp=400))
+
+
+@pytest.mark.parametrize(
+    "name, text, heads, expected, damage",
+    [
+        ("Perplex", "Your opponent's Active Pokémon is now Confused.", False, "CONFUSED", 30),
+        (
+            "Thunder Shock",
+            "Flip a coin. If heads, your opponent's Active Pokémon is now Paralyzed.",
+            True,
+            "PARALYZED",
+            30,
+        ),
+        (
+            "Thunder Shock",
+            "Flip a coin. If heads, your opponent's Active Pokémon is now Paralyzed.",
+            False,
+            "NONE",
+            30,
+        ),
+    ],
+)
+def test_status_comes_from_the_text_with_optional_coin(
+    state, monkeypatch, name, text, heads, expected, damage
+):
+    from pokemon_companion.engine.effects import core
+
+    monkeypatch.setattr(core, "coin", lambda: heads)
+    _text_attacker(state, name, "30", text)
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.status.name == expected
+    assert state.opponent.active.damage_counters == damage
+
+
+def test_poison_ring_also_blocks_retreat(state):
+    text = (
+        "Your opponent's Active Pokémon is now Poisoned. During your opponent's next turn, "
+        "that Pokémon can't retreat."
+    )
+    _text_attacker(state, "Poison Ring", "50", text)
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.status.name == "POISONED"
+    assert state.opponent.active.cannot_retreat_turn == state.turn_number
+
+
+@pytest.mark.parametrize(
+    "text, energies, left",
+    [
+        ("Discard a {L} Energy from this Pokémon.", ["Colorless", "Lightning"], ["Colorless"]),
+        ("Discard 2 Energy from this Pokémon.", ["Fire", "Fire", "Water"], ["Fire"]),
+        ("Discard all Energy from this Pokémon.", ["Fire", "Water"], []),
+        ("", ["Fire", "Water"], ["Fire", "Water"]),  # versão sem texto: só dano
+    ],
+)
+def test_discard_own_energy_reads_count_type_and_all(state, text, energies, left):
+    _text_attacker(state, "Strong Volt", "100", text, energies)
+    attacker = state.player.active
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert sorted(attacker.attached_energies) == sorted(left)
+
+
+def test_per_heads_uses_the_number_of_coins_in_the_text(state, monkeypatch):
+    from pokemon_companion.engine.effects import core
+
+    monkeypatch.setattr(core, "coin", lambda: True)
+    _text_attacker(
+        state, "Fury Swipes", "20×", "Flip 3 coins. This attack does 20 damage for each heads."
+    )
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.damage_counters == 60
+
+
+def test_heal_and_damage_reduction_read_their_amounts(state):
+    _text_attacker(state, "Mega Drain", "50", "Heal 30 damage from this Pokémon.")
+    state.player.active.damage_counters = 100
+    rules.apply_action(state, UseAttack(attack_index=0))
+    assert state.player.active.damage_counters == 70
+
+    wing = (
+        "During your opponent's next turn, this Pokémon takes 60 less damage from attacks "
+        "(after applying Weakness and Resistance)."
+    )
+    state.active_player = PlayerId.PLAYER
+    _text_attacker(state, "Steel Wing", "150", wing)
+    rules.apply_action(state, UseAttack(attack_index=0))
+    assert state.player.active.damage_reduction == (60, state.turn_number)
+
+
+def test_hide_prevents_damage_on_heads(state, monkeypatch):
+    from pokemon_companion.engine.effects import core
+
+    monkeypatch.setattr(core, "coin", lambda: True)
+    text = (
+        "Flip a coin. If heads, during your opponent's next turn, prevent all damage from and "
+        "effects of attacks done to this Pokémon."
+    )
+    _text_attacker(state, "Hide", "", text)
+    state.opponent.active.attached_energies = ["Colorless"]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+    rules.apply_action(state, UseAttack(attack_index=0))  # Tackle do oponente
+
+    assert state.player.active.damage_counters == 0
+
+
+def test_round_counts_your_pokemon_with_the_same_attack(state):
+    text = "This attack does 20 damage for each of your Pokémon in play that has the Round attack."
+    _text_attacker(state, "Round", "20×", text)
+    state.player.bench = [
+        PokemonInPlay(card=state.player.active.card),
+        PokemonInPlay(card=mon("X")),
+    ]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.damage_counters == 40
+
+
+def test_hydro_pump_counts_only_the_energy_type_in_the_text(state):
+    text = "This attack does 50 more damage for each {W} Energy attached to this Pokémon."
+    _text_attacker(state, "Hydro Pump", "10+", text, ["Water", "Water", "Colorless"])
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.damage_counters == 110
+
+
+def test_venoshock_bonus_only_against_poisoned(state):
+    from pokemon_companion.engine.game_state import StatusCondition
+
+    text = "If your opponent's Active Pokémon is Poisoned, this attack does 90 more damage."
+    _text_attacker(state, "Venoshock", "90+", text)
+    state.opponent.active.status = StatusCondition.POISONED
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.damage_counters == 180 + 10  # + veneno no Checkup
+
+
+def test_tighten_up_makes_the_opponent_discard(state):
+    _text_attacker(state, "Tighten Up", "40", "Your opponent discards 2 cards from their hand.")
+    state.opponent.hand = [mon("A"), mon("B"), mon("C")]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert len(state.opponent.discard) == 2
+
+
+def test_going_second_lock_blocks_the_attack_on_turn_two(state):
+    text = (
+        "If you go second, you can't use this attack during your first turn. This attack does "
+        "30 damage for each of your Benched Pokémon."
+    )
+    _text_attacker(state, "Unified Beatdown", "30×", text)
+    state.player.bench = [PokemonInPlay(card=mon("A")), PokemonInPlay(card=mon("B"))]
+    state.turn_number = 2
+    assert not any(isinstance(a, UseAttack) for a in rules.legal_actions(state))
+
+    state.turn_number = 4
+    rules.apply_action(state, UseAttack(attack_index=0))
+    assert state.opponent.active.damage_counters == 60
+
+
+def test_crunch_without_coin_always_discards(state):
+    _text_attacker(state, "Crunch", "50", "Discard an Energy from your opponent's Active Pokémon.")
+    state.opponent.active.attached_energies = ["Fire"]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.attached_energies == []

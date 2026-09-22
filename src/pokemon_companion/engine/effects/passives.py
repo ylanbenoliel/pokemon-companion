@@ -187,6 +187,9 @@ def attack_allowed(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack
         return False
     if mon.blocked_attack == (attack.name, state.turn_number):
         return False
+    going_second_lock = "If you go second, you can't use this attack during your first turn"
+    if going_second_lock in attack.text and state.turn_number == 2:
+        return False
     if ability_active(state, mon, "Power Saver"):
         team = [
             m
@@ -273,6 +276,8 @@ def damage_prevented(
     attacker: PokemonInPlay,
     is_active: bool,
 ) -> bool:
+    if defender.protected_turn == state.turn_number:
+        return True
     if ability_active(state, defender, "Mysterious Rock Inn") and is_ex(attacker.card):
         return True
     owner_state = state.state_of(defender_owner)
@@ -298,6 +303,8 @@ def prevents_attack_effects(
     state: GameState, defender_owner: PlayerId, defender: PokemonInPlay, is_active: bool
 ) -> bool:
     if ability_active(state, defender, "Hide 'n' Sneak"):
+        return True
+    if defender.protected_turn == state.turn_number:
         return True
     if "Mist Energy" in defender.attached_energies:
         return True

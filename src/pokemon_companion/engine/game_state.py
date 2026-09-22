@@ -63,6 +63,8 @@ class PokemonInPlay:
     played_from_hand_turn: int | None = None
     #: contadores postos no atacante se este Pokémon sofrer dano de ataque
     retaliation: tuple[int, int] | None = None  # (contadores, turno)
+    #: turno em que dano e efeitos de ataques contra este Pokémon são prevenidos
+    protected_turn: int | None = None
 
     @property
     def max_hp(self) -> int:
