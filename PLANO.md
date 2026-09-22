@@ -11,7 +11,7 @@ trabalho avançar.
 ```bash
 cd ~/pokemon_companion
 uv sync                 # instala dependências em .venv
-uv run pytest -v        # confirma que tudo continua passando (88 testes)
+uv run pytest -v        # confirma que tudo continua passando (90 testes)
 uv run mypy src          # type-check
 uv run black --check . && uv run ruff check .   # formatação/lint
 
@@ -30,7 +30,7 @@ uv run python -m pokemon_companion.ui.app --difficulty hard
 - ✅ **Fase 0 — Setup**: `uv`, layout `src/`, `black`+`ruff`+`mypy` (+`pytest-qt` para testar a UI sem display real via `QT_QPA_PLATFORM=offscreen`).
 - ✅ **Fase 1 — Motor de regras + IA**: completo, testado, jogável via CLI.
 - ✅ **Fase 2 — Banco de cartas + decklist**: API `pokemontcg.io` + cache SQLite + parser Limitless/PTCGO.
-- ✅ **Fase 3 — UI gráfica (PyQt6)**: janela funcional, board da IA/jogador, ações por clique, turno da IA via `QTimer`. **Validada visualmente** (screenshot renderizado offscreen, ver nota abaixo) e com um teste de partida completa de ponta a ponta pela UI.
+- ✅ **Fase 3 — UI gráfica (PyQt6)**: janela funcional, board da IA/jogador, ações por clique, turno da IA via `QTimer`. **Redesenhada visualmente** (ver `ui/theme.py` + `ui/pokemon_card_widget.py`): fundo em degradê roxo, cards de Pokémon com borda colorida por tipo de energia, barra de HP com cor por porcentagem (verde/amarelo/vermelho), pips de energia anexada, pips de prêmios, botões e listas estilizados via QSS — inspirado no visual do Pokémon TCG Pocket em vez do label de texto monoespaçado original. **Validada visualmente** (screenshots renderizados offscreen antes/depois do redesign, ver nota abaixo) e com um teste de partida completa de ponta a ponta pela UI. Não há skill deste ambiente para layout de app desktop (as skills de design existentes aqui são para Artifacts web/HTML) — o redesign foi feito aplicando princípios de design diretamente via QSS.
 - ✅ **Fase 4 — Visão computacional (building blocks)**: captura de câmera multiplataforma, calibração por homografia, mapeamento de zonas, detecção de ocupação/estabilidade, reconhecimento por pHash, download+cache de imagens de carta, e um widget de calibração/debug. **Todos os módulos têm testes unitários com dados sintéticos** (sem precisar de câmera real).
 - ✅ **Fase 5 — Polimento (parcial, ver detalhes)**: prêmios diferenciados por raridade (ex/GX/V=2, VMAX/VSTAR=3), exemplo funcional de efeito de ataque registrado (`engine/effects/basic_effects.py`, testado de ponta a ponta via o registry real), histórico de partida exportável em JSON (`--record-history`).
 
@@ -90,13 +90,16 @@ pokemon_companion/
 │   │   └── effects/                 # registry.py + basic_effects.py (1 exemplo registrado)
 │   ├── ai/                          # Fase 1 — completo
 │   │   ├── opponent.py (Protocol + build_ai), heuristics_easy/medium/hard.py, weights.yaml
-│   ├── ui/                          # Fase 3 — completo
-│   │   ├── app.py (MainWindow, QApplication), board_view.py, confirmation_dialog.py
+│   ├── ui/                          # Fase 3 — completo, com redesign visual
+│   │   ├── app.py (MainWindow, QApplication), confirmation_dialog.py
+│   │   ├── theme.py                 # QSS + paleta por tipo de energia
+│   │   ├── board_view.py            # board de um lado (PrizeTracker + cards)
+│   │   ├── pokemon_card_widget.py   # card individual: HP bar, pips de energia, status
 │   │   └── camera_debug_view.py     # Fase 4 — calibração por clique + overlay de zonas
 │   └── vision/                      # Fase 4 — completo (building blocks)
 │       ├── camera_capture.py, calibration.py, zone_mapper.py
 │       ├── card_detector.py, card_recognizer.py, recognition_index.py
-└── tests/                           # 88 testes
+└── tests/                           # 90 testes
     ├── conftest.py                  # fixtures de cartas mockadas + QT_QPA_PLATFORM=offscreen
     ├── test_rules.py, test_status_conditions.py, test_ai_heuristics.py
     ├── test_api_client.py, test_cache.py, test_decklist_parser.py

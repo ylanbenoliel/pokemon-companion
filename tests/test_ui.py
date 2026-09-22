@@ -6,33 +6,66 @@ from pokemon_companion.demo_data import build_demo_deck
 from pokemon_companion.engine import rules, turn_manager
 from pokemon_companion.engine.game_state import PlayerState, PokemonInPlay
 from pokemon_companion.ui.app import AI_TURN_DELAY_MS, MainWindow
-from pokemon_companion.ui.board_view import BoardView, format_board
+from pokemon_companion.ui.board_view import BoardView
 from pokemon_companion.ui.confirmation_dialog import ConfirmationDialog
+from pokemon_companion.ui.pokemon_card_widget import PokemonCardWidget
 
 
-def test_format_board_shows_active_bench_and_hand(charmander, squirtle):
+def test_board_view_shows_active_bench_and_hand(qtbot, charmander, squirtle):
+    view = BoardView("Você", show_hand=True)
+    qtbot.addWidget(view)
     player = PlayerState(
         active=PokemonInPlay(card=charmander),
         bench=[PokemonInPlay(card=squirtle)],
         hand=[squirtle],
+        prizes=[],
     )
-
-    text = format_board("Você", player, show_hand=True)
-
-    assert "Charmander" in text
-    assert "Banco 0: Squirtle" in text
-    assert "Mão: Squirtle" in text
-    assert "prêmios restantes: 0" in text
-
-
-def test_board_view_widget_updates_text(qtbot, charmander):
-    view = BoardView("IA")
-    qtbot.addWidget(view)
-    player = PlayerState(active=PokemonInPlay(card=charmander))
 
     view.update_state(player)
 
-    assert "Charmander" in view.text()
+    assert view._active_card.name_label.text() == "Charmander"
+    assert view._bench_cards[0].name_label.text() == "Squirtle"
+    assert view._bench_cards[1].property("empty") is True
+    assert view._hand_label is not None
+    assert "Squirtle" in view._hand_label.text()
+
+
+def test_board_view_prize_pips_reflect_remaining_prizes(qtbot, charmander):
+    view = BoardView("IA")
+    qtbot.addWidget(view)
+    player = PlayerState(active=PokemonInPlay(card=charmander), prizes=[charmander] * 4)
+
+    view.update_state(player)
+
+    assert "#ffca28" in view._prizes._pips[0].styleSheet()
+    assert "#ffca28" not in view._prizes._pips[5].styleSheet()
+
+
+def test_pokemon_card_widget_shows_hp_energy_and_status(qtbot, charmander):
+    widget = PokemonCardWidget()
+    qtbot.addWidget(widget)
+    mon = PokemonInPlay(card=charmander, attached_energies=["Fire", "Fire"])
+    mon.damage_counters = 20
+
+    widget.update_pokemon(mon)
+
+    assert widget.name_label.text() == "Charmander"
+    assert widget.hp_bar.value() == charmander.hp - 20
+    assert widget._energy_row.count() == 3  # 2 pips + 1 stretch
+    assert widget.property("empty") is False
+    assert widget.status_label.isHidden()
+
+
+def test_pokemon_card_widget_set_empty_resets_state(qtbot, charmander):
+    widget = PokemonCardWidget()
+    qtbot.addWidget(widget)
+    widget.update_pokemon(PokemonInPlay(card=charmander))
+
+    widget.set_empty()
+
+    assert widget.name_label.text() == "(vazio)"
+    assert widget.property("empty") is True
+    assert widget._energy_row.count() == 0
 
 
 def test_confirmation_dialog_confirm_selects_top_candidate(qtbot, charmander, squirtle):

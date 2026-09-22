@@ -8,9 +8,10 @@ import argparse
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QApplication,
+    QFrame,
     QLabel,
     QListWidget,
     QMainWindow,
@@ -28,8 +29,18 @@ from pokemon_companion.engine.game_state import GameState, PlayerId
 from pokemon_companion.engine.history import MatchRecorder
 from pokemon_companion.presentation import describe_action
 from pokemon_companion.ui.board_view import BoardView
+from pokemon_companion.ui.theme import APP_STYLESHEET
 
 AI_TURN_DELAY_MS = 400
+
+
+def _divider() -> QFrame:
+    line = QFrame()
+    line.setFrameShape(QFrame.Shape.HLine)
+    line.setStyleSheet(
+        "background-color: rgba(255, 255, 255, 0.25); max-height: 1px; border: none;"
+    )
+    return line
 
 
 class MainWindow(QMainWindow):
@@ -50,23 +61,39 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("pokemon-companion")
 
         central = QWidget()
+        central.setObjectName("rootBackground")
         layout = QVBoxLayout(central)
+        layout.setContentsMargins(12, 8, 12, 12)
+        layout.setSpacing(8)
 
-        self.opponent_view = BoardView("IA", show_hand=False)
+        title = QLabel("⚡ POKÉMON COMPANION")
+        title.setObjectName("appTitle")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        self.opponent_view = BoardView("Oponente (IA)", show_hand=False)
         self.player_view = BoardView("Você", show_hand=True)
         layout.addWidget(self.opponent_view)
+        layout.addWidget(_divider())
         layout.addWidget(self.player_view)
 
-        layout.addWidget(QLabel("Ações disponíveis:"))
+        actions_title = QLabel("AÇÕES DISPONÍVEIS")
+        actions_title.setObjectName("sectionTitle")
+        layout.addWidget(actions_title)
         self.action_list = QListWidget()
+        self.action_list.setObjectName("actionList")
         layout.addWidget(self.action_list)
 
         self.play_button = QPushButton("Jogar ação selecionada")
+        self.play_button.setObjectName("playButton")
         self.play_button.clicked.connect(self.play_selected_action)
         layout.addWidget(self.play_button)
 
-        layout.addWidget(QLabel("Histórico:"))
+        log_title = QLabel("HISTÓRICO")
+        log_title.setObjectName("sectionTitle")
+        layout.addWidget(log_title)
         self.log_view = QListWidget()
+        self.log_view.setObjectName("logView")
         layout.addWidget(self.log_view)
 
         self.setCentralWidget(central)
@@ -154,6 +181,7 @@ def main() -> None:
     args = parser.parse_args()
 
     app = QApplication(sys.argv)
+    app.setStyleSheet(APP_STYLESHEET)
 
     try:
         window = build_main_window(
