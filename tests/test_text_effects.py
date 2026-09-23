@@ -651,3 +651,126 @@ def test_search_as_many_cards_as_heads(state, monkeypatch):
     rules.apply_action(state, UseAttack(attack_index=0))
 
     assert len(state.player.hand) == 2
+
+
+# ---------------------------------------------------------------------------
+# lote 8
+
+
+def test_fossil_item_enters_play_as_a_basic_pokemon(state):
+    from pokemon_companion.engine.actions import Retreat
+
+    fossil = trainer_card(
+        "Antique Test Fossil",
+        "Item",
+        "Play this card as if it were a 60-HP Basic {C} Pokémon. This card can't be affected by "
+        "any Special Conditions and can't retreat.",
+    )
+    state.player.hand = [fossil]
+    state.player.bench = []
+
+    rules.apply_action(state, PlayTrainer(hand_index=0))
+
+    benched = state.player.bench[0]
+    assert benched.card.is_pokemon and benched.max_hp == 60
+    state.player.active, state.player.bench = benched, [state.player.active]
+    assert not any(isinstance(a, Retreat) for a in rules.legal_actions(state))
+    core.discard_pokemon(state.player, benched)
+    assert state.player.discard[-1] is fossil
+
+
+def test_metal_block_reduces_only_evolution_attackers(state):
+    attack_with(
+        state,
+        "During your opponent's next turn, this Pokémon takes 100 less damage from attacks from "
+        "Evolution Pokémon (after applying Weakness and Resistance).",
+    )
+    rules.apply_action(state, UseAttack(attack_index=0))
+    from pokemon_companion.engine.game_state import PlayerId
+
+    blocker = state.player.active
+    evolved = dataclasses.replace(mon("Evo"), evolves_from="Baby")
+    ctx = core.Ctx(state, PlayerId.OPPONENT, PokemonInPlay(card=evolved))
+    core.deal_damage(ctx, PlayerId.PLAYER, blocker, 150, is_active=True)
+    basic = core.Ctx(state, PlayerId.OPPONENT, PokemonInPlay(card=mon("Basic")))
+    core.deal_damage(basic, PlayerId.PLAYER, blocker, 30, is_active=True)
+    assert blocker.damage_counters == 50 + 30
+
+
+def test_weakness_becomes_colorless(state):
+    attack_with(
+        state,
+        "Until the end of your next turn, the Defending Pokémon's Weakness is now {C}.",
+        damage="50",
+    )
+    from pokemon_companion.engine.effects import passives
+    from pokemon_companion.engine.game_state import PlayerId
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+    defender = state.opponent.active
+    assert defender.damage_counters == 50  # o efeito vem depois do dano
+    assert passives.weakness_types(state, PlayerId.OPPONENT, defender) == {"Colorless"}
+    state.turn_number += 3
+    assert passives.weakness_types(state, PlayerId.OPPONENT, defender) != {"Colorless"}
+
+
+def test_caretaker_returns_to_deck_with_the_stadium(state):
+    from pokemon_companion.engine.effects import passives
+
+    text = (
+        "Draw 2 cards. If you drew any cards in this way and if Community Center is in play, "
+        "shuffle this Caretaker into your deck instead of discarding it."
+    )
+    card = trainer_card("Caretaker", "Supporter", text)
+    state.player.hand = [card]
+    passives_stadium = passives.stadium_is
+    state.stadium = trainer_card("Community Center", "Stadium", "")
+    assert passives_stadium(state, "Community Center")
+
+    rules.apply_action(state, PlayTrainer(hand_index=0))
+
+    assert card in state.player.deck and card not in state.player.discard
+
+
+def test_lucian_moves_hands_and_redraws(state, monkeypatch):
+    heads(monkeypatch, True)
+    text = (
+        "Each player shuffles their hand and puts it on the bottom of their deck. If either player "
+        "put any cards on the bottom of their deck in this way, each player flips a coin. If "
+        "heads, that player draws 6 cards. If tails, they draw 3 cards."
+    )
+    state.player.hand = [trainer_card("Lucian", "Supporter", text), mon("A")]
+    state.opponent.hand = [mon("B")]
+
+    rules.apply_action(state, PlayTrainer(hand_index=0))
+
+    assert len(state.player.hand) == 6 and len(state.opponent.hand) == 6
+
+
+def test_wonder_kiss_compiles_despite_the_stack_note():
+    from pokemon_companion.engine.effects import passive_text
+
+    text = (
+        "When your opponent's Active Pokémon is Knocked Out, flip a coin. If heads, take 1 more "
+        "Prize card. The effect of Wonder Kiss doesn't stack."
+    )
+    (passive,) = passive_text.compile_passive(text)
+    assert passive.kind == "prize_plus" and passive.coin and not passive.stacks
+
+
+def test_energy_moves_toward_the_active_only(state):
+    from pokemon_companion.engine.game_state import PlayerId
+
+    step = text_effects.compile_text(
+        "Move a {W} Energy from 1 of your Benched Pokémon to your Active Pokémon."
+    )
+    big = Attack(name="Big", cost=["Water", "Water"], damage="200")
+    state.player.active = PokemonInPlay(
+        card=dataclasses.replace(mon("Front"), attacks=[big]), attached_energies=[]
+    )
+    state.player.bench = [PokemonInPlay(card=mon("Back"), attached_energies=["Water", "Water"])]
+    ctx = core.Ctx(state, PlayerId.PLAYER, state.player.active)
+    for _ in range(3):
+        step.execute(ctx, big)
+    assert state.player.active.attached_energies == ["Water", "Water"]
+    assert state.player.bench[0].attached_energies == []

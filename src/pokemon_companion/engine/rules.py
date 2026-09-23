@@ -36,8 +36,11 @@ from pokemon_companion.engine.actions import (
 )
 from pokemon_companion.engine.effects import abilities, attacks, core, passives, trainers
 from pokemon_companion.engine.effects.cardinfo import (
+    fossil_pokemon,
     in_group,
     is_basic_energy,
+    is_fossil_item,
+    is_fossil_pokemon,
     is_tera,
     pokemon_type,
     trainer_kind,
@@ -128,7 +131,12 @@ def _mon_at(
 
 
 def _can_evolve_onto(state: GameState, pid: PlayerId, card: Card, mon: PokemonInPlay) -> bool:
-    if mon.card.name != card.evolves_from or mon.evolved_this_turn:
+    rainbow = (
+        passives.ability_active(state, mon, "Rainbow DNA")
+        and card.evolves_from == "Eevee"
+        and "ex" in card.subtypes
+    )
+    if (mon.card.name != card.evolves_from and not rainbow) or mon.evolved_this_turn:
         return False
     if passives.no_normal_play(card):
         return False
@@ -176,6 +184,8 @@ def _trainer_playable(state: GameState, pid: PlayerId, card: Card) -> bool:
     if kind == "Stadium" and passives.trainer_locked(state, pid, "Stadium"):
         return False
     if kind == "Stadium":
+        if card.name == "Ange Floette" and not passives.stadium_is(state, "Prism Tower"):
+            return False
         if player.stadium_played_this_turn:
             return False
         if player.stadiums_blocked_turn == state.turn_number:
@@ -195,8 +205,12 @@ def _trainer_actions(state: GameState, pid: PlayerId) -> list[Action]:
         seen.add(card.name)
         if not _trainer_playable(state, pid, card):
             continue
-        ctx = Ctx(state, pid)
+        ctx = Ctx(state, pid, playing=trainer_kind(card))
         kind = trainer_kind(card)
+        if is_fossil_item(card):
+            if core.bench_space(state, player) > 0:
+                actions.append(PlayTrainer(hand_index=i))
+            continue
         if kind == "Tool":
             options = trainers.tool_targets(ctx)
         elif kind == "Stadium":
@@ -351,6 +365,7 @@ def legal_actions(state: GameState) -> list[Action]:
         active is not None
         and not player.has_retreated_this_turn
         and can_retreat(active)
+        and not is_fossil_pokemon(active.card)
         and active.cannot_retreat_turn != state.turn_number
         and len(active.attached_energies) >= passives.retreat_cost(state, pid, active)
     ):
@@ -728,6 +743,11 @@ def apply_action(state: GameState, action: Action) -> list[str]:
     elif isinstance(action, Retreat):
         active = player.active
         assert active is not None
+        if passives.any_ability_in_play(state, pid.other, "Slimy Sliding") and not core.coin():
+            player.has_retreated_this_turn = True
+            messages.append("Slimy Sliding: coroa, o recuo não acontece.")
+            _after_action(state, messages)
+            return messages
         for _ in range(passives.retreat_cost(state, pid, active)):
             if active.attached_energies:
                 core.discard_energy(player, active)
@@ -749,7 +769,11 @@ def _play_trainer(state: GameState, pid: PlayerId, action: PlayTrainer) -> list[
     kind = trainer_kind(card)
     messages.append(f"{pid.value} jogou {card.name}.")
     player.played_this_turn.append(card.name)
-    ctx = Ctx(state, pid, None, action.target, messages)
+    ctx = Ctx(state, pid, None, action.target, messages, playing=kind)
+    if is_fossil_item(card):
+        core.put_on_bench(state, player, fossil_pokemon(card))
+        _after_action(state, messages)
+        return messages
 
     if kind == "Supporter":
         player.supporter_played_this_turn = True
@@ -776,7 +800,11 @@ def _play_trainer(state: GameState, pid: PlayerId, action: PlayTrainer) -> list[
         messages.append(f"(efeito de {card.name} não implementado)")
     else:
         spec.fn(ctx)
-    player.discard.append(card)
+    if ctx.card_to_deck:
+        player.deck.append(card)
+        core.shuffle_deck(player)
+    else:
+        player.discard.append(card)
     _after_action(state, messages)
     return messages
 

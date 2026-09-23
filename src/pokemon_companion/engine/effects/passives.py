@@ -76,6 +76,8 @@ def hp_bonus(state: GameState, mon: PokemonInPlay) -> int:
         bonus -= 30
     if stadium_is(state, "Lively Stadium") and stage_of(mon.card) == "Basic":
         bonus += 30
+    if stadium_is(state, "Ange Floette") and mon.card.name == "Mega Floette ex":
+        bonus += 150
     owner = owner_of(state, mon)
     for passive, holder in compiled(state, owner, "hp"):
         if _applies(passive, holder, mon):
@@ -107,6 +109,8 @@ def retreat_cost(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> int:
         return 0
     if "Magnetic Metal Energy" in mon.attached_energies and pokemon_type(mon.card) == "Metal":
         return 0
+    if stadium_is(state, "Paradise Resort") and mon.card.name == "Psyduck":
+        cost -= 1
     is_active = mon is state.state_of(owner).active
     for passive, _holder in compiled(state, owner, "retreat"):
         if passive.scope == "own_active" and is_active:  # type: ignore[attr-defined]
@@ -264,6 +268,9 @@ def attack_allowed(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack
 def weakness_types(state: GameState, defender_owner: PlayerId, defender: PokemonInPlay) -> set[str]:
     if defender.no_weakness_turn == state.turn_number:
         return set()
+    changed = defender.weakness_to
+    if changed and state.turn_number <= changed[1]:
+        return {changed[0]}
     if pokemon_type(defender.card) == "Dragon" and any_ability_in_play(
         state, defender_owner.other, "Fairy Zone"
     ):
@@ -401,6 +408,8 @@ def shield_blocks(
         return is_ex(attacker.card)
     if kind == "evolution":
         return attacker.card.evolves_from is not None
+    if kind.startswith("less:"):
+        return False  # redução, não prevenção: ver `shield_reduction`
     if kind == "burned":
         return attacker.status.name == "BURNED"
     if kind == "ancient":
@@ -413,6 +422,17 @@ def shield_blocks(
         excluded = kind.partition(":")[2]
         return stage_of(attacker.card) == "Basic" and pokemon_type(attacker.card) != excluded
     return False
+
+
+def shield_reduction(state: GameState, defender: PokemonInPlay, attacker: PokemonInPlay) -> int:
+    """Escudo de redução: ("less:N:evolution", turno) — N a menos de Evolução."""
+    shield = defender.shield
+    if shield is None or shield[1] != state.turn_number or not shield[0].startswith("less:"):
+        return 0
+    _, amount, who = shield[0].split(":")
+    if who == "evolution" and attacker.card.evolves_from is None:
+        return 0
+    return int(amount)
 
 
 def prevents_attack_effects(
@@ -460,7 +480,27 @@ def prevents_ability_effects(state: GameState, defender: PokemonInPlay) -> bool:
     return any(holder is defender for _, holder in compiled(state, owner, "ability_shield"))
 
 
+def trainer_shielded(state: GameState, owner: PlayerId, mon: PokemonInPlay, playing: str) -> bool:
+    """Pokémon protegido dos efeitos de Item/Apoiador do oponente (Unnerve,
+    Snow Camouflage, Protective Sail, Wide Wall)."""
+    if playing not in ("Item", "Supporter"):
+        return False
+    if ability_active(state, mon, "Unnerve") or ability_active(state, mon, "Snow Camouflage"):
+        return True
+    if playing == "Supporter":
+        if ability_active(state, mon, "Protective Sail"):
+            return True
+        active = state.state_of(owner).active
+        if active is not None and ability_active(state, active, "Wide Wall"):
+            return True
+    return False
+
+
 def immune_to_special_conditions(state: GameState, mon: PokemonInPlay) -> bool:
+    from pokemon_companion.engine.effects.cardinfo import is_fossil_pokemon
+
+    if is_fossil_pokemon(mon.card):
+        return True
     if stadium_is(state, "Festival Grounds") and bool(mon.attached_energies):
         return True
     return "Bubbly Water Energy" in mon.attached_energies and pokemon_type(mon.card) == "Water"

@@ -563,8 +563,7 @@ def _parse_sentence(sentence: str) -> list[Passive] | None:
 def compile_passive(text: str) -> tuple[Passive, ...] | None:
     found: list[Passive] = []
     stacks = True
-    whole = _clean(text).rstrip(".")
-    whole = re.sub(r"\s*The effect of .+ doesn't stack\.?$", "", whole)
+    whole = re.sub(r"\s*The effect of .+ doesn't stack\.?$", "", _clean(text)).rstrip(".")
     for pattern, build in RULES:
         match = pattern.fullmatch(whole)
         if match:

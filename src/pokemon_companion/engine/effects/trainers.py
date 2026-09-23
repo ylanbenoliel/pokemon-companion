@@ -91,7 +91,13 @@ def stadium_spec_for(card: Card) -> TrainerSpec | None:
 
 
 def is_implemented(card: Card) -> bool:
-    return spec_for(card) is not None or trainer_kind(card) in ("Tool", "Stadium")
+    from pokemon_companion.engine.effects.cardinfo import is_fossil_item
+
+    return (
+        spec_for(card) is not None
+        or trainer_kind(card) in ("Tool", "Stadium")
+        or is_fossil_item(card)
+    )
 
 
 def discard_stadium(state: GameState) -> None:
@@ -113,7 +119,11 @@ def others_in_hand(ctx: Ctx, count: int) -> bool:
 
 
 def opp_bench_options(ctx: Ctx) -> list[Target | None]:
-    return [("opp", i) for i in range(len(ctx.opp.bench))]
+    return [
+        ("opp", i)
+        for i, mon in enumerate(ctx.opp.bench)
+        if not passives.trainer_shielded(ctx.state, ctx.opp_id, mon, ctx.playing)
+    ]
 
 
 def own_bench_options(ctx: Ctx) -> list[Target | None]:
@@ -128,8 +138,11 @@ def target_index(ctx: Ctx, default: int = 0) -> int:
 
 def gust(ctx: Ctx) -> None:
     index = target_index(ctx, default=-2)
-    if index < 0:
+    allowed = [i for (_, i) in opp_bench_options(ctx)]  # type: ignore[misc]
+    if index < 0 or index not in allowed:
         index = core.gust_target(ctx.state, ctx.opp_id) or 0
+    if index not in allowed:
+        return
     if ctx.opp.bench:
         core.switch_active(ctx.state, ctx.opp, index)
         ctx.log(f"{ctx.opp.active.card.name} foi puxado para o Ativo.")  # type: ignore[union-attr]

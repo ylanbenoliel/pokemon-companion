@@ -89,6 +89,8 @@ class PokemonInPlay:
     #: prêmios extras para quem nocautear este Pokémon: (quantidade, turno)
     bounty: tuple[int, int] | None = None
     healed_this_turn: bool = False
+    #: fraqueza trocada até o turno indicado: (tipo, último turno)
+    weakness_to: tuple[str, int] | None = None
     #: turno em que ataques e recuo deste Pokémon custam {C} a mais
     taxed_turn: int | None = None
 

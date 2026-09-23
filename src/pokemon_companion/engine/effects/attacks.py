@@ -250,6 +250,17 @@ def retaliate_next_turn(ctx: Ctx, counters: int) -> None:
         ctx.source.retaliation = (counters, ctx.turn + 1)
 
 
+def _to_discard_or_hand(ctx: Ctx, card: Card) -> None:
+    """Nitro Fire Energy volta para a mão quando descartada pelo ataque do
+    Pokémon {R} em que está."""
+    mon = ctx.source
+    nitro = card.name == "Nitro Fire Energy"
+    if nitro and mon is not None and pokemon_type(mon.card) == "Fire":
+        ctx.me.hand.append(card)
+    else:
+        ctx.me.discard.append(card)
+
+
 def discard_own_energy(ctx: Ctx, count: int, energy: str | None = None) -> int:
     """Descarta até `count` energias do atacante (só do tipo `energy`, se dado)."""
     mon = ctx.source
@@ -263,7 +274,7 @@ def discard_own_energy(ctx: Ctx, count: int, energy: str | None = None) -> int:
             choice = core.least_useful_energy(mon)
         else:
             break
-        ctx.me.discard.append(core.detach_energy(mon, choice))
+        _to_discard_or_hand(ctx, core.detach_energy(mon, choice))
         discarded += 1
     return discarded
 
@@ -315,7 +326,7 @@ def discard_all_energy(ctx: Ctx) -> None:
     if mon is None:
         return
     for energy in list(mon.attached_energies):
-        ctx.me.discard.append(core.detach_energy(mon, energy))
+        _to_discard_or_hand(ctx, core.detach_energy(mon, energy))
 
 
 # ---------------------------------------------------------------------------

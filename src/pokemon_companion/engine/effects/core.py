@@ -60,6 +60,10 @@ class Ctx:
     ends_turn: bool = False
     #: ataque em resolução (bônus do tipo "o ataque X deste Pokémon faz +N")
     attack_name: str = ""
+    #: tipo do Treinador sendo jogado ("Item", "Supporter"), para proteções
+    playing: str = ""
+    #: o Treinador jogado volta para o deck em vez do descarte (Caretaker)
+    card_to_deck: bool = False
 
     @property
     def me(self) -> PlayerState:
@@ -140,7 +144,10 @@ def evolve_into(
     evolved = target.clone()
     evolved.card = card
     evolved.prior_cards = [target.card, *target.prior_cards]
-    evolved.status = StatusCondition.NONE
+    keep_confusion = (
+        passives.stadium_is(state, "Dizzying Valley") and target.status == StatusCondition.CONFUSED
+    )
+    evolved.status = StatusCondition.CONFUSED if keep_confusion else StatusCondition.NONE
     evolved.evolved_this_turn = True
     evolved.abilities_used = set()
     if player.active is target:
@@ -180,7 +187,9 @@ def draw_until(player: PlayerState, size: int) -> int:
 
 
 def discard_pokemon(player: PlayerState, mon: PokemonInPlay) -> None:
-    player.discard.extend(mon.all_cards())
+    from pokemon_companion.engine.effects.cardinfo import FOSSIL_ORIGINALS
+
+    player.discard.extend(FOSSIL_ORIGINALS.get(c.id, c) for c in mon.all_cards())
     player.discard.extend(BASIC_ENERGIES[e] for e in mon.attached_energies if e in BASIC_ENERGIES)
 
 
@@ -555,6 +564,7 @@ def deal_damage(
             amount -= defender.damage_reduction[0]
         amount -= passives.static_damage_reduction(state, owner, defender)
         amount -= passives.compiled_reduction(state, owner, defender, attacker)
+        amount -= passives.shield_reduction(state, defender, attacker)
     amount = max(amount, 0)
     if amount and attacker is not None:
         amount = _survival(ctx, owner, defender, amount)
@@ -571,7 +581,29 @@ def deal_damage(
             )
         if attacker is not None:
             _counterattack(ctx, owner, defender, attacker)
+            _owner_triggers(ctx, owner, defender)
     return amount
+
+
+def _owner_triggers(ctx: Ctx, owner: PlayerId, defender: PokemonInPlay) -> None:
+    """Habilidades do Pokémon atingido que agem a favor do dono (Smog
+    Signals ao sofrer dano no Ativo; Final Chain e Photon Cord no nocaute)."""
+    state = ctx.state
+    side = state.state_of(owner)
+    own = Ctx(state, owner, defender, messages=ctx.messages)
+    active = side.active is defender
+    if active and passives.ability_active(state, defender, "Smog Signals"):
+        search_deck(own, lambda c: c.is_basic and "Koffing" in c.name, 2, destination="bench")
+    if not defender.is_knocked_out:
+        return
+    if passives.ability_active(state, defender, "Final Chain"):
+        search_deck(own, lambda c: True, 1)
+    if active and passives.ability_active(state, defender, "Photon Cord") and side.bench:
+        receiver = max(side.bench, key=lambda m: len(m.attached_energies))
+        for _ in range(2):
+            if "Lightning" not in defender.attached_energies:
+                break
+            attach_energy_card(receiver, detach_energy(defender, "Lightning"))
 
 
 def _survival(ctx: Ctx, owner: PlayerId, defender: PokemonInPlay, amount: int) -> int:

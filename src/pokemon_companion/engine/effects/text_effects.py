@@ -17,6 +17,7 @@ vira opção da ação, como nos ataques registrados à mão.
 
 from __future__ import annotations
 
+import random
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -28,11 +29,14 @@ from pokemon_companion.engine.effects import attacks, core, passives
 from pokemon_companion.engine.effects.abilities import AbilitySpec
 from pokemon_companion.engine.effects.attacks import AttackSpec, Target
 from pokemon_companion.engine.effects.cardinfo import (
+    TYPED_SPECIAL_ENERGIES,
     energy_type_of,
+    fossil_pokemon,
     has_rule_box,
     is_basic_energy,
     is_evolution,
     is_ex,
+    is_fossil_item,
     is_tera,
     pokemon_type,
     stage_of,
@@ -40,7 +44,12 @@ from pokemon_companion.engine.effects.cardinfo import (
 )
 from pokemon_companion.engine.effects.core import Ctx
 from pokemon_companion.engine.effects.trainers import TrainerSpec
-from pokemon_companion.engine.game_state import PlayerState, PokemonInPlay, StatusCondition
+from pokemon_companion.engine.game_state import (
+    PlayerId,
+    PlayerState,
+    PokemonInPlay,
+    StatusCondition,
+)
 
 # ---------------------------------------------------------------------------
 # execução
@@ -78,6 +87,8 @@ class Run:
     picked: list[Card] = field(default_factory=list)
     #: condição especial escolhida ("that Special Condition")
     chosen_status: StatusCondition | None = None
+    #: moeda de cada jogador ("each player flips a coin")
+    coins_by_player: dict[PlayerId, bool] = field(default_factory=dict)
 
     @property
     def me(self) -> PlayerState:
@@ -286,6 +297,9 @@ def parse_kind(text: str) -> CardFilter | None:
 
 def _clean(text: str) -> str:
     text = re.sub(r"\s*\([^)]*\)", "", text)  # lembretes entre parênteses
+    # "Choose 1 or both:" + tópicos: a IA faz os dois (nunca é pior)
+    text = re.sub(r"Choose (?:1|one) or both:\s*", "", text)
+    text = re.sub(r"\s*•\s*", " ", text)
     return text.replace("’", "'").strip()
 
 
@@ -6948,3 +6962,196 @@ def _tiered_all(n: str) -> Step:
             run.damage += num(n)
 
     return pre(act)
+
+
+# ---------------------------------------------------------------------------
+# lote 8: mover energia repetidamente, cópia do topo do deck, fraqueza,
+# redução contra Evolução, Treinador que volta ao deck, mãos no fundo do deck
+
+
+def _provides(attached: str, kind_: str | None) -> bool:
+    return kind_ is None or TYPED_SPECIAL_ENERGIES.get(attached, attached) == kind_
+
+
+def _move_one(
+    run: Run,
+    donors: list[PokemonInPlay],
+    receiver: PokemonInPlay | None,
+    test: Callable[[str], bool],
+) -> None:
+    """Move 1 energia que passe em `test` de um doador para `receiver`
+    (sempre no mesmo sentido, para o uso repetido não ficar indo e vindo)."""
+    if receiver is None:
+        return
+    for donor in donors:
+        if donor is receiver:
+            continue
+        spare = [e for e in donor.attached_energies if test(e)]
+        if spare:
+            core.attach_energy_card(receiver, core.detach_energy(donor, spare[-1]))
+            return
+
+
+def _needs_energy(run: Run, mon: PokemonInPlay | None) -> bool:
+    """O receptor ainda não paga o ataque mais caro."""
+    if mon is None:
+        return False
+    biggest = max((len(a.cost) for a in mon.card.attacks), default=0)
+    return len(mon.attached_energies) < biggest
+
+
+@phrase("Move a Basic {E} Energy from {N} of your Pokémon to another of your Pokémon")
+def _shift_typed_basic(e: str, _n: str) -> Step:
+    kind_ = energy(e)
+
+    def act(run: Run) -> None:
+        active = run.me.active
+        if _needs_energy(run, active):
+            _move_one(
+                run, list(run.me.bench), active, lambda x: x in core.BASIC_ENERGIES and x == kind_
+            )
+
+    return after(act)
+
+
+@phrase("Move a {E} Energy from {N} of your Benched Pokémon to your Active Pokémon")
+def _bench_to_active(e: str, _n: str) -> Step:
+    kind_ = energy(e)
+
+    def act(run: Run) -> None:
+        if _needs_energy(run, run.me.active):
+            _move_one(run, list(run.me.bench), run.me.active, lambda x: _provides(x, kind_))
+
+    return after(act)
+
+
+@phrase("Move an Energy from {N} of your other Pokémon to this Pokémon")
+def _gather_to_self(_n: str) -> Step:
+    def act(run: Run) -> None:
+        if _needs_energy(run, run.source):
+            _move_one(run, run.me.all_pokemon_in_play(), run.source, lambda x: True)
+
+    return after(act)
+
+
+@phrase("You may choose an attack from a Pokémon you find there and use it as this attack")
+def _copy_from_revealed() -> list[Step]:
+    def replace(run: Run) -> None:
+        run.main_hit = False
+
+    def act(run: Run) -> None:
+        found = [
+            a
+            for c in run.picked
+            if c.is_pokemon
+            for a in c.attacks
+            if a.name not in attacks.COPY_ATTACKS
+        ]
+        if found:
+            attacks.use_copied(run.ctx, max(found, key=lambda a: a.base_damage))
+
+    return [pre(replace), after(act)]
+
+
+@phrase("Shuffle the revealed cards into your opponent's deck")
+def _reshuffle_opp() -> Step:
+    return after(lambda run: core.shuffle_deck(run.opp))
+
+
+@phrase("Until the end of your next turn, the Defending Pokémon's Weakness is now {E}")
+def _set_weakness(e: str) -> Step:
+    kind_ = energy(e)
+
+    def act(run: Run) -> None:
+        if run.defender is not None:
+            run.defender.weakness_to = (kind_, run.ctx.turn + 2)
+
+    return after(act)
+
+
+@phrase(
+    "During your opponent's next turn, this Pokémon takes {N} less damage from attacks from "
+    "Evolution Pokémon"
+)
+def _less_from_evolutions(n: str) -> Step:
+    def act(run: Run) -> None:
+        if run.source is not None:
+            run.source.shield = (f"less:{num(n)}:evolution", run.ctx.turn + 1)
+
+    return after(act)
+
+
+@phrase(
+    "If you drew any cards in this way and if (.+?) is in play, shuffle this .+? into your deck "
+    "instead of discarding it"
+)
+def _back_to_deck_with_stadium(stadium: str) -> Step:
+    def act(run: Run) -> None:
+        if run.drawn and passives.stadium_is(run.ctx.state, stadium):
+            run.ctx.card_to_deck = True
+
+    return after(act)
+
+
+@phrase("Each player shuffles their hand and puts it on the bottom of their deck")
+def _hands_to_bottom() -> Step:
+    def act(run: Run) -> None:
+        moved = 0
+        for side in (run.me, run.opp):
+            random.shuffle(side.hand)
+            moved += len(side.hand)
+            side.deck.extend(side.hand)
+            side.hand.clear()
+        run.did = moved > 0
+
+    return after(act)
+
+
+@phrase(
+    "If either player put any cards on the bottom of their deck in this way, each player flips a "
+    "coin"
+)
+def _each_player_flips() -> Step:
+    def act(run: Run) -> None:
+        if run.did:
+            run.coins_by_player = {pid: core.coin() for pid in (run.ctx.player_id, run.ctx.opp_id)}
+
+    return after(act)
+
+
+@phrase("If heads, that player draws {N} cards")
+def _each_heads_draws(n: str) -> Step:
+    return after(lambda run: _each_draws(run, True, num(n)))
+
+
+@phrase("If tails, they draw {N} cards")
+def _each_tails_draws(n: str) -> Step:
+    return after(lambda run: _each_draws(run, False, num(n)))
+
+
+def _each_draws(run: Run, heads: bool, amount: int) -> None:
+    for pid, result in run.coins_by_player.items():
+        if result == heads:
+            side = run.ctx.state.state_of(pid)
+            got = core.draw(side, amount)
+            if pid == run.ctx.player_id:
+                run.drawn += got
+
+
+@phrase(
+    'Search your deck for up to {N} Item cards that have "(.+?)" in their name and put them onto '
+    "your Bench"
+)
+def _items_onto_bench(n: str, part: str) -> Step:
+    """Itens que entram em jogo como Pokémon (os Fósseis "Antique")."""
+
+    def act(run: Run) -> None:
+        found = [c for c in run.me.deck if part in c.name and is_fossil_item(c)][: num(n)]
+        for card in found:
+            if not core.bench_space(run.ctx.state, run.me):
+                break
+            run.me.deck.remove(card)
+            core.put_on_bench(run.ctx.state, run.me, fossil_pokemon(card))
+        core.shuffle_deck(run.me)
+
+    return after(act)

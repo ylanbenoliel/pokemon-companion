@@ -10,6 +10,9 @@ banco de 8 com Area Zero Underdepths.
 
 from __future__ import annotations
 
+import dataclasses
+import re
+
 from pokemon_companion.cards_db.models import Card, Supertype
 
 TERA_NAMES = {
@@ -104,6 +107,7 @@ TYPED_SPECIAL_ENERGIES = {
     "Shadowy Darkness Energy": "Darkness",
     "Voltaic Lightning Energy": "Lightning",
     "Magnetic Metal Energy": "Metal",
+    "Nitro Fire Energy": "Fire",
 }
 
 
@@ -139,3 +143,53 @@ def pokemon_type(card: Card) -> str:
 
 def has_ability(card: Card, name: str) -> bool:
     return any(ability.name == name for ability in card.abilities)
+
+
+# ---------------------------------------------------------------------------
+# Fósseis: Itens jogados "como se fossem" um Pokémon Básico
+
+_FOSSIL_RE = re.compile(r"Play this card as if it were a (\d+)-HP Basic [\[{](\w)[\]}] Pokémon")
+_SYMBOL_TYPES = {
+    "G": "Grass",
+    "R": "Fire",
+    "W": "Water",
+    "L": "Lightning",
+    "P": "Psychic",
+    "F": "Fighting",
+    "D": "Darkness",
+    "M": "Metal",
+    "N": "Dragon",
+    "C": "Colorless",
+}
+#: id da versão em jogo → carta de Item original (volta assim para o descarte)
+FOSSIL_ORIGINALS: dict[str, Card] = {}
+
+
+def is_fossil_item(card: Card) -> bool:
+    return card.supertype == Supertype.TRAINER and bool(
+        card.rules and _FOSSIL_RE.search(card.rules[0])
+    )
+
+
+def fossil_pokemon(card: Card) -> Card:
+    """O Item como Pokémon Básico em jogo (HP e tipo do texto, sem ataques,
+    mantendo a Habilidade impressa)."""
+    match = _FOSSIL_RE.search(card.rules[0])
+    assert match is not None
+    in_play = dataclasses.replace(
+        card,
+        id=f"fossil-{card.id}",
+        supertype=Supertype.POKEMON,
+        subtypes=["Basic"],
+        hp=int(match.group(1)),
+        types=[_SYMBOL_TYPES.get(match.group(2), "Colorless")],
+        attacks=[],
+        retreat_cost=[],
+        evolves_from=None,
+    )
+    FOSSIL_ORIGINALS[in_play.id] = card
+    return in_play
+
+
+def is_fossil_pokemon(card: Card) -> bool:
+    return card.id in FOSSIL_ORIGINALS
