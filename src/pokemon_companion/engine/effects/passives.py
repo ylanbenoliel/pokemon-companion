@@ -739,3 +739,33 @@ def checkup_extra(state: GameState, owner: PlayerId) -> list[str]:
                 mon.damage_counters += 10 * passive.counters  # type: ignore[attr-defined]
         messages.append(f"{holder.card.name}: contadores nos Básicos do oponente.")
     return messages
+
+
+def rescue_from_knockout(
+    state: GameState, owner_id: PlayerId, mon: PokemonInPlay, messages: list[str]
+) -> None:
+    """Cartas que voltam do descarte para a mão num nocaute por ataque:
+    Infinite Shadow (o próprio Pokémon) e Diver's Catch (Energias {W}
+    básicas de um Pokémon {W})."""
+    from pokemon_companion.engine.effects.cardinfo import is_basic_energy
+
+    owner = state.state_of(owner_id)
+    if ability_active(state, mon, "Infinite Shadow") and mon.card in owner.discard:
+        owner.discard.remove(mon.card)
+        owner.hand.append(mon.card)
+        messages.append(f"{mon.card.name} voltou para a mão (Infinite Shadow).")
+    catcher = any(
+        ability_active(state, other, "Diver's Catch")
+        for other in owner.all_pokemon_in_play()
+        if other is not mon
+    )
+    if catcher and pokemon_type(mon.card) == "Water":
+        waters = [c for c in owner.discard if is_basic_energy(c) and c.types == ["Water"]]
+        energies = waters[: mon.attached_energies.count("Water")]
+        for card in energies:
+            owner.discard.remove(card)
+            owner.hand.append(card)
+        if energies:
+            messages.append(
+                f"{len(energies)} Energia(s) {{W}} voltaram para a mão (Diver's Catch)."
+            )

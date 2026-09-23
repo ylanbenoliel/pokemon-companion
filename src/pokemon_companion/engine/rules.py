@@ -422,7 +422,10 @@ def _process_knockouts(
                 ):
                     prizes += 1
             messages.append(f"{mon.card.name} ({owner_id.value}) foi nocauteado!")
+            by_attack = attacker is not None and owner_id is attacker.other
             core.discard_pokemon(owner, mon)
+            if by_attack:
+                passives.rescue_from_knockout(state, owner_id, mon, messages)
             if was_active:
                 owner.active = None
             else:

@@ -284,3 +284,13 @@ def test_energy_attach_trigger_places_counters(state):
     rules.apply_action(state, AttachEnergy(hand_index=0, target_is_active=True))
 
     assert state.player.active.damage_counters == 20
+
+
+def test_infinite_shadow_returns_to_hand(state):
+    ghost = mon("Gengar", hp=50, ability="Infinite Shadow", text="(à mão)")
+    state.opponent.active = PokemonInPlay(card=ghost)
+    state.opponent.bench = [PokemonInPlay(card=mon("Next"))]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert ghost in state.opponent.hand and ghost not in state.opponent.discard

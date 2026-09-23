@@ -300,7 +300,25 @@ def _clean(text: str) -> str:
     # "Choose 1 or both:" + tópicos: a IA faz os dois (nunca é pior)
     text = re.sub(r"Choose (?:1|one) or both:\s*", "", text)
     text = re.sub(r"\s*•\s*", " ", text)
+    # "Basic Fire Energy" (tipo por extenso, em algumas impressões) = "Basic {R} Energy"
+    text = re.sub(
+        r"\bBasic (Grass|Fire|Water|Lightning|Psychic|Fighting|Darkness|Metal) Energy",
+        lambda m: f"Basic {{{_TYPE_SYMBOL[m.group(1)]}}} Energy",
+        text,
+    )
     return text.replace("’", "'").strip()
+
+
+_TYPE_SYMBOL = {
+    "Grass": "G",
+    "Fire": "R",
+    "Water": "W",
+    "Lightning": "L",
+    "Psychic": "P",
+    "Fighting": "F",
+    "Darkness": "D",
+    "Metal": "M",
+}
 
 
 def sentences(text: str) -> list[str]:
@@ -2950,6 +2968,8 @@ def compiled_trainer(text: str) -> TrainerSpec | None:
 
 _THIRD_PERSON = (
     (r"\bthat player may\b ", ""),
+    (r"\bthat player shuffles\b", "shuffle"),
+    (r"\bin their name\b", "in its name"),
     (r"\ba player\b", "you"),
     (r"\bthat player's\b", "your"),
     (r"\bthat player\b", "you"),
@@ -7139,8 +7159,8 @@ def _each_draws(run: Run, heads: bool, amount: int) -> None:
 
 
 @phrase(
-    'Search your deck for up to {N} Item cards that have "(.+?)" in their name and put them onto '
-    "your Bench"
+    'Search your deck for up to {N} Item cards that have "(.+?)" in (?:their|its) name and put '
+    "them onto your Bench"
 )
 def _items_onto_bench(n: str, part: str) -> Step:
     """Itens que entram em jogo como Pokémon (os Fósseis "Antique")."""
