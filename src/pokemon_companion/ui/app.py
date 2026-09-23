@@ -61,6 +61,7 @@ from pokemon_companion.engine.actions import (
     UseStadium,
 )
 from pokemon_companion.engine.effects import core
+from pokemon_companion.engine.effects.cardinfo import pokemon_type
 from pokemon_companion.engine.game_state import GameState, PlayerId, PokemonInPlay
 from pokemon_companion.engine.history import MatchRecorder
 from pokemon_companion.ui.anim import AnimationQueue, Animator, par
@@ -68,6 +69,8 @@ from pokemon_companion.ui.art import ArtProvider
 from pokemon_companion.ui.battle_scene import BattleScene, Target
 from pokemon_companion.ui.deck_menu import DeckMenu, menu_size_hint, read_entry
 from pokemon_companion.ui.items import HandCard, PokemonToken
+from pokemon_companion.ui.sound import NullSounds, create_sound_player
+from pokemon_companion.ui.sound_cues import attack_cue, cues_for, snapshot
 from pokemon_companion.ui.theme import FELT_DEEP, primary_type, ui_font
 
 AI_THINK_MS = 550
@@ -82,9 +85,11 @@ class BattleController(QObject):
         ai_factory: Callable[[], AIPlayer],
         history_path: Path | None = None,
         player_ai_factory: Callable[[], AIPlayer] | None = None,
+        sounds: NullSounds | None = None,
     ) -> None:
         super().__init__()
         self.scene = scene
+        self.sounds = sounds or NullSounds()
         self._state_factory = state_factory
         self._ai_factory = ai_factory
         self._player_ai_factory = player_ai_factory
@@ -178,9 +183,11 @@ class BattleController(QObject):
     def _show_game_over(self) -> None:
         winner = self.state.winner
         if self.spectating and winner is not None:
+            self.sounds.play("victory")
             self.scene.show_game_over(f"{self.scene.name_of(winner)} vence!", won=True)
         else:
             won = winner == PlayerId.PLAYER
+            self.sounds.play("victory" if won else "defeat")
             self.scene.show_game_over("Vitória!" if won else "Derrota", won=won)
 
     def _push_turn_banner(self) -> None:
@@ -193,7 +200,12 @@ class BattleController(QObject):
             title = f"Vez de {self.scene.name_of(self.state.active_player)}"
         else:
             title = "Seu turno" if bottom else "Turno da IA"
-        self.queue.push(lambda: self.scene.banner(title, color))
+
+        def show() -> QAbstractAnimation:
+            self.sounds.play("turn_start")
+            return self.scene.banner(title, color)
+
+        self.queue.push(show)
 
     # ------------------------------------------------------------------
     # controles
@@ -351,6 +363,7 @@ class BattleController(QObject):
         if self.busy or not self.is_player_turn:
             return
         self._retreat_mode = False
+        self.sounds.play("ui_click")
         self._pending = self.targets_for_hand(item.hand_index)
         self.scene.highlight_targets(list(self._pending))
 
@@ -427,6 +440,7 @@ class BattleController(QObject):
         self._resolve(actions, "Qual Habilidade?")
 
     def _on_choice_made(self, index: int) -> None:
+        self.sounds.play("ui_click")
         actions, self._choice_actions = self._choice_actions, []
         if 0 <= index < len(actions):
             self._perform_if_legal(actions[index])
@@ -504,7 +518,13 @@ class BattleController(QObject):
         if isinstance(action, UseAttack) and actor_state.active is not None:
             attacker = actor_state.active
             defender = self.state.state_of(actor.other).active
-            self.queue.push(lambda: self.scene.lunge(attacker, defender))
+            cue = attack_cue(pokemon_type(attacker.card))
+
+            def lunge() -> QAbstractAnimation | None:
+                self.sounds.play_cues([(100, cue)])
+                return self.scene.lunge(attacker, defender)
+
+            self.queue.push(lunge)
             self.queue.push(lambda: self._attack_step(action, attacker, defender))
         else:
             self.queue.push(lambda: self._apply_step(action, card_source))
@@ -514,7 +534,13 @@ class BattleController(QObject):
         actor = rules.decision_player(self.state)
         turn = self.state.turn_number
         was_setup = bool(self.state.pending_setup)
+        before_sound = snapshot(self.state, actor, action)
+        # o som do ataque já tocou na investida (ver `perform`)
+        announced = isinstance(action, UseAttack) and self.state.state_of(actor).active is not None
         messages = rules.apply_action(self.state, action)
+        self.sounds.play_cues(
+            cues_for(action, before_sound, self.state, actor, messages, announced)
+        )
         if self.recorder is not None:
             self.recorder.record(turn, actor, action, messages)
         for message in messages:
@@ -601,9 +627,27 @@ class MainWindow(QMainWindow):
             self.scene.set_names(display_name(player_label), display_name(opponent_label))
         self.view = BattleView(self.scene)
         self.setCentralWidget(self.view)
+        self.sounds = create_sound_player()
         self.controller = BattleController(
-            self.scene, state_factory, ai_factory, history_path, player_ai_factory
+            self.scene, state_factory, ai_factory, history_path, player_ai_factory, self.sounds
         )
+        mute = QShortcut(QKeySequence(Qt.Key.Key_M), self)
+        mute.activated.connect(self._toggle_mute)
+        for key, step in (
+            (Qt.Key.Key_Plus, 0.1),
+            (Qt.Key.Key_Equal, 0.1),
+            (Qt.Key.Key_Minus, -0.1),
+        ):
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.activated.connect(lambda s=step: self._change_volume(s))
+
+    def _toggle_mute(self) -> None:
+        muted = self.sounds.toggle_mute()
+        self.scene.show_toast("Som desligado (M)" if muted else "Som ligado (M)")
+
+    def _change_volume(self, step: float) -> None:
+        self.sounds.set_volume(self.sounds.volume + step)
+        self.scene.show_toast(f"Volume {round(self.sounds.volume * 100)}%")
 
     def log_message(self, message: str) -> None:
         self.scene.show_toast(message)
