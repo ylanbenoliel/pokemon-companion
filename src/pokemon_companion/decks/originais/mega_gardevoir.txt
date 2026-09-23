@@ -1,0 +1,29 @@
+# Mega Gardevoir ex — deck original (montado do zero)
+# Plano: Ralts → Rare Candy → Mega Gardevoir ex; Overflowing Wishes liga
+# uma energia {P} do deck em cada Pokémon do banco e Mega Symphonia bate 50
+# por energia {P} em jogo. Smoochum/Wondrous Patch aceleram, Latias ex
+# tira o recuo dos Básicos.
+Pokémon (18)
+4 Ralts MEG 58
+3 Kirlia MEG 59
+3 Mega Gardevoir ex MEP 32
+1 Smoochum SSP 75
+1 Cresselia PFL 39
+2 Dunsparce JTG 120
+2 Dudunsparce TEF 129
+1 Fezandipiti ex ASC 142
+1 Latias ex SSP 76
+Trainer (29)
+4 Lillie's Determination MEG 119
+2 Hilda WHT 84
+2 Dawn PFL 87
+3 Boss's Orders MEG 114
+4 Rare Candy MEG 125
+4 Ultra Ball MEG 131
+3 Buddy-Buddy Poffin TEF 144
+2 Night Stretcher ASC 196
+2 Wondrous Patch PFL 94
+1 Switch MEG 130
+2 Poké Pad POR 81
+Energy (13)
+13 Psychic Energy MEE 13

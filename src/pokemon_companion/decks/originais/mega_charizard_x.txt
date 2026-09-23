@@ -1,0 +1,29 @@
+# Mega Charizard X ex — deck original (montado do zero)
+# Plano: Charmander → Rare Candy → Mega Charizard X ex. Firebreather busca
+# até 7 energias {R} para a mão e Oricorio ex (Excited Turbo) liga todas no
+# banco no mesmo turno; Inferno X descarta só o necessário (90 cada).
+# Energy Retrieval/Max Rod/Wally's Compassion devolvem as energias à mão.
+Pokémon (17)
+4 Charmander PFL 11
+2 Charmeleon PFL 12
+3 Mega Charizard X ex PFL 13
+3 Oricorio ex PFL 18
+2 Dunsparce JTG 120
+2 Dudunsparce TEF 129
+1 Fezandipiti ex ASC 142
+Trainer (31)
+3 Firebreather PFL 89
+3 Lillie's Determination MEG 119
+2 Hilda WHT 84
+2 Boss's Orders MEG 114
+1 Wally's Compassion MEG 132
+4 Rare Candy MEG 125
+4 Ultra Ball MEG 131
+3 Buddy-Buddy Poffin TEF 144
+2 Energy Retrieval WHT 82
+1 Max Rod PRE 116
+2 Night Stretcher ASC 196
+2 Switch MEG 130
+2 Poké Pad POR 81
+Energy (12)
+12 Fire Energy MEE 10
