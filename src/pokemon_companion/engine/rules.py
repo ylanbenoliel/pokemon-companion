@@ -513,6 +513,30 @@ def _end_of_turn_effects(state: GameState, messages: list[str]) -> None:
     if active is not None and passives.tool_active(state, active, "Powerglass"):
         ctx = Ctx(state, pid, active, messages=messages)
         core.attach_from(ctx, player.discard, is_basic_energy, 1, allowed=lambda m: m is active)
+    _resolve_dooms(state, messages)
+
+
+def _resolve_dooms(state: GameState, messages: list[str]) -> None:
+    """Efeitos marcados para o fim deste turno (`PokemonInPlay.doom`)."""
+    for owner_id in (PlayerId.PLAYER, PlayerId.OPPONENT):
+        owner = state.state_of(owner_id)
+        for mon in list(owner.all_pokemon_in_play()):
+            if mon.doom is None or mon.doom[1] != state.turn_number:
+                continue
+            kind, mon.doom = mon.doom[0], None
+            if kind == "ko":
+                mon.damage_counters = mon.max_hp
+                messages.append(f"{mon.card.name} foi nocauteado (efeito de fim de turno).")
+            elif kind == "discard":
+                core.discard_pokemon(owner, mon)
+                if owner.active is mon:
+                    owner.active = None
+                else:
+                    del owner.bench[core.index_of(owner.bench, mon)]
+                messages.append(f"{mon.card.name} foi descartado (efeito de fim de turno).")
+            elif kind.startswith("counters:"):
+                mon.damage_counters += 10 * int(kind.partition(":")[2])
+                messages.append(f"{mon.card.name} recebeu contadores (efeito de fim de turno).")
 
 
 def _end_turn(state: GameState) -> list[str]:

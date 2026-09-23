@@ -170,3 +170,125 @@ def test_explain_lists_the_compiled_steps():
         "Flip a coin. If heads, your opponent's Active Pokémon is now Paralyzed."
     )
     assert lines == ["pre: flip_one()", "after: se cara → status(Paralyzed)"]
+
+
+# --------------------------------------------------------------------------
+# lote 2: marcadores com duração, custos e escolhas
+
+from pokemon_companion.engine.actions import EndTurn  # noqa: E402
+from pokemon_companion.engine.game_state import StatusCondition  # noqa: E402
+
+
+def test_delayed_knock_out_happens_at_the_end_of_the_opponents_turn(state):
+    attack_with(
+        state,
+        "At the end of your opponent's next turn, the Defending Pokémon will be Knocked Out.",
+    )
+    rules.apply_action(state, UseAttack(attack_index=0))
+    assert state.opponent.active.card.name == "Defender"
+
+    rules.apply_action(state, EndTurn())  # fim do turno do oponente
+
+    assert len(state.player.prizes) == 5
+
+
+def test_shield_blocks_only_the_matching_attackers(state):
+    text = (
+        "During your opponent's next turn, prevent all damage done to this Pokémon by attacks "
+        "from Basic non-{C} Pokémon."
+    )
+    attack_with(state, text, "10")
+    rules.apply_action(state, UseAttack(attack_index=0))
+    # o Defender é Básico Incolor: o escudo não vale contra ele
+    state.opponent.active.attached_energies = ["Colorless"]
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.player.active.damage_counters == 20
+
+
+def test_stronger_poison_in_the_checkup(state):
+    attack_with(
+        state,
+        "Your opponent's Active Pokémon is now Poisoned. During Pokémon Checkup, put 8 damage "
+        "counters on that Pokémon instead of 1.",
+        "100",
+    )
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.status == StatusCondition.POISONED
+    assert state.opponent.active.damage_counters == 100 + 80
+
+
+def test_discard_for_damage_stops_at_what_knocks_out(state):
+    text = (
+        "Discard up to 2 Energy cards from this Pokémon, and this attack does 120 damage for "
+        "each card you discarded in this way."
+    )
+    attack_with(state, text, "120×")
+    state.player.active.attached_energies = ["Fire", "Fire", "Fire"]
+    state.opponent.active = PokemonInPlay(card=mon("Small", hp=100))
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.player.active.attached_energies == ["Fire", "Fire"]  # 1 bastou
+    assert len(state.player.prizes) == 5
+
+
+def test_hand_cost_not_paid_cancels(state):
+    text = (
+        "Discard 2 Basic {R} Energy cards from your hand. If you can't discard 2 cards in this "
+        "way, this attack does nothing."
+    )
+    attack_with(state, text, "220")
+    state.player.hand = [BASIC_ENERGIES["Fire"]]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.damage_counters == 0
+    assert state.player.hand == [BASIC_ENERGIES["Fire"]]
+
+
+def test_if_you_do_follows_the_previous_action(state):
+    text = (
+        "Attach a Basic {G} Energy card from your hand to 1 of your Benched Pokémon. If you do, "
+        "heal all damage from that Pokémon."
+    )
+    attack_with(state, text)
+    hurt = PokemonInPlay(card=mon("Hurt"), damage_counters=90)
+    state.player.bench = [hurt]
+    state.player.hand = [BASIC_ENERGIES["Grass"]]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert hurt.attached_energies == ["Grass"] and hurt.damage_counters == 0
+
+
+def test_next_turn_bonus_applies_only_to_the_named_attack(state):
+    attack_with(
+        state,
+        "During your next turn, this Pokémon's Echoed Voice attack does 80 more damage.",
+        "30",
+        name="Echoed Voice",
+    )
+    rules.apply_action(state, UseAttack(attack_index=0))
+    rules.apply_action(state, EndTurn())  # turno do oponente sem atacar
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.damage_counters == 30 + 110
+
+
+def test_choose_then_shuffle_those_pokemon_into_the_deck(state):
+    attack_with(
+        state,
+        "Choose 2 of your opponent's Benched Pokémon. Shuffle those Pokémon and all attached "
+        "cards into your opponent's deck.",
+    )
+    state.opponent.bench = [PokemonInPlay(card=mon(n)) for n in ("A", "B", "C")]
+    deck_before = len(state.opponent.deck)
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert len(state.opponent.bench) == 1
+    assert len(state.opponent.deck) == deck_before + 2 - 1  # +2 embaralhados, -1 compra

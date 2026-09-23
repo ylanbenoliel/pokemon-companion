@@ -30,8 +30,8 @@ def apply_between_turns_effects(
     messages: list[str] = []
 
     if pokemon.status == StatusCondition.POISONED:
-        pokemon.damage_counters += 10
-        messages.append(f"{pokemon.card.name} sofreu 10 de dano por veneno.")
+        pokemon.damage_counters += pokemon.poison_damage
+        messages.append(f"{pokemon.card.name} sofreu {pokemon.poison_damage} de dano por veneno.")
 
     if pokemon.status == StatusCondition.BURNED:
         pokemon.damage_counters += 20

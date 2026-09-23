@@ -206,6 +206,8 @@ def attack_allowed(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack
 
 
 def weakness_types(state: GameState, defender_owner: PlayerId, defender: PokemonInPlay) -> set[str]:
+    if defender.no_weakness_turn == state.turn_number:
+        return set()
     if pokemon_type(defender.card) == "Dragon" and any_ability_in_play(
         state, defender_owner.other, "Fairy Zone"
     ):
@@ -296,6 +298,24 @@ def damage_prevented(
             for mon in owner_state.all_pokemon_in_play()
         ):
             return True
+    return False
+
+
+def shield_blocks(
+    state: GameState, defender: PokemonInPlay, attacker: PokemonInPlay, amount: int
+) -> bool:
+    """Prevenção condicional marcada por um ataque no turno anterior
+    (`PokemonInPlay.shield`)."""
+    if defender.shield is None or defender.shield[1] != state.turn_number:
+        return False
+    kind = defender.shield[0]
+    if kind.startswith("le:"):
+        return amount <= int(kind[3:])
+    if kind == "ex":
+        return is_ex(attacker.card)
+    if kind.startswith("basic"):
+        excluded = kind.partition(":")[2]
+        return stage_of(attacker.card) == "Basic" and pokemon_type(attacker.card) != excluded
     return False
 
 

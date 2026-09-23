@@ -101,6 +101,7 @@ def attack_options(ctx: Ctx, attack_: Attack) -> list[Target | None]:
 
 def resolve_attack(ctx: Ctx, attack_: Attack) -> None:
     ctx.base_damage = attack_.base_damage
+    ctx.attack_name = attack_.name
     spec = spec_for(attack_)
     if spec is None:
         hit_active(ctx, attack_.base_damage)

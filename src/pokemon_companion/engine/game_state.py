@@ -65,6 +65,18 @@ class PokemonInPlay:
     retaliation: tuple[int, int] | None = None  # (contadores, turno)
     #: turno em que dano e efeitos de ataques contra este Pokémon são prevenidos
     protected_turn: int | None = None
+    #: prevenção condicional de dano: (tipo, turno) — "basic", "basic-non:Fire",
+    #: "ex", "le:60" (dano de 60 ou menos)
+    shield: tuple[str, int] | None = None
+    #: efeito no fim de um turno: (tipo, turno) — "ko", "discard", "counters:9"
+    doom: tuple[str, int] | None = None
+    #: bônus de dano num turno: (nome do ataque ou "*", quantidade, turno)
+    attack_bonus: tuple[str, int, int] | None = None
+    no_weakness_turn: int | None = None
+    #: dano do veneno no Checkup (alguns ataques aumentam)
+    poison_damage: int = 10
+    #: último dano recebido de ataque: (quantidade, turno)
+    last_attacked: tuple[int, int] | None = None
 
     @property
     def max_hp(self) -> int:

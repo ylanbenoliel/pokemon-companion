@@ -58,6 +58,8 @@ class Ctx:
     is_ability: bool = False
     #: efeito que encerra o turno (ex: Lumiose City)
     ends_turn: bool = False
+    #: ataque em resolução (bônus do tipo "o ataque X deste Pokémon faz +N")
+    attack_name: str = ""
 
     @property
     def me(self) -> PlayerState:
@@ -472,6 +474,8 @@ def set_status(ctx: Ctx, owner: PlayerId, mon: PokemonInPlay, status: StatusCond
     if passives.immune_to_special_conditions(ctx.state, mon):
         return False
     mon.status = status
+    if status == StatusCondition.POISONED:
+        mon.poison_damage = 10
     ctx.log(f"{mon.card.name} agora está {status.name}.")
     return True
 
@@ -518,6 +522,9 @@ def deal_damage(
     state = ctx.state
     if attacker is not None and is_active and amount > 0:
         amount += passives.attacker_bonus(state, ctx.player_id, attacker, defender)
+        bonus = attacker.attack_bonus
+        if bonus and bonus[2] == state.turn_number and bonus[0] in ("*", ctx.attack_name):
+            amount += bonus[1]
     if attacker is not None and is_active and amount > 0:
         attacker_types = set(attacker.card.types)
         if apply_weakness and attacker_types & passives.weakness_types(state, owner, defender):
@@ -528,12 +535,15 @@ def deal_damage(
     if not ignore_defender_effects and attacker is not None:
         if passives.damage_prevented(state, owner, defender, attacker, is_active):
             amount = 0
+        if passives.shield_blocks(state, defender, attacker, amount):
+            amount = 0
         if defender.damage_reduction and defender.damage_reduction[1] == state.turn_number:
             amount -= defender.damage_reduction[0]
         amount -= passives.static_damage_reduction(state, owner, defender)
     amount = max(amount, 0)
     if amount:
         defender.damage_counters += amount
+        defender.last_attacked = (amount, state.turn_number)
         ctx.log(f"{defender.card.name} sofreu {amount} de dano.")
         retaliation = defender.retaliation
         if attacker is not None and retaliation and retaliation[1] == state.turn_number:
