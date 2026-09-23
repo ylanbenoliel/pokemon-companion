@@ -332,6 +332,8 @@ def shield_blocks(
         return amount <= int(kind[3:])
     if kind == "ex":
         return is_ex(attacker.card)
+    if kind == "evolution":
+        return attacker.card.evolves_from is not None
     if kind.startswith("basic"):
         excluded = kind.partition(":")[2]
         return stage_of(attacker.card) == "Basic" and pokemon_type(attacker.card) != excluded

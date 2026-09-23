@@ -731,6 +731,10 @@ def _apply_attack(state: GameState, pid: PlayerId, action: UseAttack) -> list[st
     player.attacks_this_turn += 1
     can_proceed, confusion_messages = check_confusion_self_damage(attacker)
     messages.extend(confusion_messages)
+    if can_proceed and attacker.attack_coin_turn == state.turn_number and not core.coin():
+        messages.append(f"Coroa: {attacker.card.name} não consegue atacar.")
+        can_proceed = False
+    player.last_attack = (attack.name, state.turn_number)
     if can_proceed:
         messages.append(f"{attacker.card.name} usou {attack.name}.")
         ctx = Ctx(state, pid, attacker, action.target, messages)

@@ -20,8 +20,10 @@ from functools import cache, lru_cache
 from pokemon_companion.cards_db.models import Ability, Card
 from pokemon_companion.engine.effects.cardinfo import (
     has_rule_box,
+    is_ancient,
     is_evolution,
     is_ex,
+    is_future,
     is_tera,
     pokemon_type,
     stage_of,
@@ -99,24 +101,28 @@ def _sentences(text: str) -> list[str]:
     return [p.rstrip(".").strip() for p in parts if p.strip()]
 
 
-def _pokemon_filter(text: str) -> MonTest | None:
-    """ "{W} ", "Evolution {R} ", "Hop's ", "Basic ", "Tera ", "" → filtro."""
-    text = text.strip()
+def pokemon_filter(text: str) -> MonTest | None:
+    """ "{W} ", "Evolution {R} ", "Hop's ", "Basic ", "Stage 2 ", "Tera ",
+    "Ancient ", "Future ", "" → filtro do Pokémon; None se não reconhecer."""
+    text = re.sub(r"Stage (\d)", r"Stage\1", text.strip())
     if not text:
         return _always
-    parts = text.split()
     tests: list[MonTest] = []
-    for part in parts:
+    words = {
+        "Evolution": lambda m: is_evolution(m.card),
+        "Basic": lambda m: stage_of(m.card) == "Basic",
+        "Stage1": lambda m: stage_of(m.card) == "Stage 1",
+        "Stage2": lambda m: stage_of(m.card) == "Stage 2",
+        "Tera": lambda m: is_tera(m.card),
+        "Ancient": lambda m: is_ancient(m.card),
+        "Future": lambda m: is_future(m.card),
+    }
+    for part in text.split():
         typed = re.fullmatch(E, part)
         if typed:
-            kind_ = energy(typed.group(1))
-            tests.append(_of_type(kind_))
-        elif part == "Evolution":
-            tests.append(lambda m: is_evolution(m.card))
-        elif part == "Basic":
-            tests.append(lambda m: stage_of(m.card) == "Basic")
-        elif part == "Tera":
-            tests.append(lambda m: is_tera(m.card))
+            tests.append(_of_type(energy(typed.group(1))))
+        elif part in words:
+            tests.append(words[part])
         elif re.fullmatch(r"[A-Z][\w.]*'s", part):
             tests.append(_of_group(part))
         else:
@@ -244,7 +250,7 @@ def _reduce_self_from(n: str, who: str) -> Passive | None:
     rf"All of your (.*?)Pokémon take {N} less damage from attacks",
 )
 def _reduce_team(who: str, n: str) -> Passive | None:
-    target = _pokemon_filter(who)
+    target = pokemon_filter(who)
     return None if target is None else Passive("reduce", int(n), scope="team", target=target)
 
 
@@ -323,14 +329,14 @@ def _prevent_team(who: str) -> Passive | None:
 )
 def _bonus_team(*groups: str) -> Passive | None:
     if len(groups) == 4:
-        first, second, n = _pokemon_filter(groups[0]), _pokemon_filter(groups[1]), groups[2]
+        first, second, n = pokemon_filter(groups[0]), pokemon_filter(groups[1]), groups[2]
         if first is None or second is None:
             return None
         f, s = first, second
         return Passive("bonus", int(n), scope="team", target=lambda m: f(m) or s(m))
     who, n, defender = groups
-    target = _pokemon_filter(who)
-    against = _pokemon_filter(defender)
+    target = pokemon_filter(who)
+    against = pokemon_filter(defender)
     if target is None or against is None:
         return None
     return Passive("bonus", int(n), scope="team", target=target, defender=against)
@@ -400,7 +406,7 @@ def _cheaper_retreat(symbols: str) -> Passive:
 
 @rule(r"Your opponent's Active (.*?)Pokémon's Retreat Cost is ((?:[\[{]C[\]}])+) more")
 def _pricier_retreat(who: str, symbols: str) -> Passive | None:
-    target = _pokemon_filter(who)
+    target = pokemon_filter(who)
     if target is None:
         return None
     amount = len(re.findall(r"[\[{]C[\]}]", symbols))
@@ -444,7 +450,7 @@ def _when_hit(action: str) -> Passive | None:
 
 @rule(r"If your Active (.*?)Pokémon is damaged by an attack from your opponent's Pokémon, (.+)")
 def _when_team_hit(who: str, action: str) -> Passive | None:
-    target = _pokemon_filter(who)
+    target = pokemon_filter(who)
     passive = _counter_attack(action)
     if target is None or passive is None:
         return None

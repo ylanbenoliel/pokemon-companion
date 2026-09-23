@@ -73,6 +73,8 @@ class Run:
     memo: Callable[[Card], bool] | None = None
     #: cartas compradas pelo efeito ("draw N cards instead")
     drawn: int = 0
+    #: cartas escolhidas/vistas ("those cards", "you find there")
+    picked: list[Card] = field(default_factory=list)
 
     @property
     def me(self) -> PlayerState:
@@ -344,6 +346,10 @@ def _parse_compound(text: str) -> list[Step] | None:
         (
             r"If both of them are heads, (.+)",
             lambda _, s: _wrap(s, lambda r: int(r.tails == 0), "se todas cara"),
+        ),
+        (
+            r"If (?:either of them is|any of them are) heads, (.+)",
+            lambda _, s: _wrap(s, lambda r: int(r.heads > 0), "se alguma cara"),
         ),
         (
             r"If either of them is tails, (.+)",
@@ -964,19 +970,9 @@ MonTest = Callable[[Run, PokemonInPlay], bool]
 
 
 def _qualifier(text: str) -> Callable[[PokemonInPlay], bool] | None:
-    """ "{L} ", "Ethan's ", "Basic ", "" → filtro do Pokémon; senão None."""
-    text = text.strip()
-    if not text:
-        return lambda m: True
-    typed = re.fullmatch(expand("{E}"), text)
-    if typed:
-        kind_ = energy(typed.group(1))
-        return lambda m: pokemon_type(m.card) == kind_
-    if text == "Basic":
-        return lambda m: stage_of(m.card) == "Basic"
-    if re.fullmatch(r"[A-Z][\w.]*'s", text):
-        return lambda m: m.card.name.startswith(text)
-    return None
+    from pokemon_companion.engine.effects.passive_text import pokemon_filter
+
+    return pokemon_filter(text)
 
 
 def _destination(sentence: str) -> MonTest | None:
@@ -2485,7 +2481,9 @@ def _pick_random() -> Step:
     def act(run: Run) -> None:
         import random
 
-        run.chosen_card = random.choice(run.opp.hand) if run.opp.hand else None
+        left = [c for c in run.opp.hand if not any(c is p for p in run.picked)]
+        if left:
+            run.picked.append(random.choice(left))
 
     return after(act)
 
@@ -2493,14 +2491,16 @@ def _pick_random() -> Step:
 @phrase(
     "Your opponent reveals that card and shuffles it into their deck",
     "Your opponent shuffles that card into their deck",
+    "Your opponent reveals those cards and shuffles them into their deck",
 )
 def _shuffle_picked() -> Step:
     def act(run: Run) -> None:
-        card = run.chosen_card
-        if card is not None and card in run.opp.hand:
-            run.opp.hand.remove(card)
-            run.opp.deck.append(card)
-            core.shuffle_deck(run.opp)
+        for card in run.picked:
+            if card in run.opp.hand:
+                run.opp.hand.remove(card)
+                run.opp.deck.append(card)
+        run.picked = []
+        core.shuffle_deck(run.opp)
 
     return after(act)
 
@@ -3508,3 +3508,683 @@ def _attach_one_of_each(first: str, second: str) -> Step:
 
 def _basic_energy_of(kind_: str) -> CardFilter:
     return lambda card: is_basic_energy(card) and energy_type_of(card) == kind_
+
+
+# ---------------------------------------------------------------------------
+# lote 3: cauda longa dos ataques
+
+
+def _pokemon_count(qualifier: str, where: str) -> Counter_ | None:
+    from pokemon_companion.engine.effects.passive_text import pokemon_filter
+
+    test = pokemon_filter(qualifier)
+    if test is None:
+        return None
+
+    def count_(run: Run) -> int:
+        mons = run.me.bench if where == "bench" else run.me.all_pokemon_in_play()
+        return sum(1 for m in mons if test(m))
+
+    return count_
+
+
+@count(r"of your (.+?)Pokémon in play")
+def _n_kind_in_play(qualifier: str) -> Counter_ | None:
+    return _pokemon_count(qualifier, "play")
+
+
+@count(r"(.+?)Pokémon on your Bench")
+def _n_kind_on_bench(qualifier: str) -> Counter_ | None:
+    return _pokemon_count(qualifier, "bench")
+
+
+@count(r"of your Benched Pokémon that has any damage counters on it")
+def _n_damaged_bench() -> Counter_:
+    return lambda run: sum(1 for m in run.me.bench if m.damage_counters)
+
+
+@count(r"damage counter on all of your Benched (.+)")
+def _n_counters_bench_kind(what: str) -> Counter_ | None:
+    from pokemon_companion.engine.effects.passive_text import pokemon_filter
+
+    what = what.strip()
+    name = card_name(what)
+    if name is not None:
+        test: Callable[[PokemonInPlay], bool] | None = lambda m: m.card.name == name  # noqa: E731
+    else:
+        test = pokemon_filter(what[: -len("Pokémon")] if what.endswith("Pokémon") else "")
+        if not what.endswith("Pokémon"):
+            test = None
+    if test is None:
+        return None
+    return lambda run: sum(core.damage_counters_on(m) for m in run.me.bench if test(m))
+
+
+@count(r"{X} discarded in this way", r"{X} that you discarded in this way")
+def _n_discarded_kind(what: str) -> Counter_ | None:
+    card_filter = parse_kind(what)
+    if card_filter is None:
+        return None
+    return lambda run: sum(1 for c in run.picked if card_filter(c))
+
+
+# condições
+
+
+@condition(r"you have {N} or more {X} in your discard pile")
+def _c_discard_count(n: str, what: str) -> Predicate | None:
+    card_filter = parse_kind(what)
+    if card_filter is None:
+        return None
+    return lambda run: sum(1 for c in run.me.discard if card_filter(c)) >= num(n)
+
+
+@condition(r"you have the same number of cards in your hand as your opponent")
+def _c_same_hand() -> Predicate:
+    return lambda run: len(run.me.hand) == len(run.opp.hand)
+
+
+@condition(r"you don't have the same number of cards in your hand as your opponent")
+def _c_diff_hand() -> Predicate:
+    return lambda run: len(run.me.hand) != len(run.opp.hand)
+
+
+@condition(r"your opponent's Active Pokémon isn't {X}")
+def _c_isnt(what: str) -> Predicate | None:
+    positive = parse_condition(f"your opponent's Active Pokémon is {what}")
+    return None if positive is None else (lambda run: not positive(run))
+
+
+@condition(
+    r"your opponent's Active Pokémon has no damage counters on it",
+    r"your opponent's Active Pokémon has no damage counters on it before this attack does damage",
+)
+def _c_undamaged() -> Predicate:
+    return _defender_is(lambda m: m.damage_counters == 0)
+
+
+@condition(r"your opponent's Active Pokémon has {E} Resistance")
+def _c_resistance(symbol: str) -> Predicate:
+    kind_ = energy(symbol)
+    return _defender_is(lambda m: any(r.energy_type == kind_ for r in m.card.resistances))
+
+
+@condition(r"your opponent's Active Pokémon is an evolved Pokémon")
+def _c_evolved() -> Predicate:
+    return _defender_is(lambda m: bool(m.prior_cards))
+
+
+@condition(r"{X} is on your Bench")
+def _c_named_bench(name: str) -> Predicate | None:
+    found = card_name(name)
+    return None if found is None else (lambda run: any(m.card.name == found for m in run.me.bench))
+
+
+@condition(r"you don't have {X} on your Bench")
+def _c_missing_bench(names: str) -> Predicate | None:
+    wanted = [card_name(n) for n in re.split(r",\s*(?:and\s+)?|\s+and\s+", names.strip())]
+    if not wanted or any(n is None for n in wanted):
+        return None
+    return lambda run: not all(any(m.card.name == n for m in run.me.bench) for n in wanted)
+
+
+@condition(r"your opponent's Pokémon is Knocked Out by damage from this attack")
+def _c_knocked_out_now() -> Predicate:
+    return lambda run: run.dealt > 0 and run.defender is not None and run.defender.is_knocked_out
+
+
+# efeitos
+
+
+@phrase("Discard {N} (.+?) Energy from this Pokémon")
+def _discard_named_energy_2(n: str, name: str) -> Step | None:
+    if card_name(name) is None:
+        return None
+    wanted = f"{name.strip()} Energy"
+
+    def act(run: Run) -> None:
+        mon = run.source
+        run.did = False
+        for _ in range(num(n)):
+            if mon is None or wanted not in mon.attached_energies:
+                return
+            run.me.discard.append(core.detach_energy(mon, wanted))
+            run.did = True
+
+    return after(act)
+
+
+@phrase("Discard this Pokémon and all attached cards")
+def _discard_self() -> Step:
+    def act(run: Run) -> None:
+        if run.source is not None and run.source in run.me.all_pokemon_in_play():
+            _remove_from_play(run.me, run.source, to_deck=False)
+
+    return after(act)
+
+
+@phrase("Look at the top card of your deck")
+def _look_top() -> Step:
+    def act(run: Run) -> None:
+        run.picked = run.me.deck[:1]
+
+    return after(act)
+
+
+@phrase("You may discard that card", "Discard that card")
+def _maybe_discard_top() -> Step:
+    def act(run: Run) -> None:
+        for card in run.picked:
+            if (
+                card in run.me.deck
+                and core.card_priority(run.ctx.state, run.ctx.player_id, card) < 50
+            ):
+                run.me.deck.remove(card)
+                run.me.discard.append(card)
+
+    return after(act)
+
+
+@phrase("Move all Energy from this Pokémon to {N} of your Benched Pokémon")
+def _move_all_to_bench(_n: str) -> Step:
+    def act(run: Run) -> None:
+        mon = run.source
+        if mon is None or not run.me.bench:
+            return
+        receiver = max(
+            run.me.bench,
+            key=lambda m: len(m.card.attacks)
+            and max((a.base_damage for a in m.card.attacks), default=0),
+        )
+        for energy_name in list(mon.attached_energies):
+            core.attach_energy_card(receiver, core.detach_energy(mon, energy_name))
+
+    return after(act)
+
+
+@phrase("Move a Basic Energy from this Pokémon to {N} of your Benched Pokémon")
+def _move_basic_to_bench(n: str) -> list[Step] | Step | None:
+    return _move_to_bench("1", n)
+
+
+@phrase("This attack does {N} damage to each of your opponent's {X}")
+def _hit_each_kind(n: str, what: str) -> list[Step] | None:
+    tests: dict[str, Callable[[PokemonInPlay], bool]] = {
+        "Pokémon ex": lambda m: is_ex(m.card),
+        "Benched Pokémon ex": lambda m: is_ex(m.card),
+        "Pokémon that has an Ability": lambda m: bool(m.card.abilities),
+    }
+    test = tests.get(what.strip())
+    if test is None:
+        return None
+    bench_only = what.startswith("Benched")
+
+    def replace(run: Run) -> None:
+        run.main_hit = False
+        run.damage = num(n)
+
+    def act(run: Run) -> None:
+        for position in core.positions(run.opp):
+            if bench_only and position == -1:
+                continue
+            mon = core.mon_at(run.opp, position)
+            if mon is not None and test(mon):
+                attacks.hit(
+                    run.ctx, position, num(n), weakness=run.weakness, resistance=run.resistance
+                )
+
+    return [pre(replace), after(act)]
+
+
+@phrase("This Pokémon recovers from all Special Conditions")
+def _recover_self() -> Step:
+    def act(run: Run) -> None:
+        if run.source is not None:
+            run.source.status = StatusCondition.NONE
+
+    return after(act)
+
+
+@phrase(
+    "During your opponent's next turn, prevent all damage done to this Pokémon by attacks from "
+    "Evolution Pokémon"
+)
+def _shield_evolution() -> Step:
+    def act(run: Run) -> None:
+        if run.source is not None:
+            run.source.shield = ("evolution", run.ctx.turn + 1)
+
+    return after(act)
+
+
+@phrase("Discard a {E} Energy from your opponent's Active Pokémon")
+def _discard_opp_typed(symbol: str) -> Step:
+    kind_ = energy(symbol)
+
+    def act(run: Run) -> None:
+        defender = run.defender
+        if defender is None or kind_ not in defender.attached_energies:
+            return
+        if not passives.prevents_attack_effects(run.ctx.state, run.ctx.opp_id, defender, True):
+            core.discard_energy(run.opp, defender, kind_)
+
+    return after(act)
+
+
+@phrase(
+    "Discard an Energy from that Pokémon",
+    "discard an Energy from that Pokémon",
+    "Discard an Energy from it",
+)
+def _discard_that(*_: str) -> Step:
+    return after(_discard_from_defender(1, False))
+
+
+@phrase("Heal {N} damage from {N} of your Benched {E} Pokémon")
+def _heal_bench_typed(n: str, k: str, symbol: str) -> Step:
+    kind_ = energy(symbol)
+
+    def act(run: Run) -> None:
+        mons = [m for m in run.me.bench if pokemon_type(m.card) == kind_]
+        for mon in sorted(mons, key=lambda m: -m.damage_counters)[: num(k)]:
+            core.heal(mon, num(n))
+
+    return after(act)
+
+
+@phrase("Heal {N} damage from it")
+def _heal_it(n: str) -> list[Step] | Step | None:
+    return _heal_self(n)
+
+
+@phrase("It is now {X}", "it is now {X}")
+def _it_status(text: str) -> list[Step] | Step | None:
+    return _status(text)
+
+
+@phrase("Knock Out {N} of your opponent's Pokémon that has exactly {N} damage counters on it")
+def _ko_exact(_k: str, n: str) -> Step:
+    def act(run: Run) -> None:
+        exact = [m for m in run.opp.all_pokemon_in_play() if core.damage_counters_on(m) == num(n)]
+        if exact:
+            _nocaute(run, max(exact, key=lambda m: core._prize_value(m.card)))
+
+    return after(act)
+
+
+@phrase("Knock Out each of your opponent's Pokémon that has {N} HP or less remaining")
+def _ko_low(n: str) -> Step:
+    def act(run: Run) -> None:
+        for mon in run.opp.all_pokemon_in_play():
+            if mon.current_hp <= num(n):
+                _nocaute(run, mon)
+
+    return after(act)
+
+
+def _mill_counting(players: Callable[[Run], list[PlayerState]], amount: int) -> Act:
+    def act(run: Run) -> None:
+        run.picked = []
+        for player in players(run):
+            top = player.deck[:amount]
+            if not run.estimate:
+                del player.deck[: len(top)]
+                player.discard.extend(top)
+            run.picked.extend(top)
+
+    return act
+
+
+@phrase("Discard the top card of each player's deck")
+def _mill_both() -> Step:
+    return pre(_mill_counting(lambda r: [r.me, r.opp], 1))
+
+
+@phrase("Discard the top {N} cards of your deck, and this attack does {N} damage for each {X}")
+def _mill_for_damage(n: str, per: str, what: str) -> list[Step] | None:
+    counter = parse_count(what)
+    if counter is None:
+        return None
+
+    def damage(run: Run) -> None:
+        run.damage = num(per) * counter(run)
+
+    return [pre(_mill_counting(lambda r: [r.me], num(n))), pre(damage)]
+
+
+@phrase("Search your deck for any number of {X}, reveal them, and put them into your hand")
+def _search_any_number(what: str) -> Step | None:
+    return _search(f"up to 60 {what}", "hand")
+
+
+@phrase("Put {N} of your Benched Pokémon and all attached cards into your hand")
+def _scoop_bench(_n: str) -> Step:
+    def act(run: Run) -> None:
+        if not run.me.bench:
+            return
+        target = max(run.me.bench, key=lambda m: m.damage_counters)
+        cards = target.all_cards() + [
+            core.BASIC_ENERGIES[e] for e in target.attached_energies if e in core.BASIC_ENERGIES
+        ]
+        del run.me.bench[core.index_of(run.me.bench, target)]
+        run.me.hand.extend(cards)
+
+    return after(act)
+
+
+@phrase("Shuffle {N} of your Benched Pokémon and all attached cards into your deck")
+def _bench_to_deck(_n: str) -> Step:
+    def act(run: Run) -> None:
+        if run.me.bench:
+            target = max(run.me.bench, key=lambda m: m.damage_counters)
+            _remove_from_play(run.me, target, to_deck=True)
+
+    return after(act)
+
+
+@phrase(
+    "Search your deck for a card that evolves from {N} of your Pokémon and put it onto that "
+    "Pokémon to evolve it"
+)
+def _evolve_one(_n: str) -> Step:
+    def act(run: Run) -> None:
+        options = [
+            (mon, card)
+            for mon in run.me.all_pokemon_in_play()
+            for card in run.me.deck
+            if card.evolves_from == mon.card.name
+        ]
+        if options:
+            mon, card = max(options, key=lambda o: (o[1].hp or 0, o[0] is run.me.active))
+            run.me.deck.remove(card)
+            core.evolve_into(run.ctx.state, run.me, mon, card)
+        core.shuffle_deck(run.me)
+
+    return after(act)
+
+
+def _move_counters(source_kind: str, to_active: bool) -> Act:
+    from pokemon_companion.engine.effects.passive_text import pokemon_filter
+
+    test = pokemon_filter(source_kind) or (lambda m: True)
+
+    def act(run: Run) -> None:
+        if passives.counters_locked(run.ctx.state):
+            return
+        donors = [m for m in run.me.bench if m.damage_counters and test(m)]
+        if not donors:
+            return
+        donor = max(donors, key=lambda m: m.damage_counters)
+        counters = core.damage_counters_on(donor)
+        target = (
+            run.defender
+            if to_active
+            else core.best_counter_target(run.ctx.state, run.ctx.opp_id, counters)
+        )
+        if target is None:
+            return
+        donor.damage_counters = 0
+        core.place_counters(run.ctx, run.ctx.opp_id, target, counters)
+
+    return act
+
+
+@phrase(
+    "Move all damage counters from {N} of your Benched (.*?)Pokémon to your opponent's Active "
+    "Pokémon",
+    "Move all damage counters from {N} of your Benched (.*?)Pokémon to {N} of your opponent's "
+    "Pokémon",
+)
+def _move_counters_phrase(_n: str, kind_: str, *rest: str) -> Step:
+    return after(_move_counters(kind_, to_active=not rest))
+
+
+@phrase(
+    "Look at the top {N} cards of your opponent's deck and put them back in any order",
+    "Look at the top {N} cards of your deck and put them back in any order",
+)
+def _look_only(_n: str) -> Step:
+    return after(lambda run: None)
+
+
+@phrase(
+    "Devolve it by putting the highest Stage Evolution card on it into your opponent's hand",
+    "devolve it by putting the highest Stage Evolution card on it into your opponent's hand",
+)
+def _devolve_defender() -> Step:
+    def act(run: Run) -> None:
+        mon = run.defender
+        if mon is None or not mon.prior_cards:
+            return
+        run.opp.hand.append(mon.card)
+        mon.card = mon.prior_cards[0]
+        mon.prior_cards = mon.prior_cards[1:]
+        mon.hp_bonus = passives.hp_bonus(run.ctx.state, mon)
+
+    return after(act)
+
+
+@phrase("You may discard all Energy from this Pokémon and have this attack do {N} more damage")
+def _all_energy_for_damage(n: str) -> Step:
+    def act(run: Run) -> None:
+        mon = run.source
+        if mon is None or not mon.attached_energies:
+            return
+        run.damage += num(n)
+        if not run.estimate:
+            for energy_name in list(mon.attached_energies):
+                run.me.discard.append(core.detach_energy(mon, energy_name))
+
+    return pre(act)
+
+
+def _copy_best(pool: Callable[[Run], list[PokemonInPlay]]) -> Act:
+    def act(run: Run) -> None:
+        candidates = [
+            atk
+            for mon in pool(run)
+            for atk in mon.card.attacks
+            if atk.name not in attacks.COPY_ATTACKS
+        ]
+        if not candidates:
+            return
+        best = max(candidates, key=lambda a: a.base_damage)
+        attacks.use_copied(run.ctx, best)
+
+    return act
+
+
+@phrase("Choose {N} of your opponent's Active Pokémon's attacks and use it as this attack")
+def _copy_defender(_n: str) -> list[Step]:
+    def replace(run: Run) -> None:
+        run.main_hit = False
+
+    return [pre(replace), after(_copy_best(lambda r: [r.defender] if r.defender else []))]
+
+
+@phrase(
+    "Choose an attack from {N} of your opponent's Pokémon in play and use it as this attack",
+    "Choose an attack from 1 of your opponent's Pokémon in play and use it as this attack",
+)
+def _copy_any(*_: str) -> list[Step]:
+    def replace(run: Run) -> None:
+        run.main_hit = False
+
+    return [pre(replace), after(_copy_best(lambda r: r.opp.all_pokemon_in_play()))]
+
+
+@phrase("This attack also does {N} damage to each of your {X}")
+def _self_named_damage(n: str, names: str) -> Step | None:
+    wanted = [card_name(x) for x in re.split(r",\s*(?:and\s+)?|\s+and\s+", names.strip())]
+    if not wanted or any(w is None for w in wanted):
+        return None
+    return after(
+        _self_damage(
+            lambda r: [m for m in r.me.all_pokemon_in_play() if m.card.name in wanted], num(n)
+        )
+    )
+
+
+@phrase("Discard a card you find there")
+def _discard_found() -> Step:
+    def act(run: Run) -> None:
+        if run.opp.hand:
+            best = core.choose_cards(run.ctx.state, run.ctx.opp_id, run.opp.hand, 1)[0]
+            run.opp.hand.remove(best)
+            run.opp.discard.append(best)
+
+    return after(act)
+
+
+@phrase("For each heads, choose a card you find there and shuffle it into your opponent's deck")
+def _shuffle_found_per_heads() -> Step:
+    def act(run: Run) -> None:
+        chosen = core.choose_cards(run.ctx.state, run.ctx.opp_id, run.opp.hand, run.heads)
+        for card in chosen:
+            run.opp.hand.remove(card)
+            run.opp.deck.append(card)
+        core.shuffle_deck(run.opp)
+
+    return after(act)
+
+
+@phrase("Look at the top {N} cards of your deck")
+def _look_top_n(n: str) -> Step:
+    def act(run: Run) -> None:
+        run.picked = run.me.deck[: num(n)]
+
+    return after(act)
+
+
+@phrase("You may put any number of Pokémon you find there onto your Bench")
+def _bench_found() -> Step:
+    def act(run: Run) -> None:
+        for card in [c for c in run.picked if c.is_basic]:
+            if core.bench_space(run.ctx.state, run.me) == 0:
+                break
+            if card in run.me.deck:
+                run.me.deck.remove(card)
+                core.put_on_bench(run.ctx.state, run.me, card)
+
+    return after(act)
+
+
+@phrase("Put a number of cards up to the number of heads from your discard pile into your hand")
+def _recover_per_heads() -> Step:
+    return after(lambda run: core.recover_from_discard(run.ctx, lambda c: True, run.heads))
+
+
+@phrase("Put damage counters on your opponent's Active Pokémon until its remaining HP is {N}")
+def _counters_until(n: str) -> Step:
+    def act(run: Run) -> None:
+        mon = run.defender
+        if mon is not None and mon.current_hp > num(n):
+            core.place_counters(run.ctx, run.ctx.opp_id, mon, (mon.current_hp - num(n)) // 10)
+
+    return after(act)
+
+
+@phrase(
+    "Put damage counters on each of your opponent's Benched Pokémon until its remaining HP is {N}"
+)
+def _bench_counters_until(n: str) -> Step:
+    def act(run: Run) -> None:
+        for mon in list(run.opp.bench):
+            if mon.current_hp > num(n):
+                core.place_counters(run.ctx, run.ctx.opp_id, mon, (mon.current_hp - num(n)) // 10)
+
+    return after(act)
+
+
+@phrase(
+    "During your opponent's next turn, if the Defending Pokémon tries to use an attack, your "
+    "opponent flips a coin"
+)
+def _smokescreen() -> Step:
+    def mark(mon: PokemonInPlay) -> None:
+        pass
+
+    def act(run: Run) -> None:
+        defender = run.defender
+        if defender is not None and not passives.prevents_attack_effects(
+            run.ctx.state, run.ctx.opp_id, defender, True
+        ):
+            defender.attack_coin_turn = run.ctx.turn + 1
+
+    return after(act)
+
+
+@phrase("If tails, that attack doesn't happen")
+def _smokescreen_rest() -> Step:
+    return after(lambda run: None)  # a moeda é tirada pelas regras (`attack_coin_turn`)
+
+
+@phrase("During your next turn, this Pokémon's {X} attack's base damage is {N}")
+def _next_base_damage(name: str, n: str) -> Step:
+    def act(run: Run) -> None:
+        mon = run.source
+        if mon is None:
+            return
+        attack_ = next((a for a in mon.card.attacks if a.name == name.strip()), None)
+        if attack_ is not None:
+            mon.attack_bonus = (attack_.name, num(n) - attack_.base_damage, run.ctx.turn + 2)
+
+    return after(act)
+
+
+@phrase(
+    "If 1 of your Pokémon used {X} during your last turn, this attack can't be used",
+)
+def _no_repeat_team(name: str) -> Step:
+    def act(run: Run) -> None:
+        last = run.me.last_attack
+        if last is not None and last == (name.strip(), run.ctx.turn - 2):
+            run.cancelled = True
+
+    return pre(act)
+
+
+@phrase(
+    "You may discard up to {N} {X} from your Benched Pokémon",
+    "Discard up to {N} {X} from your Benched Pokémon",
+)
+def _discard_bench_for_damage(n: str, what: str) -> Step | None:
+    card_filter = parse_kind(what)
+    if card_filter is None:
+        return None
+    per = _per_discarded()
+    limit = num(n)
+
+    def act(run: Run) -> None:
+        donors = [
+            (m, e)
+            for m in run.me.bench
+            for e in m.attached_energies
+            if card_filter(core.energy_card_from(m, e))
+        ][:limit]
+        wanted = len(donors)
+        if per and run.defender is not None:
+            needed = -(-max(run.defender.current_hp - run.damage, 0) // per)
+            wanted = min(wanted, max(needed, 1))
+        run.counted = wanted
+        if run.estimate:
+            return
+        for mon, energy_name in donors[:wanted]:
+            run.me.discard.append(core.detach_energy(mon, energy_name))
+
+    return pre(act)
+
+
+@phrase(
+    "Reveal any number of {X} from your hand, and this attack does {N} damage for each card you "
+    "revealed in this way"
+)
+def _reveal_for_damage(names: str, n: str) -> list[Step] | None:
+    wanted = [card_name(x) for x in re.split(r",\s*(?:and\s+)?|\s+and\s+", names.strip())]
+    if not wanted or any(w is None for w in wanted):
+        return None
+
+    def act(run: Run) -> None:
+        run.damage = num(n) * sum(1 for c in run.me.hand if c.name in wanted)
+
+    return [pre(act)]

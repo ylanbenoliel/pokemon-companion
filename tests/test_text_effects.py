@@ -400,3 +400,67 @@ def test_ability_switch_then_if_you_do(state):
 
     assert state.player.active.card.name == "Samurott"
     assert state.opponent.active.card.name == "Benched"
+
+
+# --------------------------------------------------------------------------
+# lote 3
+
+
+def test_attack_coin_marker_can_stop_the_next_attack(state, monkeypatch):
+    text = (
+        "During your opponent's next turn, if the Defending Pokémon tries to use an attack, your "
+        "opponent flips a coin. If tails, that attack doesn't happen."
+    )
+    attack_with(state, text, "10")
+    state.opponent.active.attached_energies = ["Colorless"]
+    rules.apply_action(state, UseAttack(attack_index=0))
+    heads(monkeypatch, False)
+
+    rules.apply_action(state, UseAttack(attack_index=0))  # o oponente tenta atacar
+
+    assert state.player.active.damage_counters == 0
+
+
+def test_copy_the_defenders_best_attack(state):
+    attack_with(
+        state, "Choose 1 of your opponent's Active Pokémon's attacks and use it as this attack."
+    )
+    big = dataclasses.replace(
+        mon("Big"),
+        attacks=[
+            Attack(name="Small", cost=["Colorless"], damage="10"),
+            Attack(name="Huge", cost=["Colorless"], damage="150"),
+        ],
+    )
+    state.opponent.active = PokemonInPlay(card=big)
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.damage_counters == 150
+
+
+def test_counters_until_a_given_hp(state):
+    attack_with(
+        state,
+        "Put damage counters on your opponent's Active Pokémon until its remaining HP is 50.",
+    )
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.current_hp == 50
+
+
+def test_mill_counts_what_was_discarded(state):
+    text = (
+        "Discard the top 6 cards of your deck, and this attack does 100 damage for each Basic "
+        "{W} Energy card that you discarded in this way."
+    )
+    attack_with(state, text, "100×")
+    state.player.deck = [BASIC_ENERGIES["Water"], mon("X"), BASIC_ENERGIES["Water"]] + [
+        mon(f"D{i}") for i in range(10)
+    ]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.damage_counters == 200
+    assert len(state.player.discard) == 6

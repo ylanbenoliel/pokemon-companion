@@ -77,6 +77,8 @@ class PokemonInPlay:
     poison_damage: int = 10
     #: último dano recebido de ataque: (quantidade, turno)
     last_attacked: tuple[int, int] | None = None
+    #: turno em que, para atacar, o dono precisa tirar cara numa moeda
+    attack_coin_turn: int | None = None
 
     @property
     def max_hp(self) -> int:
@@ -130,6 +132,8 @@ class PlayerState:
     attacks_this_turn: int = 0
     #: Briar: prêmio extra se um Tera nocautear o Ativo neste turno
     extra_prize_turn: int | None = None
+    #: último ataque usado: (nome, turno)
+    last_attack: tuple[str, int] | None = None
     #: nomes das cartas de Treinador jogadas da mão neste turno
     played_this_turn: list[str] = field(default_factory=list)
 
