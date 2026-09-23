@@ -18,8 +18,11 @@ QListWidget, QTableWidget { background: rgba(247,239,225,10); color: #f7efe1;
     gridline-color: rgba(247,239,225,20); }
 QListWidget::item { padding: 7px 8px; border-radius: 6px; }
 QListWidget::item:selected, QTableWidget::item:selected { background: #ffe03d; color: #20242b; }
+QHeaderView { background: transparent; border: none; }
 QHeaderView::section { background: transparent; color: rgba(247,239,225,150); border: none;
-    padding: 4px 6px; }
+    border-bottom: 1px solid rgba(247,239,225,30); padding: 6px 6px; font-weight: 600; }
+QTableCornerButton::section { background: transparent; border: none; }
+QTableWidget::item { padding: 4px 6px; }
 QCheckBox { color: #f7efe1; spacing: 10px; }
 QCheckBox::indicator { width: 18px; height: 18px; border-radius: 5px;
     border: 1px solid rgba(247,239,225,90); background: rgba(247,239,225,10); }

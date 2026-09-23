@@ -65,6 +65,9 @@ from pokemon_companion.engine.effects import core
 from pokemon_companion.engine.effects.cardinfo import pokemon_type
 from pokemon_companion.engine.game_state import GameState, PlayerId, PokemonInPlay
 from pokemon_companion.engine.history import MatchRecorder
+from pokemon_companion.engine.replay import Replay, load_replay, save_replay
+from pokemon_companion.engine.serialization import SerializationError
+from pokemon_companion.stats import MatchRecord, record_match
 from pokemon_companion.ui.anim import AnimationQueue, Animator, par
 from pokemon_companion.ui.art import ArtProvider
 from pokemon_companion.ui.battle_scene import BattleScene, Target
@@ -73,6 +76,7 @@ from pokemon_companion.ui.dialogs import PauseMenu, SettingsDialog
 from pokemon_companion.ui.help import HelpDialog
 from pokemon_companion.ui.hints import next_hint
 from pokemon_companion.ui.items import HandCard, PokemonToken
+from pokemon_companion.ui.profile_dialogs import ReplaysDialog, StatsDialog
 from pokemon_companion.ui.settings import (
     Settings,
     load_settings,
@@ -97,9 +101,18 @@ class BattleController(QObject):
         history_path: Path | None = None,
         player_ai_factory: Callable[[], AIPlayer] | None = None,
         sounds: NullSounds | None = None,
+        match_info: dict[str, str] | None = None,
     ) -> None:
         super().__init__()
         self.scene = scene
+        #: decks e dificuldade, para o replay e as estatísticas
+        self.match_info = dict(match_info or {})
+        #: grava replay e estatísticas ao fim da partida (desligado nos testes
+        #: que não passam `match_info` e na reprodução de um replay)
+        self.record_matches = match_info is not None
+        self.replay: Replay | None = None
+        self.replay_path: Path | None = None
+        self._conceded = False
         self.sounds = sounds or NullSounds()
         self._state_factory = state_factory
         self._ai_factory = ai_factory
@@ -143,6 +156,9 @@ class BattleController(QObject):
     def new_game(self) -> None:
         self._ai_timer.stop()
         self.state = self._state_factory()
+        self._conceded = False
+        self.replay_path = None
+        self.replay = Replay.start(self.state, self.match_info) if self.record_matches else None
         self.ai = self._ai_factory()
         self.player_ai = self._player_ai_factory() if self._player_ai_factory else None
         self.recorder = MatchRecorder() if self._history_path else None
@@ -191,6 +207,7 @@ class BattleController(QObject):
         if rules.is_game_over(self.state):
             return
         self._ai_timer.stop()
+        self._conceded = True
         self.state.winner = PlayerId.OPPONENT
         self.scene.show_toast("Você desistiu da partida.")
         if not self.busy:
@@ -204,6 +221,7 @@ class BattleController(QObject):
                 self._game_over_shown = True
                 if self.recorder is not None and self._history_path is not None:
                     self.recorder.save(self._history_path)
+                self._finish_match()
                 self._show_game_over()
             return
         self._refresh_controls()
@@ -211,6 +229,38 @@ class BattleController(QObject):
             self._offer_promotion()
         if not self.is_player_turn and not self.paused:
             self._ai_timer.start(Animator.ms(AI_THINK_MS))
+
+    def _finish_match(self) -> None:
+        """Salva o replay e, se você jogou, a partida nas estatísticas."""
+        if self.replay is None or self.state.winner is None:
+            return
+        me, opponent = self.state.player, self.state.opponent
+        self.replay.info.update(
+            winner=self.state.winner.value,
+            turns=self.state.turn_number,
+            conceded=self._conceded,
+            player_name=self.scene.name_of(PlayerId.PLAYER),
+            opponent_name=self.scene.name_of(PlayerId.OPPONENT),
+        )
+        try:
+            self.replay_path = save_replay(self.replay)
+            if not self.spectating:
+                record_match(
+                    MatchRecord(
+                        date=str(self.replay.info.get("date", "")),
+                        player_deck=self.match_info.get("player_deck", "?"),
+                        opponent_deck=self.match_info.get("opponent_deck", "?"),
+                        difficulty=self.match_info.get("difficulty", ""),
+                        won=self.state.winner == PlayerId.PLAYER,
+                        turns=self.state.turn_number,
+                        prizes_taken=self.state.prize_count - len(me.prizes),
+                        prizes_lost=self.state.prize_count - len(opponent.prizes),
+                        conceded=self._conceded,
+                        replay=self.replay_path.name,
+                    )
+                )
+        except OSError as exc:
+            self.scene.show_toast(f"Não deu para salvar o replay: {exc}")
 
     def _show_game_over(self) -> None:
         winner = self.state.winner
@@ -584,6 +634,8 @@ class BattleController(QObject):
         # o som do ataque já tocou na investida (ver `perform`)
         announced = isinstance(action, UseAttack) and self.state.state_of(actor).active is not None
         messages = rules.apply_action(self.state, action)
+        if self.replay is not None:
+            self.replay.record(action)
         self.sounds.play_cues(
             cues_for(action, before_sound, self.state, actor, messages, announced)
         )
@@ -676,19 +728,34 @@ class MainWindow(QMainWindow):
         player_ai_factory: Callable[[], AIPlayer] | None = None,
         player_label: str = "Você",
         settings: Settings | None = None,
+        match_info: dict[str, str] | None = None,
+        replay: Replay | None = None,
     ) -> None:
         super().__init__()
         self.setWindowTitle("Pokémon Companion")
         self.settings = settings or load_settings()
+        self.is_replay = replay is not None
         self.scene = BattleScene(art or ArtProvider(), opponent_label, player_label)
         if player_ai_factory is not None:
             self.scene.set_names(display_name(player_label), display_name(opponent_label))
         self.view = BattleView(self.scene)
         self.setCentralWidget(self.view)
         self.sounds = sound_player(self.settings)
-        self.controller = BattleController(
-            self.scene, state_factory, ai_factory, history_path, player_ai_factory, self.sounds
-        )
+        self.controller: BattleController
+        if replay is not None:
+            from pokemon_companion.ui.replay_view import ReplayController
+
+            self.controller = ReplayController(self.scene, replay, self.sounds)
+        else:
+            self.controller = BattleController(
+                self.scene,
+                state_factory,
+                ai_factory,
+                history_path,
+                player_ai_factory,
+                self.sounds,
+                match_info,
+            )
         self.controller.hints_enabled = self.settings.hints
         self.sounds.play_music("battle")
         shortcuts: list[tuple[Qt.Key, Callable[[], None]]] = [
@@ -698,6 +765,7 @@ class MainWindow(QMainWindow):
             (Qt.Key.Key_Plus, lambda: self._change_volume(0.1)),
             (Qt.Key.Key_Equal, lambda: self._change_volume(0.1)),
             (Qt.Key.Key_Minus, lambda: self._change_volume(-0.1)),
+            (Qt.Key.Key_Space, self._toggle_replay_pause),
         ]
         for key, handler in shortcuts:
             shortcut = QShortcut(QKeySequence(key), self)
@@ -737,8 +805,15 @@ class MainWindow(QMainWindow):
         dialog.changed.connect(self.apply_settings)
         dialog.exec()
 
+    def _toggle_replay_pause(self) -> None:
+        if not self.is_replay:
+            return
+        paused = not self.controller.paused
+        self.controller.set_paused(paused)
+        self.scene.show_toast("Replay pausado (espaço)" if paused else "Replay continua")
+
     def open_pause_menu(self) -> None:
-        over = rules.is_game_over(self.controller.state)
+        over = rules.is_game_over(self.controller.state) or self.is_replay
         self.controller.set_paused(True)
         while True:
             menu = PauseMenu(game_over=over, parent=self)
@@ -798,6 +873,8 @@ class LauncherWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.menu = DeckMenu(art=self._art, difficulty=self.settings.difficulty)
         self.menu.start_requested.connect(self._load_and_start)
+        self.menu.add_nav_button("Replays", self.open_replays)
+        self.menu.add_nav_button("Estatísticas", self.open_stats)
         self.menu.add_nav_button("Como jogar", self.open_help)
         self.menu.add_nav_button("Configurações", self.open_settings)
         self.stack.addWidget(self.menu)
@@ -837,6 +914,50 @@ class LauncherWindow(QMainWindow):
     def open_help(self) -> None:
         HelpDialog(self).exec()
 
+    def open_stats(self) -> None:
+        StatsDialog(parent=self).exec()
+
+    def open_replays(self) -> None:
+        dialog = ReplaysDialog(parent=self)
+        dialog.watch_requested.connect(self.watch_replay)
+        dialog.exec()
+
+    def watch_replay(self, path: Path) -> None:
+        try:
+            replay = load_replay(path)
+            replay.begin()  # valida o arquivo antes de abrir o tabuleiro
+        except (OSError, SerializationError) as exc:
+            QMessageBox.warning(self, "Replay", f"Não deu para abrir este replay.\n\n{exc}")
+            return
+        info = replay.info
+        window = MainWindow(
+            state_factory=replay.begin,
+            ai_factory=lambda: build_ai("easy"),
+            opponent_label=str(info.get("opponent_deck") or info.get("opponent_name") or "IA"),
+            art=self._art,
+            player_label=str(info.get("player_name") or "Você"),
+            settings=self.settings,
+            replay=replay,
+        )
+        window.scene.set_names(
+            str(info.get("player_name") or "Você"),
+            str(info.get("opponent_name") or info.get("opponent_deck") or "IA"),
+        )
+        window.scene.show_toast("Replay — espaço pausa, Esc sai")
+        self._show_battle(window)
+
+    def _show_battle(self, window: MainWindow) -> None:
+        window.leave_requested.connect(self.show_menu)
+        window.settings_changed.connect(self.apply_settings)
+        if self.battle is not None:
+            self.stack.removeWidget(self.battle)
+            self.battle.deleteLater()
+        self.battle = window
+        self.stack.addWidget(window)
+        self.stack.setCurrentWidget(window)
+        if not self.isFullScreen():
+            self.resize(1280, 900)
+
     def _help_from_menu(self) -> None:
         if self.stack.currentWidget() is self.menu:
             self.open_help()
@@ -859,7 +980,7 @@ class LauncherWindow(QMainWindow):
             QMessageBox.critical(self, "Erro ao carregar deck", error or "Deck vazio.")
             self.show_menu()
             return
-        opponent_path = self._deck_paths[1]
+        player_path, opponent_path = self._deck_paths
         window = MainWindow(
             state_factory=lambda: turn_manager.start_new_game(
                 list(player),
@@ -873,20 +994,16 @@ class LauncherWindow(QMainWindow):
             history_path=self._history_path,
             player_label="Você",
             settings=self.settings,
+            match_info={
+                "player_deck": read_entry(player_path).title,
+                "opponent_deck": read_entry(opponent_path).title,
+                "difficulty": self._difficulty,
+            },
         )
-        window.leave_requested.connect(self.show_menu)
-        window.settings_changed.connect(self.apply_settings)
         window.scene.set_names("Você", read_entry(opponent_path).title)
         for warning in warnings:
             window.log_message(f"! {warning}")
-        if self.battle is not None:
-            self.stack.removeWidget(self.battle)
-            self.battle.deleteLater()
-        self.battle = window
-        self.stack.addWidget(window)
-        self.stack.setCurrentWidget(window)
-        if not self.isFullScreen():
-            self.resize(1280, 900)
+        self._show_battle(window)
 
 
 def apply_settings(settings: Settings, sounds: NullSounds | None = None) -> None:
