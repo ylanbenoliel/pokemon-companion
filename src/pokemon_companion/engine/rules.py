@@ -158,6 +158,10 @@ def _trainer_playable(state: GameState, pid: PlayerId, card: Card) -> bool:
     elif kind in ("Item", "Tool") or ("Item" in card.subtypes):
         if player.items_blocked_turn == state.turn_number:
             return False
+        if passives.trainer_locked(state, pid, kind or "Item"):
+            return False
+    if kind == "Stadium" and passives.trainer_locked(state, pid, "Stadium"):
+        return False
     if kind == "Stadium":
         if player.stadium_played_this_turn:
             return False

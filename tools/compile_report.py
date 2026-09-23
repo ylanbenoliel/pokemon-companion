@@ -17,7 +17,7 @@ from collections import Counter
 
 from pokemon_companion.cards_db import standard
 from pokemon_companion.cards_db.models import Card
-from pokemon_companion.engine.effects import attacks, text_effects
+from pokemon_companion.engine.effects import attacks, passive_text, text_effects
 from pokemon_companion.engine.effects.core import Ctx
 from pokemon_companion.engine.game_state import GameState, PlayerId, PlayerState, PokemonInPlay
 
@@ -51,6 +51,24 @@ def synthetic_state(card: Card, pool: list[Card], rng: random.Random) -> GameSta
     return GameState(
         player=player(card), opponent=player(rng.choice(mons)), turn_number=rng.randint(3, 12)
     )
+
+
+def exercise_passives(state: GameState, rng: random.Random) -> None:
+    """Passa pelos pontos em que as regras consultam passivas."""
+    from pokemon_companion.engine import rules
+    from pokemon_companion.engine.effects import core, passives
+
+    passives.refresh_hp_bonuses(state)
+    for pid in (PlayerId.PLAYER, PlayerId.OPPONENT):
+        for mon in state.state_of(pid).all_pokemon_in_play():
+            passives.retreat_cost(state, pid, mon)
+    for pid in (PlayerId.PLAYER, PlayerId.OPPONENT):
+        attacker = state.state_of(pid).active
+        target = state.state_of(pid.other).active
+        if attacker is not None and target is not None:
+            ctx = Ctx(state, pid, attacker)
+            core.deal_damage(ctx, pid.other, target, rng.choice([30, 120, 300]), is_active=True)
+    rules.legal_actions(state)
 
 
 def main() -> None:
@@ -138,6 +156,16 @@ def main() -> None:
     ability_ok = 0
     for (name, text), card in ability_cards.items():
         spec = text_effects.compiled_ability(text)
+        if spec is None and passive_text.compile_passive(text):
+            ability_ok += 1
+            for _ in range(3):
+                state = synthetic_state(card, pool, rng)
+                state.opponent.bench.append(PokemonInPlay(card=card))
+                try:
+                    exercise_passives(state, rng)
+                except Exception:  # noqa: BLE001 - relatório de falhas
+                    errors[f"[P] {name}: {traceback.format_exc().splitlines()[-1]}"] += 1
+            continue
         if spec is None:
             parts = text_effects._ability_parts(text)
             effect = parts[2] if parts else text

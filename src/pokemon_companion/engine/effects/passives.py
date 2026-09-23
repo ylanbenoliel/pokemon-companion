@@ -72,6 +72,10 @@ def hp_bonus(state: GameState, mon: PokemonInPlay) -> int:
         bonus += 20 * mon.attached_energies.count("Growing Grass Energy")
     if stadium_is(state, "Gravity Mountain") and stage_of(mon.card) == "Stage 2":
         bonus -= 30
+    owner = owner_of(state, mon)
+    for passive, holder in compiled(state, owner, "hp"):
+        if _applies(passive, holder, mon):
+            bonus += passive.value(state, owner, holder)  # type: ignore[attr-defined]
     return bonus
 
 
@@ -91,6 +95,15 @@ def retreat_cost(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> int:
         state, owner.other, "Binding Flame"
     ):
         cost += 1
+    if any(_applies(p, h, mon) for p, h in compiled(state, owner, "no_retreat")):
+        return 0
+    is_active = mon is state.state_of(owner).active
+    for passive, _holder in compiled(state, owner, "retreat"):
+        if passive.scope == "own_active" and is_active:  # type: ignore[attr-defined]
+            cost += passive.amount  # type: ignore[attr-defined]
+    for passive, _holder in compiled(state, owner.other, "retreat"):
+        if passive.scope == "opp_active" and is_active and passive.target(mon):  # type: ignore[attr-defined]
+            cost += passive.amount  # type: ignore[attr-defined]
     return max(cost, 0)
 
 
@@ -254,6 +267,10 @@ def attacker_bonus(
         bonus -= attacker.attack_debuff[0]
     if ability_active(state, attacker, "Compound Eyes") and defender.card.abilities:
         bonus += 50
+    bonus += compiled_bonus(state, attacker_owner, attacker, defender)
+    for passive, _holder in compiled(state, attacker_owner.other, "weaken"):
+        if passive.attacker(attacker):  # type: ignore[attr-defined]
+            bonus -= passive.amount  # type: ignore[attr-defined]
     return bonus
 
 
@@ -281,6 +298,8 @@ def damage_prevented(
     if defender.protected_turn == state.turn_number:
         return True
     if ability_active(state, defender, "Mysterious Rock Inn") and is_ex(attacker.card):
+        return True
+    if compiled_prevents(state, defender_owner, defender, attacker):
         return True
     owner_state = state.state_of(defender_owner)
     if not is_active:
@@ -326,6 +345,10 @@ def prevents_attack_effects(
         return True
     if defender.protected_turn == state.turn_number:
         return True
+    attacker = state.state_of(defender_owner.other).active
+    for passive, holder in compiled(state, defender_owner, "prevent_effects"):
+        if holder is defender and (attacker is None or passive.attacker(attacker)):  # type: ignore[attr-defined]
+            return True
     if "Mist Energy" in defender.attached_energies:
         return True
     if (
@@ -354,10 +377,111 @@ def counters_locked(state: GameState) -> bool:
 
 
 def prevents_ability_effects(state: GameState, defender: PokemonInPlay) -> bool:
-    return ability_active(state, defender, "Hide 'n' Sneak")
+    if ability_active(state, defender, "Hide 'n' Sneak"):
+        return True
+    owner = owner_of(state, defender)
+    return any(holder is defender for _, holder in compiled(state, owner, "ability_shield"))
 
 
 def immune_to_special_conditions(state: GameState, mon: PokemonInPlay) -> bool:
     if stadium_is(state, "Festival Grounds") and bool(mon.attached_energies):
         return True
     return "Bubbly Water Energy" in mon.attached_energies and pokemon_type(mon.card) == "Water"
+
+
+# ---------------------------------------------------------------------------
+# Habilidades passivas compiladas do texto (`passive_text`)
+
+
+def compiled(state: GameState, owner: PlayerId, kind: str) -> list[tuple[object, PokemonInPlay]]:
+    from pokemon_companion.engine.effects.passive_text import rules_in_play
+
+    return [(p, holder) for p, holder, _ in rules_in_play(state, owner, kind, ability_active)]
+
+
+def _applies(passive: object, holder: PokemonInPlay, mon: PokemonInPlay) -> bool:
+    """Regra de escopo "self" vale para o próprio dono; "team" para os
+    Pokémon do mesmo jogador que passam no filtro."""
+    scope = passive.scope  # type: ignore[attr-defined]
+    if scope == "self":
+        return holder is mon
+    return bool(scope == "team" and passive.target(mon))  # type: ignore[attr-defined]
+
+
+def compiled_reduction(
+    state: GameState, owner: PlayerId, defender: PokemonInPlay, attacker: PokemonInPlay
+) -> int:
+    total = 0
+    for passive, holder in compiled(state, owner, "reduce"):
+        if _applies(passive, holder, defender) and passive.attacker(attacker):  # type: ignore[attr-defined]
+            total += passive.value(state, owner, holder)  # type: ignore[attr-defined]
+    return total
+
+
+def compiled_prevents(
+    state: GameState, owner: PlayerId, defender: PokemonInPlay, attacker: PokemonInPlay
+) -> bool:
+    return any(
+        _applies(p, holder, defender) and p.attacker(attacker)  # type: ignore[attr-defined]
+        for p, holder in compiled(state, owner, "prevent")
+    )
+
+
+def prevents_big_hit(
+    state: GameState, owner: PlayerId, defender: PokemonInPlay, amount: int
+) -> bool:
+    return any(
+        holder is defender and amount >= p.amount  # type: ignore[attr-defined]
+        for p, holder in compiled(state, owner, "prevent_big")
+    )
+
+
+def compiled_bonus(
+    state: GameState, owner: PlayerId, attacker: PokemonInPlay, defender: PokemonInPlay
+) -> int:
+    total = 0
+    for passive, holder in compiled(state, owner, "bonus"):
+        if _applies(passive, holder, attacker) and passive.defender(defender):  # type: ignore[attr-defined]
+            total += passive.value(state, owner, holder)  # type: ignore[attr-defined]
+    return total
+
+
+def pierces(state: GameState, owner: PlayerId, attacker: PokemonInPlay) -> bool:
+    return any(holder is attacker for _, holder in compiled(state, owner, "pierce"))
+
+
+def damage_reactions(
+    state: GameState, owner: PlayerId, defender: PokemonInPlay, knocked_out: bool
+) -> list[tuple[object, PokemonInPlay]]:
+    """Contra-ataques de quem foi atingido (e, se nocauteado, os de nocaute)."""
+    found = []
+    is_active = state.state_of(owner).active is defender
+    for passive, holder in compiled(state, owner, "on_damaged"):
+        if passive.scope == "team":  # type: ignore[attr-defined]
+            if is_active and passive.target(defender):  # type: ignore[attr-defined]
+                found.append((passive, holder))
+        elif holder is defender:
+            found.append((passive, holder))
+    if knocked_out:
+        found += [(p, h) for p, h in compiled(state, owner, "on_knocked_out") if h is defender]
+    return found
+
+
+def survival(state: GameState, owner: PlayerId, defender: PokemonInPlay) -> set[str]:
+    """Tipos de sobrevivência/prevenção por moeda que o defensor tem."""
+    kinds = ("survive_full", "survive_coin", "coin_prevent")
+    return {k for k in kinds if any(h is defender for _, h in compiled(state, owner, k))}
+
+
+def immune_to(state: GameState, mon: PokemonInPlay, status: object) -> bool:
+    owner = owner_of(state, mon)
+    return any(
+        holder is mon and p.status == status  # type: ignore[attr-defined]
+        for p, holder in compiled(state, owner, "immune")
+    )
+
+
+def trainer_locked(state: GameState, player_id: PlayerId, kind: str) -> bool:
+    """Item/Ferramenta/Estádio travados por Habilidade do oponente."""
+    lock = {"Item": "lock_items", "Tool": "lock_tools", "Stadium": "lock_stadiums"}.get(kind)
+    return lock is not None and bool(compiled(state, player_id.other, lock))

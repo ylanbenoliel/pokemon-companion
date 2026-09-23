@@ -473,6 +473,8 @@ def set_status(ctx: Ctx, owner: PlayerId, mon: PokemonInPlay, status: StatusCond
         return False
     if passives.immune_to_special_conditions(ctx.state, mon):
         return False
+    if passives.immune_to(ctx.state, mon, status):
+        return False
     mon.status = status
     if status == StatusCondition.POISONED:
         mon.poison_damage = 10
@@ -520,6 +522,8 @@ def deal_damage(
     Resistência (só no Ativo), reduções e prevenções do defensor."""
     attacker = ctx.source
     state = ctx.state
+    if attacker is not None and passives.pierces(state, ctx.player_id, attacker):
+        ignore_defender_effects = True
     if attacker is not None and is_active and amount > 0:
         amount += passives.attacker_bonus(state, ctx.player_id, attacker, defender)
         bonus = attacker.attack_bonus
@@ -537,10 +541,15 @@ def deal_damage(
             amount = 0
         if passives.shield_blocks(state, defender, attacker, amount):
             amount = 0
+        if passives.prevents_big_hit(state, owner, defender, amount):
+            amount = 0
         if defender.damage_reduction and defender.damage_reduction[1] == state.turn_number:
             amount -= defender.damage_reduction[0]
         amount -= passives.static_damage_reduction(state, owner, defender)
+        amount -= passives.compiled_reduction(state, owner, defender, attacker)
     amount = max(amount, 0)
+    if amount and attacker is not None:
+        amount = _survival(ctx, owner, defender, amount)
     if amount:
         defender.damage_counters += amount
         defender.last_attacked = (amount, state.turn_number)
@@ -551,7 +560,46 @@ def deal_damage(
             ctx.log(
                 f"{defender.card.name} revidou: {retaliation[0]} contador(es) em {attacker.card.name}."
             )
+        if attacker is not None:
+            _counterattack(ctx, owner, defender, attacker)
     return amount
+
+
+def _survival(ctx: Ctx, owner: PlayerId, defender: PokemonInPlay, amount: int) -> int:
+    """Prevenção por moeda e "não é nocauteado, fica com 10 de HP"."""
+    kinds = passives.survival(ctx.state, owner, defender)
+    if not kinds:
+        return amount
+    if "coin_prevent" in kinds and coin():
+        ctx.log(f"Cara: {defender.card.name} preveniu o dano.")
+        return 0
+    if amount >= defender.current_hp:
+        full = defender.damage_counters == 0 and "survive_full" in kinds
+        if full or ("survive_coin" in kinds and coin()):
+            ctx.log(f"{defender.card.name} resistiu com 10 de HP.")
+            return max(defender.current_hp - 10, 0)
+    return amount
+
+
+def _counterattack(
+    ctx: Ctx, owner: PlayerId, defender: PokemonInPlay, attacker: PokemonInPlay
+) -> None:
+    """Contra-ataques de Habilidades passivas do Pokémon atingido."""
+    state = ctx.state
+    for passive, holder in passives.damage_reactions(
+        state, owner, defender, defender.is_knocked_out
+    ):
+        counters = passive.counters * (  # type: ignore[attr-defined]
+            passive.per(state, owner, holder) if passive.per else 1  # type: ignore[attr-defined]
+        )
+        if counters:
+            attacker.damage_counters += 10 * counters
+            ctx.log(f"{holder.card.name} contra-atacou: {counters} contador(es).")
+        status = passive.status  # type: ignore[attr-defined]
+        if status is not None and not passives.immune_to_special_conditions(state, attacker):
+            attacker.status = status
+        if passive.discard_energy and attacker.attached_energies:  # type: ignore[attr-defined]
+            discard_energy(ctx.state.state_of(ctx.player_id), attacker)
 
 
 def damage_counters_on(mon: PokemonInPlay) -> int:

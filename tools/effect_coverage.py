@@ -19,7 +19,14 @@ from pokemon_companion.cards_db.decklist_parser import load_deck
 from pokemon_companion.cards_db.models import Card, Supertype
 from pokemon_companion.deck_loading import make_lookup
 from pokemon_companion.engine import rules
-from pokemon_companion.engine.effects import abilities, attacks, core, passives, trainers
+from pokemon_companion.engine.effects import (
+    abilities,
+    attacks,
+    core,
+    passive_text,
+    passives,
+    trainers,
+)
 
 PASSIVE_SOURCE = "".join(
     inspect.getsource(module) for module in (passives, rules, core, trainers, abilities, attacks)
@@ -39,7 +46,9 @@ def missing_effects(cards: Iterable[Card]) -> tuple[Counter[str], Counter[str]]:
                         missing[f"ataque  {attack.name} ({card.name})"] += 1
             for ability in card.abilities:
                 total["habilidade"] += 1
-                known = abilities.spec_for(ability) is not None
+                known = abilities.spec_for(ability) is not None or bool(
+                    passive_text.passives_of(ability)
+                )
                 if not known and f'"{ability.name}"' not in PASSIVE_SOURCE:
                     missing[f"habilid {ability.name} ({card.name})"] += 1
         elif card.supertype == Supertype.TRAINER:
