@@ -314,6 +314,31 @@ arquitetura da máquina (arm64 aqui; Mac Intel precisa de build próprio); sem
 assinatura/notarização o macOS mostra "desenvolvedor não identificado"
 (abrir com botão direito → Abrir) e o Windows mostra o SmartScreen.
 
+## Experiência do app (open source, 23/09/2026)
+
+O app será open source para qualquer pessoa (GPL v3+, compatível com o
+PyQt6; README com aviso de projeto de fã não oficial). Fase "Experiência" do
+roadmap, feita:
+
+- **Configurações** (`ui/settings.py`, QSettings): volume, música,
+  dificuldade padrão, velocidade das animações, dicas, tela cheia e "reduzir
+  movimento e clarões". **Pausa** no Esc (antes o Esc abandonava a partida),
+  com desistência; **Como jogar** (F1) em `ui/help.py`.
+- **Dicas para iniciantes** (`ui/hints.py`): uma por situação, na primeira vez
+  que ela acontece; balão que fica até ser tocado ou o jogador agir.
+- **Replays** (`engine/replay.py`, `engine/serialization.py`): estado
+  inicial em JSON seguro (marcadores, só classes conhecidas — nada de
+  pickle), estado do `random` e as ações. Reproduz a partida exata porque o
+  motor só usa o `random` global e o app o preserva: a IA restaura o gerador
+  depois de decidir, e partículas/variações de som usam geradores próprios.
+  **Quem adicionar aleatoriedade fora do motor deve usar um gerador próprio.**
+- **Estatísticas** (`stats.py`, `matches.jsonl`): por deck, adversário e
+  dificuldade, sequência atual e melhor.
+- **Música** (`tools/make_music.py`): loops de menu e partida sintetizados.
+- **Construtor de deck** (`ui/deck_builder.py`, `cards_db/catalog.py`):
+  catálogo do Standard embutido, validação ao vivo, salva no formato do
+  Limitless e grava as cartas no cache (abre offline).
+
 ## Torneio IA vs IA — top 20 do meta (resultados e ajustes)
 
 `tools/tournament.py` joga um round robin headless (IA difícil nos dois
