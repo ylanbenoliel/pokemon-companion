@@ -292,3 +292,62 @@ def test_choose_then_shuffle_those_pokemon_into_the_deck(state):
 
     assert len(state.opponent.bench) == 1
     assert len(state.opponent.deck) == deck_before + 2 - 1  # +2 embaralhados, -1 compra
+
+
+# --------------------------------------------------------------------------
+# Treinadores e Estádios compilados
+
+from pokemon_companion.engine.actions import PlayTrainer, UseStadium  # noqa: E402
+
+
+def trainer_card(name: str, kind: str, text: str) -> Card:
+    return Card(
+        id=f"t-{name}", name=name, supertype=Supertype.TRAINER, subtypes=[kind], rules=[text]
+    )
+
+
+def test_compiled_supporter_draws_instead_when_the_condition_holds(state):
+    lacey = trainer_card(
+        "Test Lacey",
+        "Supporter",
+        "Shuffle your hand into your deck. Then, draw 4 cards. If your opponent has 3 or fewer "
+        "Prize cards remaining, draw 8 cards instead.",
+    )
+    state.player.hand = [lacey, mon("X")]
+    state.opponent.prizes = state.opponent.prizes[:2]
+
+    rules.apply_action(state, PlayTrainer(hand_index=0))
+
+    assert len(state.player.hand) == 8
+
+
+def test_requirement_and_discard_cost(state):
+    iris = trainer_card(
+        "Test Iris",
+        "Supporter",
+        "You can use this card only if you discard another card from your hand. Draw cards "
+        "until you have 6 cards in your hand.",
+    )
+    state.player.hand = [iris]
+    assert not any(isinstance(a, PlayTrainer) for a in rules.legal_actions(state))
+
+    state.player.hand = [iris, mon("Junk")]
+    rules.apply_action(state, PlayTrainer(hand_index=0))
+
+    assert [c.name for c in state.player.discard] == ["Junk", "Test Iris"]
+    assert len(state.player.hand) == 6
+
+
+def test_compiled_stadium_is_used_by_the_current_player(state):
+    state.stadium = trainer_card(
+        "Test Levincia",
+        "Stadium",
+        "Once during each player's turn, that player may put up to 2 Basic {L} Energy cards "
+        "from their discard pile into their hand.",
+    )
+    state.player.discard = [BASIC_ENERGIES["Lightning"]] * 3
+    assert UseStadium() in rules.legal_actions(state)
+
+    rules.apply_action(state, UseStadium())
+
+    assert [c.name for c in state.player.hand] == ["Lightning Energy"] * 2

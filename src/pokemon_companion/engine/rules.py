@@ -183,7 +183,7 @@ def _trainer_actions(state: GameState, pid: PlayerId) -> list[Action]:
         elif kind == "Stadium":
             options = [None]
         else:
-            spec = trainers.TRAINERS.get(card.name)
+            spec = trainers.spec_for(card)
             if spec is None:
                 options = [None]
             elif not spec.can_play(ctx):
@@ -315,7 +315,7 @@ def legal_actions(state: GameState) -> list[Action]:
     actions.extend(_ability_actions(state, pid))
 
     if state.stadium is not None and not player.stadium_used_this_turn:
-        spec = trainers.STADIUMS.get(state.stadium.name)
+        spec = trainers.stadium_spec_for(state.stadium)
         if spec is not None and spec.can_play(Ctx(state, pid)):
             actions.append(UseStadium())
 
@@ -650,7 +650,9 @@ def apply_action(state: GameState, action: Action) -> list[str]:
         player.stadium_used_this_turn = True
         ctx = Ctx(state, pid, messages=messages)
         messages.append(f"{who} usou o Estádio {state.stadium.name}.")
-        trainers.STADIUMS[state.stadium.name].fn(ctx)
+        spec = trainers.stadium_spec_for(state.stadium)
+        assert spec is not None
+        spec.fn(ctx)
         _after_action(state, messages)
         if ctx.ends_turn and state.winner is None:
             messages.extend(_end_turn(state))
@@ -704,7 +706,7 @@ def _play_trainer(state: GameState, pid: PlayerId, action: PlayTrainer) -> list[
         _after_action(state, messages)
         return messages
 
-    spec = trainers.TRAINERS.get(card.name)
+    spec = trainers.spec_for(card)
     if spec is None:
         messages.append(f"(efeito de {card.name} não implementado)")
     else:

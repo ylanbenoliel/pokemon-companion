@@ -37,6 +37,7 @@ from pokemon_companion.engine.effects.cardinfo import (
     trainer_kind,
 )
 from pokemon_companion.engine.effects.core import Ctx
+from pokemon_companion.engine.effects.trainers import TrainerSpec
 from pokemon_companion.engine.game_state import PlayerState, PokemonInPlay, StatusCondition
 
 # ---------------------------------------------------------------------------
@@ -69,6 +70,8 @@ class Run:
     #: carta escolhida por "Choose a random card ..." / filtro citado como "those cards"
     chosen_card: Card | None = None
     memo: Callable[[Card], bool] | None = None
+    #: cartas compradas pelo efeito ("draw N cards instead")
+    drawn: int = 0
 
     @property
     def me(self) -> PlayerState:
@@ -1014,7 +1017,10 @@ def _energy_search(what: str, source: Callable[[Run], list[Card]], where: str) -
 
 @phrase("Draw {N} cards", "Draw {N} card")
 def _draw(n: str) -> Step:
-    return after(lambda run: core.draw(run.me, num(n)) and None)
+    def act(run: Run) -> None:
+        run.drawn += core.draw(run.me, num(n))
+
+    return after(act)
 
 
 @phrase("Draw cards until you have {N} cards in your hand")
@@ -2780,3 +2786,368 @@ def _revenge_amount() -> Step:
             run.damage += mark[0]
 
     return pre(act)
+
+
+# ---------------------------------------------------------------------------
+# Treinadores e Estádios: o mesmo compilador, sem o dano do ataque
+
+_NO_ATTACK = Attack(name="", cost=[], damage="", text="")
+
+
+def _run_effect(program: Program, ctx: Ctx) -> None:
+    run = Run(ctx, _NO_ATTACK, 0, main_hit=False)
+    program._pre(run)
+    if run.cancelled:
+        return
+    for phase in ("before", "after"):
+        for step in program.steps:
+            if step.phase == phase:
+                step.act(run)
+
+
+def _check(predicate: Predicate) -> Callable[[Ctx], bool]:
+    return lambda ctx: bool(predicate(Run(ctx, _NO_ATTACK, 0, estimate=True)))
+
+
+#: frases de requisito: (padrão, construtor → (checagem, custo pago ao jogar))
+Requirement = tuple[Callable[[Ctx], bool], Act | None]
+
+
+def _requirement(sentence: str) -> Requirement | None:
+    text = sentence.strip()
+    match = re.fullmatch(
+        expand(r"You can use this card only if you discard {N} other cards? from your hand"),
+        text,
+        re.IGNORECASE,
+    ) or re.fullmatch(
+        r"You can use this card only if you discard (another) card from your hand", text, re.I
+    )
+    if match:
+        amount = 1 if match.group(1).lower() == "another" else num(match.group(1))
+
+        def pay(run: Run) -> None:
+            core.discard_from_hand(run.ctx, amount)
+
+        return (lambda ctx: len(ctx.me.hand) - 1 >= amount), pay
+    if re.fullmatch(
+        r"You can use this card only when it is the last card in your hand", text, re.I
+    ):
+        return (lambda ctx: len(ctx.me.hand) == 1), None
+    if re.fullmatch(r"You can't use this card during your first turn", text, re.I):
+        return (lambda ctx: ctx.turn > 2), None
+    match = re.fullmatch(r"You can use this card only if (.+)", text, re.IGNORECASE)
+    if match:
+        predicate = parse_condition(match.group(1))
+        if predicate is not None:
+            return _check(predicate), None
+    if re.fullmatch(r"If you go first, you may use this card during your first turn", text, re.I):
+        return (lambda ctx: True), None  # não libera: a regra geral continua valendo
+    if re.fullmatch(
+        r"This card can't be put into your hand or deck from the discard pile", text, re.I
+    ):
+        return (lambda ctx: True), None
+    return None
+
+
+def compile_card_text(text: str) -> tuple[Program, list[Callable[[Ctx], bool]]] | None:
+    program, checks = Program(), []
+    _whole[0] = _clean(text)
+    try:
+        for sentence in sentences(text):
+            requirement = _requirement(sentence)
+            if requirement is not None:
+                check, pay = requirement
+                checks.append(check)
+                if pay is not None:
+                    program.steps.insert(0, Step("pre", pay, desc="custo de uso"))
+                continue
+            steps = parse_clause(sentence)
+            if steps is None:
+                return None
+            program.steps.extend(steps)
+    finally:
+        _whole[0] = ""
+    return (program, checks) if program.steps else None
+
+
+_TRAINER_OPTIONS = {"opp_bench": "opp_bench_options", "own_bench": "own_bench_options"}
+
+
+@lru_cache(maxsize=2048)
+def compiled_trainer(text: str) -> TrainerSpec | None:
+    from pokemon_companion.engine.effects import trainers
+
+    compiled = compile_card_text(text)
+    if compiled is None:
+        return None
+    program, checks = compiled
+    kind_ = program.option
+    options = getattr(trainers, _TRAINER_OPTIONS[kind_]) if kind_ in _TRAINER_OPTIONS else None
+    return trainers.TrainerSpec(
+        lambda ctx: _run_effect(program, ctx),
+        lambda ctx: all(check(ctx) for check in checks),
+        options,
+    )
+
+
+_THIRD_PERSON = (
+    (r"\bthat player may\b ", ""),
+    (r"\bthat player's\b", "your"),
+    (r"\bthat player\b", "you"),
+    (r"\btheir\b", "your"),
+    (r"\bthey have\b", "you have"),
+    (r"\bthey\b", "you"),
+)
+
+
+@lru_cache(maxsize=512)
+def compiled_stadium(text: str) -> TrainerSpec | None:
+    """ "Once during each player's turn, that player may X" → X na 2ª pessoa."""
+    from pokemon_companion.engine.effects import trainers
+
+    match = re.search(r"Once during each player's turn, (.+)", _clean(text), re.IGNORECASE)
+    if not match:
+        return None
+    effect = match.group(1)
+    for pattern, repl in _THIRD_PERSON:
+        effect = re.sub(pattern, repl, effect, flags=re.IGNORECASE)
+    effect = effect[0].upper() + effect[1:]
+    compiled = compile_card_text(effect)
+    if compiled is None:
+        return None
+    program, checks = compiled
+    return trainers.TrainerSpec(
+        lambda ctx: _run_effect(program, ctx), lambda ctx: all(c(ctx) for c in checks)
+    )
+
+
+# frases que aparecem sobretudo em Treinadores
+
+
+@phrase("Draw {N} cards instead", "draw {N} cards instead")
+def _draw_instead(n: str) -> Step:
+    def act(run: Run) -> None:
+        run.drawn += core.draw(run.me, max(num(n) - run.drawn, 0))
+
+    return after(act)
+
+
+@phrase("Draw {N} more cards", "draw {N} more cards")
+def _draw_more(n: str) -> Step:
+    return after(lambda run: core.draw(run.me, num(n)))
+
+
+@phrase("Discard your hand")
+def _discard_hand() -> Step:
+    def act(run: Run) -> None:
+        run.me.discard.extend(run.me.hand)
+        run.me.hand.clear()
+
+    return after(act)
+
+
+@phrase("Draw a card for each {X}", "you draw a card for each {X}", "Draw {N} cards for each {X}")
+def _draw_per(*groups: str) -> Step | None:
+    per, what = (1, groups[0]) if len(groups) == 1 else (num(groups[0]), groups[1])
+    counter = parse_count(what)
+    if counter is None:
+        return None
+    return after(lambda run: core.draw(run.me, per * counter(run)))
+
+
+@phrase("Heal {N} damage from {N} of your {E} Pokémon")
+def _heal_typed(n: str, k: str, symbol: str) -> Step:
+    kind_ = energy(symbol)
+
+    def act(run: Run) -> None:
+        mons = [m for m in run.me.all_pokemon_in_play() if pokemon_type(m.card) == kind_]
+        for mon in sorted(mons, key=lambda m: -m.damage_counters)[: num(k)]:
+            core.heal(mon, num(n))
+
+    return after(act)
+
+
+@phrase("Heal {N} damage and remove a Special Condition from your Active Pokémon")
+def _heal_and_cure(n: str) -> Step:
+    def act(run: Run) -> None:
+        if run.me.active is not None:
+            core.heal(run.me.active, num(n))
+            run.me.active.status = StatusCondition.NONE
+
+    return after(act)
+
+
+@phrase("Move up to {N} Energy from your Benched Pokémon to your Active Pokémon")
+def _energy_to_active(n: str) -> Step:
+    def act(run: Run) -> None:
+        active = run.me.active
+        for _ in range(num(n)):
+            donors = [m for m in run.me.bench if m.attached_energies]
+            if active is None or not donors:
+                return
+            donor = max(donors, key=lambda m: len(m.attached_energies))
+            energy_name = core.least_useful_energy(donor)
+            core.attach_energy_card(active, core.detach_energy(donor, energy_name))
+
+    return after(act)
+
+
+@phrase("Switch in {N} of your opponent's Benched Basic Pokémon to the Active Spot")
+def _gust_basic(_n: str) -> Step:
+    def act(run: Run) -> None:
+        basics = [i for i, m in enumerate(run.opp.bench) if stage_of(m.card) == "Basic"]
+        run.did = bool(basics)
+        if basics:
+            best = max(basics, key=lambda i: core._prize_value(run.opp.bench[i].card))
+            core.switch_active(run.ctx.state, run.opp, best)
+
+    return Step("before", act)
+
+
+@phrase("The new Active Pokémon is now {X}")
+def _new_active_status(text: str) -> Step | None:
+    statuses = _status_list(text)
+    if statuses is None:
+        return None
+    return after(lambda run: attacks.status_on_defender(run.ctx, statuses[0]))
+
+
+@phrase("Your turn ends")
+def _turn_ends() -> Step:
+    def act(run: Run) -> None:
+        run.ctx.ends_turn = True
+
+    return after(act)
+
+
+@phrase("Put {N} of your Pokémon and all attached cards into your hand")
+def _scoop(n: str) -> Step:
+    def act(run: Run) -> None:
+        mons = run.me.all_pokemon_in_play()
+        if len(mons) < 2:
+            return  # tirar o único Pokémon perderia o jogo
+        target = max(mons, key=lambda m: (m.damage_counters, m is not run.me.active))
+        cards = target.all_cards() + [
+            core.BASIC_ENERGIES[e] for e in target.attached_energies if e in core.BASIC_ENERGIES
+        ]
+        if run.me.active is target:
+            run.me.active = None
+        else:
+            del run.me.bench[core.index_of(run.me.bench, target)]
+        run.me.hand.extend(cards)
+
+    return after(act)
+
+
+@phrase(
+    "Discard an Energy from {N} of your opponent's Pokémon",
+    "Discard a Special Energy from {N} of your opponent's Pokémon",
+)
+def _discard_opp_any(_n: str) -> Step:
+    special = "Special" in _current[0]
+
+    def act(run: Run) -> None:
+        holders = [
+            m
+            for m in run.opp.all_pokemon_in_play()
+            if (m.special_energy_cards if special else m.attached_energies)
+        ]
+        if not holders:
+            return
+        mon = max(holders, key=lambda m: (m is run.opp.active, len(m.attached_energies)))
+        choice = mon.special_energy_cards[0].name if special else mon.attached_energies[0]
+        card = core.discard_energy(run.opp, mon, choice)
+        if card is not None:
+            run.ctx.log(f"{card.name} de {mon.card.name} foi descartada.")
+
+    return after(act)
+
+
+@phrase("Discard a Pokémon Tool and a Special Energy from {N} of your opponent's Pokémon")
+def _discard_tool_and_special(_n: str) -> Step:
+    def act(run: Run) -> None:
+        mons = run.opp.all_pokemon_in_play()
+        both = [m for m in mons if m.tool is not None and m.special_energy_cards]
+        candidates = both or [m for m in mons if m.tool or m.special_energy_cards]
+        if not candidates:
+            return
+        mon = candidates[0]
+        if mon.tool is not None:
+            run.opp.discard.append(mon.tool)
+            mon.tool = None
+        if mon.special_energy_cards:
+            run.opp.discard.append(core.detach_energy(mon, mon.special_energy_cards[0].name))
+
+    return after(act)
+
+
+@phrase("Each player shuffles their hand into their deck")
+def _both_shuffle_hands() -> Step:
+    def act(run: Run) -> None:
+        core.shuffle_hand_into_deck(run.me)
+        core.shuffle_hand_into_deck(run.opp)
+
+    return after(act)
+
+
+@phrase("You draw {N} cards, and your opponent draws {N} cards")
+def _split_draw(mine: str, theirs: str) -> Step:
+    def act(run: Run) -> None:
+        core.draw(run.me, num(mine))
+        core.draw(run.opp, num(theirs))
+
+    return after(act)
+
+
+def _combo_filter(what: str) -> CardFilter | None:
+    """ "A and B" / "A, B, and C": carta que é de qualquer um dos tipos."""
+    parts = [p for p in re.split(r",\s*(?:and\s+)?|\s+and\s+|\s+or\s+", what.strip()) if p]
+    filters = [parse_kind(re.sub(r"^(?:an?|any) ", "", p)) for p in parts]
+    if not filters or any(f is None for f in filters):
+        return None
+    return lambda card: any(f(card) for f in filters if f is not None)
+
+
+@kind(r"in any combination of {X}")
+def _k_combination(what: str) -> CardFilter | None:
+    return _combo_filter(what)
+
+
+@phrase("Search your deck for {X}, reveal them, and put them into your hand")
+def _search_several(what: str) -> Step | None:
+    """ "a Pokémon, a Supporter card, and a Basic Energy card": uma de cada."""
+    parts = [p for p in re.split(r",\s*(?:and\s+)?|\s+and\s+", what.strip()) if p]
+    if len(parts) < 2 or any(not re.match(r"an? ", p) for p in parts):
+        return None
+    filters = [parse_kind(p.split(" ", 1)[1]) for p in parts]
+    if any(f is None for f in filters):
+        return None
+
+    def act(run: Run) -> None:
+        for card_filter in filters:
+            assert card_filter is not None
+            core.search_deck(run.ctx, card_filter, 1)
+
+    return after(act)
+
+
+@kind(r"{X} that has \"?{X}\"? in its name", r"{X} that have \"?{X}\"? in their names")
+def _k_named_part(what: str, part: str) -> CardFilter | None:
+    base = parse_kind(what)
+    return None if base is None else (lambda card: base(card) and part in card.name)
+
+
+@kind(r"{X} Team Rocket's Pokémon")
+def _k_rocket_stage(stage: str) -> CardFilter | None:
+    tests = {"Basic": lambda c: c.is_basic, "Evolution": is_evolution}
+    test = tests.get(stage.strip())
+    if test is None:
+        return None
+    return lambda card: card.is_pokemon and test(card) and card.name.startswith("Team Rocket's")
+
+
+@kind(r"([A-Z][\w.']+(?:'s)) Pokémon")
+def _k_owner_group(owner: str) -> CardFilter | None:
+    if not owner.endswith("'s"):
+        return None
+    return lambda card: card.is_pokemon and card.name.startswith(owner)

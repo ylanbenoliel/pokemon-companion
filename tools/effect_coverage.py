@@ -48,7 +48,7 @@ def missing_effects(cards: Iterable[Card]) -> tuple[Counter[str], Counter[str]]:
                 missing[f"treinad {card.name}"] += 1
             elif (
                 "Stadium" in card.subtypes
-                and card.name not in trainers.STADIUMS
+                and trainers.stadium_spec_for(card) is None
                 and f'"{card.name}"' not in PASSIVE_SOURCE
             ):
                 missing[f"estádio {card.name}"] += 1

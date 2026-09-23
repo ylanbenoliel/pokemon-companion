@@ -70,8 +70,28 @@ def stadium(name: str, can_use: CheckFn = lambda ctx: True) -> Callable[[Trainer
     return decorator
 
 
+def spec_for(card: Card) -> TrainerSpec | None:
+    """Registro à mão pelo nome; senão, o texto compilado (`text_effects`)."""
+    spec = TRAINERS.get(card.name)
+    if spec is None and card.rules and trainer_kind(card) in ("Item", "Supporter"):
+        from pokemon_companion.engine.effects.text_effects import compiled_trainer
+
+        spec = compiled_trainer(" ".join(card.rules))
+    return spec
+
+
+def stadium_spec_for(card: Card) -> TrainerSpec | None:
+    """Efeito "uma vez por turno" do Estádio: à mão ou compilado."""
+    spec = STADIUMS.get(card.name)
+    if spec is None and card.rules:
+        from pokemon_companion.engine.effects.text_effects import compiled_stadium
+
+        spec = compiled_stadium(" ".join(card.rules))
+    return spec
+
+
 def is_implemented(card: Card) -> bool:
-    return card.name in TRAINERS or trainer_kind(card) in ("Tool", "Stadium")
+    return spec_for(card) is not None or trainer_kind(card) in ("Tool", "Stadium")
 
 
 def discard_stadium(state: GameState) -> None:

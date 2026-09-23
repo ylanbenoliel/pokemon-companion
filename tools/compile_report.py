@@ -90,6 +90,42 @@ def main() -> None:
             except Exception:  # noqa: BLE001 - relatório de falhas
                 errors[f"{attack.name}: {traceback.format_exc().splitlines()[-1]}"] += 1
 
+    from pokemon_companion.engine.effects import trainers
+    from pokemon_companion.engine.effects.cardinfo import trainer_kind
+
+    trainer_cards = {
+        c.name: c
+        for c in pool
+        if c.supertype.value == "Trainer"
+        and c.rules
+        and c.name not in trainers.TRAINERS
+        and c.name not in trainers.STADIUMS
+        and trainer_kind(c) in ("Item", "Supporter", "Stadium")
+    }
+    trainer_ok = 0
+    for card in trainer_cards.values():
+        stadium = trainer_kind(card) == "Stadium"
+        spec = trainers.stadium_spec_for(card) if stadium else trainers.spec_for(card)
+        if spec is None:
+            text = " ".join(card.rules)
+            for sentence in text_effects.unknown_sentences(text):
+                if text_effects._requirement(sentence) is None:
+                    unknown["[T] " + normalize(sentence)] += 1
+            continue
+        trainer_ok += 1
+        for _ in range(3):
+            state = synthetic_state(rng.choice([c for c in pool if c.is_pokemon]), pool, rng)
+            ctx = Ctx(state, PlayerId.PLAYER)
+            try:
+                if spec.can_play(ctx):
+                    ctx.target = rng.choice(spec.options(ctx) or [None]) if spec.options else None
+                    spec.fn(ctx)
+            except Exception:  # noqa: BLE001 - relatório de falhas
+                errors[f"{card.name}: {traceback.format_exc().splitlines()[-1]}"] += 1
+    print(
+        f"Treinadores/Estádios sem registro à mão: {len(trainer_cards)}; compilados: {trainer_ok}"
+    )
+
     total = len(missing)
     print(
         f"Ataques sem registro à mão: {total}; compilados: {len(compiled)} "
