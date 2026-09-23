@@ -130,6 +130,12 @@ def _mon_at(
 def _can_evolve_onto(state: GameState, pid: PlayerId, card: Card, mon: PokemonInPlay) -> bool:
     if mon.card.name != card.evolves_from or mon.evolved_this_turn:
         return False
+    if passives.no_normal_play(card):
+        return False
+    if passives.can_evolve_early(state, pid, mon):
+        return True
+    if state.turn_number <= 2:
+        return False
     if mon.turn_played < state.turn_number:
         return True
     return (
@@ -218,7 +224,9 @@ def _ability_actions(state: GameState, pid: PlayerId) -> list[Action]:
 def _attack_actions(state: GameState, pid: PlayerId) -> list[Action]:
     player = state.state_of(pid)
     active = player.active
-    if state.turn_number <= 1 or active is None or not can_attack(active):
+    if active is None or not can_attack(active):
+        return []
+    if state.turn_number <= 1 and not passives.attacks_on_first_turn(state, pid, active):
         return []
     if player.attacks_this_turn >= _attacks_allowed(state, pid):
         return []
@@ -297,7 +305,7 @@ def legal_actions(state: GameState) -> list[Action]:
 
     # Regras de 1º turno: turno 1 é o primeiro de quem começa, turno 2 o do
     # outro jogador — ninguém evolui no próprio primeiro turno.
-    if state.turn_number > 2 and player.evolution_blocked_turn != state.turn_number:
+    if player.evolution_blocked_turn != state.turn_number:
         for i, card in enumerate(player.hand):
             if not (card.is_pokemon and card.evolves_from) or not first("evolve", card):
                 continue
@@ -370,6 +378,10 @@ def _process_knockouts(
                 continue
             was_active = owner.active is mon
             prizes = prize_count_for(mon.card)
+            if attacker is not None and owner_id is attacker.other:
+                prizes += passives.prize_adjustment(
+                    state, owner_id, mon, attacker_mon, was_active, prizes
+                )
             if attacker is not None and owner_id is attacker.other:
                 if passives.tool_active(state, mon, "Lillie's Pearl") and in_group(
                     mon.card, "Lillie's"
@@ -502,6 +514,8 @@ def _pokemon_checkup(state: GameState, messages: list[str]) -> None:
             ):
                 active.damage_counters += 50
                 messages.append(f"Toxic Subjugation: +5 contadores em {active.card.name}.")
+    for pid in (PlayerId.PLAYER, PlayerId.OPPONENT):
+        messages.extend(passives.checkup_extra(state, pid))
     current_active = state.state_of(state.active_player).active
     if current_active is not None:
         # Paralisado se recupera no checkup logo após o turno do próprio dono.
@@ -639,14 +653,16 @@ def apply_action(state: GameState, action: Action) -> list[str]:
         card = player.hand.pop(action.hand_index)
         target = _mon_at(state, pid, action.target_is_active, action.bench_index)
         assert target is not None
-        core.evolve_into(state, player, target, card)
+        evolved = core.evolve_into(state, player, target, card)
         messages.append(f"{target.card.name} evoluiu para {card.name}.")
+        passives.after_evolve(state, pid, evolved)
 
     elif isinstance(action, AttachEnergy):
         card = player.hand.pop(action.hand_index)
         target = _mon_at(state, pid, action.target_is_active, action.bench_index)
         assert target is not None
         core.attach_energy_card(target, card)
+        passives.after_hand_attach(state, pid, target)
         player.has_attached_energy_this_turn = True
         messages.append(f"{who} anexou {card.name} em {target.card.name}.")
         if card.name == "Enriching Energy":

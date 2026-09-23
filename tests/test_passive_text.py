@@ -174,3 +174,113 @@ def test_opponent_retreat_cost_goes_up(state):
     state.player.active = PokemonInPlay(card=evolved)
 
     assert passives.retreat_cost(state, PlayerId.PLAYER, state.player.active) == 2
+
+
+# --------------------------------------------------------------------------
+# prêmios, supressão, evolução, custo e gatilhos
+
+
+def _ex(name: str, hp: int = 300, **kwargs: object) -> Card:
+    return dataclasses.replace(mon(name, hp, **kwargs), subtypes=["Basic", "ex"])
+
+
+def test_fragile_husk_gives_no_prizes_to_ex(state):
+    text = (
+        "If this Pokémon is Knocked Out by damage from an attack from your opponent's Pokémon ex, "
+        "your opponent can't take any Prize cards for it."
+    )
+    state.player.active = PokemonInPlay(card=_ex("Big"), attached_energies=["Colorless"])
+    state.opponent.active = PokemonInPlay(
+        card=mon("Husk", hp=50, ability="Fragile Husk", text=text)
+    )
+    state.opponent.bench = [PokemonInPlay(card=mon("Next"))]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert len(state.player.prizes) == 6
+
+
+def test_team_prize_reduction_against_ex(state):
+    text = (
+        "If 1 of your {D} Pokémon is Knocked Out by damage from an attack from your opponent's "
+        "Pokémon ex, that player takes 1 fewer Prize card. The effect of Shadowy Concealment "
+        "doesn't stack."
+    )
+    victim = dataclasses.replace(_ex("Dark ex", hp=50), types=["Darkness"])
+    state.opponent.active = PokemonInPlay(card=victim)
+    state.opponent.bench = [
+        PokemonInPlay(card=mon("Gengar", ability="Shadowy Concealment", text=text))
+    ]
+    state.player.active = PokemonInPlay(card=_ex("Big"), attached_energies=["Colorless"])
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert len(state.player.prizes) == 6 - 1  # 2 do ex, menos 1
+
+
+def test_opponent_active_loses_its_abilities(state):
+    from pokemon_companion.engine.effects import passives
+
+    silencer = mon(
+        "Flutter Mane",
+        ability="Midnight Fluttering",
+        text=(
+            "As long as this Pokémon is in the Active Spot, your opponent's Active Pokémon has no "
+            "Abilities, except for Midnight Fluttering."
+        ),
+    )
+    state.player.active = PokemonInPlay(card=silencer)
+    tank = mon("Tank", ability="Solid Body", text="This Pokémon takes 30 less damage from attacks.")
+    state.opponent.active = PokemonInPlay(card=tank)
+
+    assert not passives.ability_active(state, state.opponent.active, "Solid Body")
+    state.opponent.bench = [state.opponent.active]
+    state.opponent.active = PokemonInPlay(card=mon("Other"))
+    assert passives.ability_active(state, state.opponent.bench[0], "Solid Body")
+
+
+def test_early_evolution_on_the_turn_it_was_played(state):
+    from pokemon_companion.engine.actions import Evolve
+
+    text = (
+        "As long as this Pokémon is in the Active Spot, it can evolve during your first turn or "
+        "the turn you play it."
+    )
+    eevee = mon("Eevee", ability="Boosted Evolution", text=text)
+    state.player.active = PokemonInPlay(card=eevee, turn_played=state.turn_number)
+    evolution = dataclasses.replace(mon("Vaporeon"), evolves_from="Eevee", subtypes=["Stage 1"])
+    state.player.hand = [evolution]
+
+    assert Evolve(hand_index=0, target_is_active=True) in rules.legal_actions(state)
+
+
+def test_attack_cost_discount_per_opponent_bench(state):
+    text = "Attacks used by this Pokémon cost {C} less for each of your opponent's Benched Pokémon."
+    hustler = dataclasses.replace(
+        mon("Incineroar ex", ability="Hustle Play", text=text),
+        attacks=[Attack(name="Big", cost=["Colorless", "Colorless"], damage="200")],
+    )
+    state.player.active = PokemonInPlay(card=hustler)
+    state.opponent.bench = [PokemonInPlay(card=mon("A")), PokemonInPlay(card=mon("B"))]
+
+    assert (
+        passives.attack_cost(state, PlayerId.PLAYER, state.player.active, hustler.attacks[0]) == []
+    )
+
+
+def test_energy_attach_trigger_places_counters(state):
+    from pokemon_companion.cards_db.basic_energies import BASIC_ENERGIES
+    from pokemon_companion.engine.actions import AttachEnergy
+
+    text = (
+        "Whenever your opponent attaches an Energy card from their hand to 1 of their Pokémon, put "
+        "2 damage counters on that Pokémon."
+    )
+    state.opponent.bench = [
+        PokemonInPlay(card=mon("Gengar ex", ability="Gnawing Curse", text=text))
+    ]
+    state.player.hand = [BASIC_ENERGIES["Fire"]]
+
+    rules.apply_action(state, AttachEnergy(hand_index=0, target_is_active=True))
+
+    assert state.player.active.damage_counters == 20

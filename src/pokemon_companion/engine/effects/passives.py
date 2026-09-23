@@ -35,7 +35,9 @@ def ability_active(state: GameState, mon: PokemonInPlay, name: str) -> bool:
         return False
     if stadium_is(state, "Team Rocket's Watchtower") and pokemon_type(mon.card) == "Colorless":
         return False
-    return not (name == "Cursed Blast" and any_ability_in_play(state, None, "Damp"))
+    if name == "Cursed Blast" and any_ability_in_play(state, None, "Damp"):
+        return False
+    return not ability_suppressed(state, mon, name)
 
 
 def any_ability_in_play(state: GameState, owner: PlayerId | None, name: str) -> bool:
@@ -183,7 +185,7 @@ def attack_cost(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack: A
         opponent_discard = state.state_of(owner.other).discard
         if any("Colress" in card.name for card in opponent_discard):
             cost = ["Colorless"]
-    return cost
+    return compiled_cost(state, owner, mon, cost)
 
 
 def cost_progress(units: list[str], cost: list[str]) -> float:
@@ -215,6 +217,8 @@ def attack_allowed(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack
     if mon.cannot_attack_turn == state.turn_number:
         return False
     if mon.blocked_attack == (attack.name, state.turn_number):
+        return False
+    if any(holder is mon for _, holder in compiled(state, owner, "no_attack")):
         return False
     going_second_lock = "If you go second, you can't use this attack during your first turn"
     if going_second_lock in attack.text and state.turn_number == 2:
@@ -535,3 +539,137 @@ def trainer_locked(state: GameState, player_id: PlayerId, kind: str) -> bool:
     """Item/Ferramenta/Estádio travados por Habilidade do oponente."""
     lock = {"Item": "lock_items", "Tool": "lock_tools", "Stadium": "lock_stadiums"}.get(kind)
     return lock is not None and bool(compiled(state, player_id.other, lock))
+
+
+def ability_suppressed(state: GameState, mon: PokemonInPlay, name: str) -> bool:
+    """Habilidades anuladas por passivas compiladas (Midnight Fluttering,
+    Initialization, Sticky Bind). O supressor é lido direto do texto, sem
+    passar por `ability_active`, para não entrar em recursão."""
+    from pokemon_companion.engine.effects.passive_text import kind_entries
+
+    benched: bool | None = None
+    for pid in (PlayerId.PLAYER, PlayerId.OPPONENT):
+        side = state.state_of(pid)
+        for holder in side.all_pokemon_in_play():
+            if holder is mon or not holder.card.abilities:
+                continue
+            for passive, _name in kind_entries(holder, "suppress"):
+                if passive.holder_at == "active" and side.active is not holder:
+                    continue
+                if passive.holder_at == "bench" and not any(holder is b for b in side.bench):
+                    continue
+                if passive.scope == "opp_active":
+                    if state.state_of(pid.other).active is mon and passive.event(name):
+                        return True
+                elif passive.scope == "all" and passive.target(mon):
+                    return True
+                elif passive.scope == "all_bench" and passive.target(mon):
+                    if benched is None:
+                        benched = any(mon is b for p in PlayerId for b in state.state_of(p).bench)
+                    if benched:
+                        return True
+    return False
+
+
+def prize_adjustment(
+    state: GameState,
+    owner: PlayerId,
+    knocked_out: PokemonInPlay,
+    attacker: PokemonInPlay | None,
+    was_active: bool,
+    prizes: int,
+) -> int:
+    """Quantos prêmios a mais (ou a menos) um nocaute por ataque rende."""
+    from pokemon_companion.engine.effects.core import coin
+
+    change = 0
+    for passive, holder in compiled(state, owner, "prize_none"):
+        if holder is knocked_out and (attacker is None or passive.attacker(attacker)):  # type: ignore[attr-defined]
+            return -prizes
+    for passive, holder in compiled(state, owner, "prize_minus"):
+        applies = _applies(passive, holder, knocked_out)
+        if applies and (attacker is None or passive.attacker(attacker)):  # type: ignore[attr-defined]
+            change -= passive.amount  # type: ignore[attr-defined]
+    for passive, holder in compiled(state, owner.other, "prize_plus"):
+        if passive.scope == "team":  # type: ignore[attr-defined]
+            if was_active and (not passive.coin or coin()):  # type: ignore[attr-defined]
+                change += passive.amount  # type: ignore[attr-defined]
+        elif holder is attacker and passive.target(knocked_out):  # type: ignore[attr-defined]
+            change += passive.amount  # type: ignore[attr-defined]
+    return change
+
+
+def can_evolve_early(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> bool:
+    return any(holder is mon for _, holder in compiled(state, owner, "early_evolve"))
+
+
+def attacks_on_first_turn(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> bool:
+    return any(holder is mon for _, holder in compiled(state, owner, "first_turn_attack"))
+
+
+def no_normal_play(card: object) -> bool:
+    from pokemon_companion.engine.effects.passive_text import card_passives
+
+    return any(p.kind == "no_normal_play" for p in card_passives(card))  # type: ignore[arg-type]
+
+
+def compiled_cost(
+    state: GameState, owner: PlayerId, mon: PokemonInPlay, cost: list[str]
+) -> list[str]:
+    """Custo do ataque com as passivas compiladas (descontos e taxas)."""
+    if any(holder is mon for _, holder in compiled(state, owner, "ignore_colorless")):
+        cost = [c for c in cost if c != "Colorless"]
+    for passive, holder in compiled(state, owner, "cost_minus"):
+        if holder is mon:
+            for _ in range(passive.value(state, owner, holder)):  # type: ignore[attr-defined]
+                if "Colorless" not in cost:
+                    break
+                cost.remove("Colorless")
+    for passive, _holder in compiled(state, owner.other, "tax_opponent"):
+        if state.state_of(owner).active is mon and passive.target(mon):  # type: ignore[attr-defined]
+            cost = cost + ["Colorless"] * passive.amount  # type: ignore[attr-defined]
+    return cost
+
+
+def after_hand_attach(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> None:
+    """Gatilhos de "whenever ... attach an Energy card from ... hand"."""
+    for passive, _holder in compiled(state, owner.other, "on_opp_attach"):
+        mon.damage_counters += 10 * passive.counters  # type: ignore[attr-defined]
+    for passive, _holder in compiled(state, owner, "on_attach_heal"):
+        mon.damage_counters = max(mon.damage_counters - passive.amount, 0)  # type: ignore[attr-defined]
+
+
+def after_evolve(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> None:
+    for passive, _holder in compiled(state, owner.other, "on_opp_evolve"):
+        mon.damage_counters += 10 * passive.counters  # type: ignore[attr-defined]
+
+
+def after_switch_to_bench(
+    state: GameState, owner: PlayerId, benched: PokemonInPlay, new_active: PokemonInPlay
+) -> None:
+    """Gatilhos de "whenever your opponent's Active Pokémon moves to the Bench
+    during their turn" (só no turno do dono dos Pokémon trocados)."""
+    if state.active_player != owner:
+        return
+    for passive, _holder in compiled(state, owner.other, "on_opp_to_bench"):
+        benched.damage_counters += 10 * passive.counters  # type: ignore[attr-defined]
+        status = passive.status  # type: ignore[attr-defined]
+        if status is not None and not immune_to_special_conditions(state, new_active):
+            new_active.status = status
+
+
+def checkup_extra(state: GameState, owner: PlayerId) -> list[str]:
+    """Contadores extras no Checkup vindos de passivas do oponente de `owner`."""
+    messages: list[str] = []
+    player = state.state_of(owner)
+    for passive, holder in compiled(state, owner.other, "checkup_burn"):
+        active = player.active
+        if active is not None and active.status.name == "BURNED":
+            active.damage_counters += 10 * passive.counters  # type: ignore[attr-defined]
+            messages.append(f"{holder.card.name}: +{passive.counters} contadores na queimadura.")  # type: ignore[attr-defined]
+    for passive, holder in compiled(state, owner.other, "checkup_basics"):
+        for mon in player.all_pokemon_in_play():
+            if stage_of(mon.card) == "Basic":
+                mon.damage_counters += 10 * passive.counters  # type: ignore[attr-defined]
+        messages.append(f"{holder.card.name}: contadores nos Básicos do oponente.")
+    return messages

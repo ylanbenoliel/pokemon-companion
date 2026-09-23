@@ -45,7 +45,11 @@ class Passive:
     #: "reduce", "weaken" (ataques do Ativo do oponente fazem menos), "prevent", "prevent_effects", "prevent_big", "bonus", "pierce",
     #: "hp", "no_retreat", "retreat", "on_damaged", "on_knocked_out", "immune",
     #: "survive_full", "survive_coin", "coin_prevent", "lock_items", "lock_tools",
-    #: "lock_stadiums", "ability_shield"
+    #: "lock_stadiums", "ability_shield", "prize_minus", "prize_none", "prize_plus",
+    #: "suppress", "early_evolve", "first_turn_attack", "no_attack", "cost_minus",
+    #: "ignore_colorless", "tax_opponent", "checkup_burn", "checkup_basics",
+    #: "on_opp_to_bench", "on_opp_attach", "on_attach_heal", "on_opp_evolve",
+    #: "no_normal_play"
     kind: str
     amount: int = 0
     #: onde o dono da Habilidade precisa estar: "any", "active", "bench"
@@ -62,6 +66,10 @@ class Passive:
     counters: int = 0
     discard_energy: bool = False
     stacks: bool = True
+    #: o efeito só acontece com cara numa moeda
+    coin: bool = False
+    #: condição avaliada no momento do evento (ex.: Pokémon nocauteado, atacante)
+    event: Callable[..., bool] = _always
 
     def value(self, state: GameState, owner: PlayerId, holder: PokemonInPlay) -> int:
         return self.amount * (self.per(state, owner, holder) if self.per else 1)
@@ -328,7 +336,7 @@ def _prevent_team(who: str) -> Passive | None:
     r"opponent's Active Pokémon",
 )
 def _bonus_team(*groups: str) -> Passive | None:
-    if len(groups) == 4:
+    if not groups[1].isdigit():
         first, second, n = pokemon_filter(groups[0]), pokemon_filter(groups[1]), groups[2]
         if first is None or second is None:
             return None
@@ -555,6 +563,16 @@ def _parse_sentence(sentence: str) -> list[Passive] | None:
 def compile_passive(text: str) -> tuple[Passive, ...] | None:
     found: list[Passive] = []
     stacks = True
+    whole = _clean(text).rstrip(".")
+    whole = re.sub(r"\s*The effect of .+ doesn't stack\.?$", "", whole)
+    for pattern, build in RULES:
+        match = pattern.fullmatch(whole)
+        if match:
+            result = build(*match.groups())
+            if result is not None:
+                stacks = "doesn't stack" not in text
+                items = result if isinstance(result, list) else [result]
+                return tuple(Passive(**{**p.__dict__, "stacks": stacks}) for p in items)
     for sentence in _sentences(text):
         if re.fullmatch(r"The effect of .+ doesn't stack", sentence):
             stacks = False
@@ -571,16 +589,46 @@ def compile_passive(text: str) -> tuple[Passive, ...] | None:
 @cache
 def _hand_written_source() -> str:
     from pokemon_companion.engine import rules
-    from pokemon_companion.engine.effects import core, passives
+    from pokemon_companion.engine.effects import core, passives, trainers
 
-    return "".join(inspect.getsource(m) for m in (passives, rules, core))
+    return "".join(inspect.getsource(m) for m in (passives, rules, core, trainers))
 
 
+@lru_cache(maxsize=4096)
 def passives_of(ability: Ability) -> tuple[Passive, ...]:
     """Efeitos contínuos da Habilidade (vazio se escrita à mão ou não reconhecida)."""
     if not ability.text or f'"{ability.name}"' in _hand_written_source():
         return ()
     return compile_passive(ability.text) or ()
+
+
+@lru_cache(maxsize=8192)
+def _by_kind(abilities: tuple[Ability, ...]) -> dict[str, tuple[tuple[Passive, str], ...]]:
+    """Passivas de um conjunto de Habilidades, agrupadas por tipo (a maioria
+    dos Pokémon não tem nenhuma: a consulta vira um `dict.get` vazio)."""
+    table: dict[str, list[tuple[Passive, str]]] = {}
+    for ability in abilities:
+        for passive in passives_of(ability):
+            table.setdefault(passive.kind, []).append((passive, ability.name))
+    return {kind: tuple(entries) for kind, entries in table.items()}
+
+
+#: índice por carta: id(carta) → (carta, passivas por tipo). Guardar a carta
+#: mantém o objeto vivo, então o id não é reaproveitado por outro enquanto
+#: estiver aqui (as cartas são imutáveis e compartilhadas).
+_CARD_INDEX: dict[int, tuple[Card, dict[str, tuple[tuple[Passive, str], ...]]]] = {}
+_EMPTY: dict[str, tuple[tuple[Passive, str], ...]] = {}
+
+
+def kind_entries(mon: PokemonInPlay, kind: str) -> tuple[tuple[Passive, str], ...]:
+    card = mon.card
+    if not card.abilities:
+        return ()
+    entry = _CARD_INDEX.get(id(card))
+    if entry is None or entry[0] is not card:
+        entry = (card, _by_kind(tuple(card.abilities)) or _EMPTY)
+        _CARD_INDEX[id(card)] = entry
+    return entry[1].get(kind, ())
 
 
 def rules_in_play(
@@ -594,23 +642,238 @@ def rules_in_play(
     found: list[tuple[Passive, PokemonInPlay, str]] = []
     seen_non_stacking: set[str] = set()
     for mon in player.all_pokemon_in_play():
-        for ability in mon.card.abilities:
-            for passive in passives_of(ability):
-                if passive.kind != kind or not active_test(state, mon, ability.name):
+        if not mon.card.abilities:  # a maioria: sai sem chamar nada
+            continue
+        for passive, name in kind_entries(mon, kind):
+            if passive.holder_at == "active" and player.active is not mon:
+                continue
+            if passive.holder_at == "bench" and not any(mon is b for b in player.bench):
+                continue
+            if not active_test(state, mon, name) or not passive.when(state, owner, mon):
+                continue
+            if not passive.stacks:
+                if name in seen_non_stacking:
                     continue
-                if passive.holder_at == "active" and player.active is not mon:
-                    continue
-                if passive.holder_at == "bench" and not any(mon is b for b in player.bench):
-                    continue
-                if not passive.when(state, owner, mon):
-                    continue
-                if not passive.stacks:
-                    if ability.name in seen_non_stacking:
-                        continue
-                    seen_non_stacking.add(ability.name)
-                found.append((passive, mon, ability.name))
+                seen_non_stacking.add(name)
+            found.append((passive, mon, name))
     return found
 
 
 def is_card_passive(card: Card) -> bool:
     return any(passives_of(ability) for ability in card.abilities)
+
+
+# ---------------------------------------------------------------------------
+# prêmios, supressão, evolução, custo de ataque, Checkup e gatilhos
+
+
+def _has_in_play(name: str) -> HolderTest:
+    return lambda s, o, h: any(m.card.name == name for m in s.state_of(o).all_pokemon_in_play())
+
+
+@rule(
+    r"If 1 of your (.*?)Pokémon is Knocked Out by damage from an attack from your opponent's "
+    r"(.+), that player takes 1 fewer Prize card"
+)
+def _fewer_prizes_team(qualifier: str, who: str) -> Passive | None:
+    target = pokemon_filter(qualifier)
+    attacker = _attacker_filter(who)
+    if target is None or attacker is None:
+        return None
+    return Passive("prize_minus", 1, scope="team", target=target, attacker=attacker)
+
+
+@rule(
+    r"If this Pokémon is Knocked Out by damage from an attack from your opponent's Pokémon, and "
+    r"if you have any (.+) in play, your opponent takes 1 fewer Prize card"
+)
+def _fewer_prizes_if(name: str) -> Passive:
+    return Passive("prize_minus", 1, when=_has_in_play(name.strip()))
+
+
+@rule(
+    r"If this Pokémon is Knocked Out by damage from an attack from your opponent's (.+), your "
+    r"opponent can't take any Prize cards for it"
+)
+def _no_prizes(who: str) -> Passive | None:
+    attacker = _attacker_filter(who)
+    return None if attacker is None else Passive("prize_none", attacker=attacker)
+
+
+@rule(
+    r"If your opponent's (.*?)Pokémon is Knocked Out by damage from an attack used by this "
+    r"Pokémon, take 1 more Prize card"
+)
+def _more_prizes(qualifier: str) -> Passive | None:
+    target = pokemon_filter(qualifier)
+    return None if target is None else Passive("prize_plus", 1, target=target)
+
+
+@rule(
+    r"When your opponent's Active Pokémon is Knocked Out, flip a coin\. If heads, take 1 more Prize card"
+)
+def _wonder_kiss() -> Passive:
+    return Passive("prize_plus", 1, scope="team", coin=True)
+
+
+@rule(r"your opponent's Active Pokémon has no Abilities, except for (.+)")
+def _silence_opp_active(except_name: str) -> Passive:
+    name = except_name.strip()
+    return Passive("suppress", scope="opp_active", event=lambda ability: ability != name)
+
+
+@rule(r"Pokémon with a Rule Box in play have no Abilities, except for Future Pokémon")
+def _silence_rule_box() -> Passive:
+    from pokemon_companion.engine.effects.cardinfo import is_future
+
+    return Passive(
+        "suppress",
+        scope="all",
+        target=lambda m: has_rule_box(m.card) and not is_future(m.card),
+    )
+
+
+@rule(r"Benched Stage 2 Pokémon have no Abilities")
+def _silence_benched_stage2() -> Passive:
+    return Passive("suppress", scope="all_bench", target=lambda m: stage_of(m.card) == "Stage 2")
+
+
+@rule(r"it can evolve during your first turn or the turn you play it")
+def _early_evolve_self() -> Passive:
+    return Passive("early_evolve")
+
+
+@rule(
+    r"If you have (.+?) in play, this Pokémon can evolve during your first turn or the turn you play it"
+)
+def _early_evolve_with(name: str) -> Passive:
+    return Passive("early_evolve", when=_has_in_play(name.strip()))
+
+
+@rule(
+    r"If your opponent's Active Pokémon is a Pokémon ex, this Pokémon can evolve during your "
+    r"first turn or the turn you play it"
+)
+def _early_evolve_vs_ex() -> Passive:
+    return Passive(
+        "early_evolve",
+        when=lambda s, o, h: s.state_of(o.other).active is not None
+        and is_ex(s.state_of(o.other).active.card),  # type: ignore[union-attr]
+    )
+
+
+@rule(r"If you go first, this Pokémon can use attacks during your first turn")
+def _debut() -> Passive:
+    return Passive("first_turn_attack")
+
+
+@rule(r"If your opponent has no Pokémon ex or Pokémon V in play, this Pokémon can't attack")
+def _born_to_slack() -> Passive:
+    return Passive(
+        "no_attack",
+        when=lambda s, o, h: not any(
+            is_ex(m.card) or "V" in m.card.subtypes
+            for m in s.state_of(o.other).all_pokemon_in_play()
+        ),
+    )
+
+
+@rule(r"Attacks used by this Pokémon cost ((?:[\[{]C[\]}])+) less for each (.+)")
+def _cost_minus(symbols: str, what: str) -> Passive | None:
+    amount = len(re.findall(r"[\[{]C[\]}]", symbols))
+    what = what.strip()
+    if what == "of your opponent's Benched Pokémon":
+        return Passive("cost_minus", amount, per=lambda s, o, h: len(s.state_of(o.other).bench))
+    card = re.fullmatch(r"(.+?) card in your discard pile", what)
+    if card:
+        name = card.group(1)
+        return Passive(
+            "cost_minus",
+            amount,
+            per=lambda s, o, h: sum(1 for c in s.state_of(o).discard if c.name == name),
+        )
+    return None
+
+
+@rule(
+    rf"If your opponent has exactly {N} cards in their hand, ignore all {E} Energy in the costs "
+    r"of attacks used by this Pokémon"
+)
+def _ignore_colorless(n: str, _symbol: str) -> Passive:
+    size = int(n)
+    return Passive("ignore_colorless", when=lambda s, o, h: len(s.state_of(o.other).hand) == size)
+
+
+@rule(r"attacks used by your opponent's (.*?)Pokémon cost ((?:[\[{]C[\]}])+) more")
+def _tax_opponent(qualifier: str, symbols: str) -> Passive | None:
+    target = pokemon_filter(qualifier)
+    if target is None:
+        return None
+    amount = len(re.findall(r"[\[{]C[\]}]", symbols))
+    return Passive("tax_opponent", amount, target=target)
+
+
+@rule(rf"During Pokémon Checkup, put {N} more damage counters on your opponent's Burned Pokémon")
+def _checkup_burn(n: str) -> Passive:
+    return Passive("checkup_burn", counters=int(n))
+
+
+@rule(
+    rf"During Pokémon Checkup, if this Pokémon is in the Active Spot, put {N} damage counters on "
+    r"each of your opponent's Basic Pokémon"
+)
+def _checkup_basics(n: str) -> Passive:
+    return Passive("checkup_basics", counters=int(n), holder_at="active")
+
+
+@rule(
+    r"whenever your opponent's Active Pokémon moves to the Bench during their turn, their new "
+    r"Active Pokémon is now (\w+)",
+    r"Whenever your opponent's Active Pokémon moves to the Bench during their turn, their new "
+    r"Active Pokémon is now (\w+)",
+)
+def _on_retreat_status(name: str) -> Passive | None:
+    status = STATUSES.get(name)
+    return None if status is None else Passive("on_opp_to_bench", status=status)
+
+
+@rule(
+    rf"Whenever your opponent's Active Pokémon moves to the Bench during their turn, place {N} "
+    r"damage counters on that Pokémon"
+)
+def _on_retreat_counters(n: str) -> Passive:
+    return Passive("on_opp_to_bench", counters=int(n))
+
+
+@rule(
+    rf"Whenever your opponent attaches an Energy card from their hand to 1 of their Pokémon, put "
+    rf"{N} damage counters on that Pokémon"
+)
+def _gnawing(n: str) -> Passive:
+    return Passive("on_opp_attach", counters=int(n))
+
+
+@rule(
+    rf"whenever you attach an Energy card from your hand to 1 of your Pokémon, heal {N} damage "
+    r"from that Pokémon"
+)
+def _auto_heal(n: str) -> Passive:
+    return Passive("on_attach_heal", int(n))
+
+
+@rule(
+    rf"Whenever your opponent plays a Pokémon from their hand to evolve 1 of their Pokémon, put "
+    rf"{N} damage counters on that Pokémon"
+)
+def _darkest_impulse(n: str) -> Passive:
+    return Passive("on_opp_evolve", counters=int(n))
+
+
+@rule(r"Put this Pokémon into play only with the effect of .+")
+def _no_normal_play() -> Passive:
+    return Passive("no_normal_play")
+
+
+def card_passives(card: Card) -> tuple[Passive, ...]:
+    """Passivas de uma carta que ainda não está em jogo (ex.: na mão)."""
+    return tuple(p for ability in card.abilities for p in passives_of(ability))
