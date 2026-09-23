@@ -125,6 +125,8 @@ class PlayerState:
     damage_bonus_this_turn: list[tuple[int, str]] = field(default_factory=list)
     items_blocked_turn: int | None = None
     supporters_blocked_turn: int | None = None
+    #: no fim do turno N, descarta a mão se tiver pelo menos X cartas: (X, N)
+    discard_hand_at_end: tuple[int, int] | None = None
     stadiums_blocked_turn: int | None = None
     evolution_blocked_turn: int | None = None
     #: turno em que um Pokémon deste jogador foi nocauteado (para "se algum dos

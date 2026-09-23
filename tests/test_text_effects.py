@@ -511,3 +511,73 @@ def test_bonus_that_depends_on_discarding_the_hand(state):
 
     assert state.opponent.active.damage_counters == 240
     assert state.player.hand == []
+
+
+# --------------------------------------------------------------------------
+# lote 5: Treinadores, Estádios e energias especiais
+
+
+def test_amarys_discards_the_hand_at_the_end_of_the_turn_if_big(state):
+    amarys = trainer_card(
+        "Test Amarys",
+        "Supporter",
+        "Draw 4 cards. At the end of this turn, if you have 5 or more cards in your hand, discard "
+        "your hand.",
+    )
+    state.player.hand = [amarys, mon("A")]
+    rules.apply_action(state, PlayTrainer(hand_index=0))
+    assert len(state.player.hand) == 5
+
+    rules.apply_action(state, EndTurn())
+
+    assert state.player.hand == []
+
+
+def test_team_guard_reduces_damage_next_turn(state):
+    gaze = trainer_card(
+        "Test Gaze",
+        "Supporter",
+        "During your opponent's next turn, all of your Pokémon take 30 less damage from attacks "
+        "from your opponent's Pokémon.",
+    )
+    state.player.hand = [gaze]
+    rules.apply_action(state, PlayTrainer(hand_index=0))
+    rules.apply_action(state, EndTurn())
+    state.opponent.active.attached_energies = ["Colorless"]
+
+    rules.apply_action(state, UseAttack(attack_index=0))  # Tackle 20 do oponente
+
+    assert state.player.active.damage_counters == 0
+
+
+@pytest.mark.parametrize(
+    "stage, provides",
+    [("Basic", ["Any"]), ("Stage 1", ["Colorless"])],
+)
+def test_prism_energy_is_any_type_only_on_basics(state, stage, provides):
+    from pokemon_companion.engine.effects import passives
+    from pokemon_companion.engine.game_state import PlayerId
+
+    card = dataclasses.replace(
+        mon("Holder"), subtypes=[stage], evolves_from=None if stage == "Basic" else "X"
+    )
+    holder = PokemonInPlay(card=card, attached_energies=["Prism Energy"])
+
+    assert passives.provided_energy(state, PlayerId.PLAYER, holder) == provides
+
+
+def test_stadium_reduction_and_free_retreat(state):
+    from pokemon_companion.engine.effects import passives
+    from pokemon_companion.engine.game_state import PlayerId
+
+    metal = make_basic_pokemon("Steel", 200, "Metal")
+    state.opponent.active = PokemonInPlay(card=metal)
+    state.stadium = trainer_card("Full Metal Lab", "Stadium", "")
+    attack_with(state, "", "100", name="Plain")
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+    assert state.opponent.active.damage_counters == 70
+
+    state.stadium = trainer_card("N's Castle", "Stadium", "")
+    ns = PokemonInPlay(card=mon("N's Zorua"))
+    assert passives.retreat_cost(state, PlayerId.PLAYER, ns) == 0

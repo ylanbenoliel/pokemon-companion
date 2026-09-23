@@ -488,6 +488,13 @@ def _pokemon_checkup(state: GameState, messages: list[str]) -> None:
         if active is None:
             continue
         messages.extend(apply_between_turns_effects(active))
+        if (
+            active.status == StatusCondition.POISONED
+            and passives.stadium_is(state, "Perilous Jungle")
+            and pokemon_type(active.card) != "Darkness"
+        ):
+            active.damage_counters += 20
+            messages.append(f"Perilous Jungle: +2 contadores em {active.card.name}.")
         if active.status == StatusCondition.POISONED:
             opponent_active = state.state_of(pid.other).active
             if opponent_active is not None and passives.ability_active(
@@ -520,6 +527,11 @@ def _end_of_turn_effects(state: GameState, messages: list[str]) -> None:
         while "Ignition Energy" in mon.attached_energies:
             player.discard.append(core.detach_energy(mon, "Ignition Energy"))
             messages.append(f"Ignition Energy de {mon.card.name} foi descartada.")
+    limit = player.discard_hand_at_end
+    if limit and limit[1] == state.turn_number and len(player.hand) >= limit[0]:
+        player.discard.extend(player.hand)
+        player.hand.clear()
+        messages.append(f"{pid.value} descartou a mão no fim do turno.")
     active = player.active
     if active is not None and passives.tool_active(state, active, "Powerglass"):
         ctx = Ctx(state, pid, active, messages=messages)

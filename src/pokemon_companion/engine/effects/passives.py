@@ -72,6 +72,8 @@ def hp_bonus(state: GameState, mon: PokemonInPlay) -> int:
         bonus += 20 * mon.attached_energies.count("Growing Grass Energy")
     if stadium_is(state, "Gravity Mountain") and stage_of(mon.card) == "Stage 2":
         bonus -= 30
+    if stadium_is(state, "Lively Stadium") and stage_of(mon.card) == "Basic":
+        bonus += 30
     owner = owner_of(state, mon)
     for passive, holder in compiled(state, owner, "hp"):
         if _applies(passive, holder, mon):
@@ -99,6 +101,10 @@ def retreat_cost(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> int:
         cost += 1
     if any(_applies(p, h, mon) for p, h in compiled(state, owner, "no_retreat")):
         return 0
+    if stadium_is(state, "N's Castle") and in_group(mon.card, "N's"):
+        return 0
+    if "Magnetic Metal Energy" in mon.attached_energies and pokemon_type(mon.card) == "Metal":
+        return 0
     is_active = mon is state.state_of(owner).active
     for passive, _holder in compiled(state, owner, "retreat"):
         if passive.scope == "own_active" and is_active:  # type: ignore[attr-defined]
@@ -117,6 +123,12 @@ def provided_energy(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> li
     for energy in mon.attached_energies:
         if energy == "Legacy Energy":
             units.append("Any")
+        elif energy == "Prism Energy":
+            units.append("Any" if stage_of(mon.card) == "Basic" else "Colorless")
+        elif energy == "Reversal Energy":
+            behind = len(state.state_of(owner).prizes) > len(state.state_of(owner.other).prizes)
+            evolved = stage_of(mon.card) != "Basic" and not has_rule_box(mon.card)
+            units.append("Any" if behind and evolved else "Colorless")
         elif energy == "Neo Upper Energy":
             units.extend(["Any", "Any"] if stage_of(mon.card) == "Stage 2" else ["Colorless"])
         elif energy == "Team Rocket's Energy":
@@ -272,6 +284,13 @@ def attacker_bonus(
     if ability_active(state, attacker, "Compound Eyes") and defender.card.abilities:
         bonus += 50
     bonus += compiled_bonus(state, attacker_owner, attacker, defender)
+    if stadium_is(state, "Postwick") and in_group(attacker.card, "Hop's"):
+        bonus += 30
+    if (
+        "Voltaic Lightning Energy" in attacker.attached_energies
+        and pokemon_type(attacker.card) == "Lightning"
+    ):
+        bonus += 20 * attacker.attached_energies.count("Voltaic Lightning Energy")
     for passive, _holder in compiled(state, attacker_owner.other, "weaken"):
         if passive.attacker(attacker):  # type: ignore[attr-defined]
             bonus -= passive.amount  # type: ignore[attr-defined]
@@ -283,13 +302,18 @@ def static_damage_reduction(
 ) -> int:
     """Reduções contínuas de dano vindas de Habilidades passivas (Curly
     Wall: seus Básicos {C} tomam 60 a menos com outro Bouffalant em jogo)."""
+    stadium = 0
+    if stadium_is(state, "Full Metal Lab") and pokemon_type(defender.card) == "Metal":
+        stadium = 30
+    if stadium_is(state, "Granite Cave") and in_group(defender.card, "Steven's"):
+        stadium = 30
     if stage_of(defender.card) != "Basic" or pokemon_type(defender.card) != "Colorless":
-        return 0
+        return stadium
     team = state.state_of(defender_owner).all_pokemon_in_play()
     walls = sum(1 for mon in team if ability_active(state, mon, "Curly Wall"))
     if walls - (1 if ability_active(state, defender, "Curly Wall") else 0) >= 1:
-        return 60
-    return 0
+        return 60 + stadium
+    return stadium
 
 
 def damage_prevented(
@@ -304,6 +328,18 @@ def damage_prevented(
     if ability_active(state, defender, "Mysterious Rock Inn") and is_ex(attacker.card):
         return True
     if compiled_prevents(state, defender_owner, defender, attacker):
+        return True
+    if (
+        stadium_is(state, "Neutralization Zone")
+        and not has_rule_box(defender.card)
+        and (is_ex(attacker.card) or "V" in attacker.card.subtypes)
+    ):
+        return True
+    if (
+        not is_active
+        and "Shadowy Darkness Energy" in defender.attached_energies
+        and pokemon_type(defender.card) == "Darkness"
+    ):
         return True
     owner_state = state.state_of(defender_owner)
     if not is_active:

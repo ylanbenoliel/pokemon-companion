@@ -101,6 +101,9 @@ TYPED_SPECIAL_ENERGIES = {
     "Growing Grass Energy": "Grass",
     "Rocky Fighting Energy": "Fighting",
     "Bubbly Water Energy": "Water",
+    "Shadowy Darkness Energy": "Darkness",
+    "Voltaic Lightning Energy": "Lightning",
+    "Magnetic Metal Energy": "Metal",
 }
 
 
