@@ -2056,3 +2056,79 @@ class StadiumCard(QGraphicsObject):
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent | None) -> None:
         if self._usable:
             self.clicked.emit()
+
+
+class HintBubble(QGraphicsObject):
+    """Dica para iniciantes: fica até ser tocada, até a jogada sugerida
+    acontecer ou até o turno acabar (diferente dos toasts, que somem sozinhos)."""
+
+    dismissed = pyqtSignal()
+    WIDTH = 330.0
+
+    def __init__(self, key: str, text: str) -> None:
+        super().__init__()
+        self.key = key
+        self._text = text
+        self._title_font = ui_font(8.5, QFont.Weight.Bold)
+        self._title_font.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 115)
+        self._font = ui_font(10)
+        metrics = QFontMetricsF(self._font)
+        body = metrics.boundingRect(
+            QRectF(0, 0, self.WIDTH - 32, 400),
+            int(Qt.TextFlag.TextWordWrap),
+            text,
+        )
+        height = body.height() + 50
+        self._rect = QRectF(-self.WIDTH / 2, -height / 2, self.WIDTH, height)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setAcceptedMouseButtons(Qt.MouseButton.LeftButton)
+
+    @property
+    def text(self) -> str:
+        return self._text
+
+    def boundingRect(self) -> QRectF:
+        return self._rect.adjusted(-6, -6, 6, 10)
+
+    def mousePressEvent(self, event: QGraphicsSceneMouseEvent | None) -> None:  # noqa: N802
+        self.dismissed.emit()
+
+    def paint(
+        self,
+        painter: QPainter | None,
+        option: QStyleOptionGraphicsItem | None,
+        widget: QWidget | None = None,
+    ) -> None:
+        if painter is None:
+            return
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        paint_soft_shadow(painter, self._rect, 14, 4)
+        painter.setPen(QPen(VOLT, 2))
+        painter.setBrush(QColor(8, 30, 30, 238))
+        painter.drawRoundedRect(self._rect, 14, 14)
+        inner = self._rect.adjusted(16, 12, -16, -12)
+        painter.setPen(VOLT)
+        painter.setFont(self._title_font)
+        draw_text(
+            painter,
+            QRectF(inner.left(), inner.top(), inner.width(), 16),
+            "DICA",
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+        )
+        painter.setPen(QColor(BONE))
+        painter.setFont(self._font)
+        draw_text(
+            painter,
+            inner.adjusted(0, 20, 0, 0),
+            self._text,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+            wrap=True,
+        )
+        painter.setPen(QColor(247, 239, 225, 120))
+        painter.setFont(ui_font(8))
+        draw_text(
+            painter,
+            QRectF(inner.left(), inner.top(), inner.width(), 16),
+            "tocar para fechar",
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+        )

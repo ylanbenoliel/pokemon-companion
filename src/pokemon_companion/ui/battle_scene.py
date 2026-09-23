@@ -65,6 +65,7 @@ from pokemon_companion.ui.items import (
     FloatingText,
     GameOverOverlay,
     HandCard,
+    HintBubble,
     InspectPanel,
     OpponentHandFan,
     Particle,
@@ -121,6 +122,7 @@ ATTACK_BUTTON_YS = (476.0, 540.0, 604.0)
 RETREAT_BUTTON_POS = QPointF(458, 522)
 INSPECT_POS = QPointF(170, 420)
 TOAST_ANCHOR = QPointF(372, CENTER_Y - 30)  # espaço livre à esquerda do ativo do oponente
+HINT_POS = QPointF(372, 232)  # acima dos toasts, abaixo do banco do oponente
 
 HAND_CENTER_X = 640.0
 HAND_BASE_Y = 848.0
@@ -204,6 +206,7 @@ class BattleScene(QGraphicsScene):
         self._tints: dict[PlayerId, QColor] = {}
         self._zone_items: list[ZoneHighlight] = []
         self._toasts: list[Toast] = []
+        self._hint: HintBubble | None = None
         self._toast_animations: list[QAbstractAnimation] = []
         self._game_over: GameOverOverlay | None = None
 
@@ -897,6 +900,28 @@ class BattleScene(QGraphicsScene):
             self._run_toast_animation(prop(existing, b"pos", target, 220))
         self._run_toast_animation(prop(toast, b"opacity", 1.0, 160))
         QTimer.singleShot(Animator.ms(2600), lambda: self._fade_toast(toast))
+
+    def show_hint(self, key: str, text: str) -> HintBubble:
+        """Dica para iniciantes (uma por vez; troca a anterior)."""
+        self.hide_hint()
+        bubble = HintBubble(key, text)
+        bubble.setZValue(2150)
+        bubble.setPos(HINT_POS)
+        bubble.setOpacity(0.0)
+        bubble.dismissed.connect(self.hide_hint)
+        self.addItem(bubble)
+        self._hint = bubble
+        self._run_toast_animation(prop(bubble, b"opacity", 1.0, 220))
+        return bubble
+
+    def hide_hint(self) -> None:
+        bubble, self._hint = self._hint, None
+        if bubble is not None and bubble.scene() is self:
+            self.removeItem(bubble)
+
+    @property
+    def hint(self) -> HintBubble | None:
+        return self._hint
 
     def _run_toast_animation(self, animation: QAbstractAnimation) -> None:
         self._toast_animations = [

@@ -103,3 +103,61 @@ def test_help_has_rules_and_controls(qtbot):
     qtbot.addWidget(dialog)
     assert dialog.tabs.count() == len(PAGES)
     assert "Prêmio" in PAGES[0][1] and "Esc" in PAGES[-1][1]
+
+
+# --------------------------------------------------------------------------
+# dicas para iniciantes
+
+
+def _mid_game_state():
+    from pokemon_companion.cards_db.basic_energies import BASIC_ENERGIES
+
+    from .conftest import make_basic_pokemon
+    from .test_rules import build_state
+
+    state = build_state(
+        player_active=make_basic_pokemon("Front", 100, "Fire", attack_cost=["Colorless"]),
+        opponent_active=make_basic_pokemon("Foe", 100, "Water"),
+    )
+    state.player.hand = [BASIC_ENERGIES["Fire"]]
+    state.player.deck = [BASIC_ENERGIES["Fire"]] * 10
+    return state
+
+
+def test_next_hint_follows_what_is_possible_now():
+    from pokemon_companion.ui.hints import ENERGY, next_hint
+
+    state = _mid_game_state()
+    legal = rules.legal_actions(state)
+    assert next_hint(state, legal, set()) == ENERGY
+    assert next_hint(state, legal, {"energy", "attack"}) is None
+
+
+def test_attack_hint_after_energy_is_known():
+    from pokemon_companion.engine.actions import AttachEnergy
+    from pokemon_companion.ui.hints import ATTACK, next_hint
+
+    state = _mid_game_state()
+    rules.apply_action(state, AttachEnergy(hand_index=0, target_is_active=True))
+    assert next_hint(state, rules.legal_actions(state), {"energy"}) == ATTACK
+
+
+def test_controller_shows_each_hint_once(qtbot, tmp_path):
+    state = _mid_game_state()
+    scene = BattleScene(ArtProvider(art_dir=tmp_path, fetch=lambda url: None))
+    ctrl = BattleController(scene, state_factory=lambda: state, ai_factory=EasyAI)
+    ctrl.hints_enabled = True
+    ctrl._refresh_controls()
+
+    assert scene.hint is not None and scene.hint.key == "energy"
+    assert "energy" in settings_module.seen_hints()
+
+    scene.hide_hint()
+    ctrl._refresh_controls()
+    assert scene.hint is None or scene.hint.key != "energy"
+
+
+def test_hints_stay_off_when_disabled(controller):
+    controller.hints_enabled = False
+    controller._refresh_controls()
+    assert controller.scene.hint is None

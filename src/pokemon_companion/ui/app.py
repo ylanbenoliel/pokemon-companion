@@ -71,8 +71,15 @@ from pokemon_companion.ui.battle_scene import BattleScene, Target
 from pokemon_companion.ui.deck_menu import DeckMenu, menu_size_hint, read_entry
 from pokemon_companion.ui.dialogs import PauseMenu, SettingsDialog
 from pokemon_companion.ui.help import HelpDialog
+from pokemon_companion.ui.hints import next_hint
 from pokemon_companion.ui.items import HandCard, PokemonToken
-from pokemon_companion.ui.settings import Settings, load_settings, save_settings
+from pokemon_companion.ui.settings import (
+    Settings,
+    load_settings,
+    mark_hint_seen,
+    save_settings,
+    seen_hints,
+)
 from pokemon_companion.ui.sound import NullSounds, sound_player
 from pokemon_companion.ui.sound_cues import attack_cue, cues_for, snapshot
 from pokemon_companion.ui.theme import FELT_DEEP, primary_type, ui_font
@@ -108,6 +115,8 @@ class BattleController(QObject):
         self._game_over_shown = False
         #: menu de pausa aberto: a IA espera
         self.paused = False
+        #: dicas para iniciantes (a janela liga conforme as configurações)
+        self.hints_enabled = False
         self._ai_timer = QTimer(self)
         self._ai_timer.setSingleShot(True)
         self._ai_timer.timeout.connect(self._ai_step)
@@ -267,6 +276,18 @@ class BattleController(QObject):
             ability_tokens=ability_tokens,
             stadium_usable=any(isinstance(a, UseStadium) for a in legal),
         )
+        if my_turn:
+            self._coach(legal)
+
+    def _coach(self, legal: list[Action]) -> None:
+        """Dica para iniciantes: a aberta fica até ser fechada ou o jogador
+        agir; então vem a próxima ainda não vista, se a situação dela chegou."""
+        if not self.hints_enabled or self.spectating or self.scene.hint is not None:
+            return
+        hint = next_hint(self.state, legal, seen_hints())
+        if hint is not None:
+            mark_hint_seen(hint.key)
+            self.scene.show_hint(hint.key, hint.text)
 
     def _lock_controls(self) -> None:
         self.scene.set_player_controls(
@@ -530,6 +551,8 @@ class BattleController(QObject):
         self._lock_controls()
         actor = rules.decision_player(self.state)
         actor_state = self.state.state_of(actor)
+        if actor == PlayerId.PLAYER:
+            self.scene.hide_hint()
         hand_index = getattr(action, "hand_index", None)
         if (
             card_source is None
@@ -666,6 +689,7 @@ class MainWindow(QMainWindow):
         self.controller = BattleController(
             self.scene, state_factory, ai_factory, history_path, player_ai_factory, self.sounds
         )
+        self.controller.hints_enabled = self.settings.hints
         self.sounds.play_music("battle")
         shortcuts: list[tuple[Qt.Key, Callable[[], None]]] = [
             (Qt.Key.Key_Escape, self.open_pause_menu),
@@ -682,6 +706,9 @@ class MainWindow(QMainWindow):
     # -- configurações -----------------------------------------------------
     def apply_settings(self, settings: Settings) -> None:
         self.settings = settings
+        self.controller.hints_enabled = settings.hints
+        if not settings.hints:
+            self.scene.hide_hint()
         apply_settings(settings, self.sounds)
         self.settings_changed.emit(settings)
 
