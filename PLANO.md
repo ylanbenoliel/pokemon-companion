@@ -259,6 +259,14 @@ cura, redução de dano, recuo, Hide, Round, dano por energia de um tipo...).
 ataque só causam dano. Cobertura do pool: 881 → 1239 de 3636
 textos-impressão; torneio de 600 partidas com os 25 decks, 0 erros.
 
+**Lotes 2–8 (23/09/2026)**: compilador de texto (`text_effects.py`, frases →
+passos) e de passivas (`passive_text.py`), mais mecanismos genéricos no motor
+(Fósseis como Pokémon, escudos, retaliação, gatilhos de nocaute, prêmios,
+supressão de Habilidades, custos). Cobertura: 1239 → 3596 de 3636
+textos-impressão (27 efeitos distintos faltando, todos casos únicos e
+complexos: Multi Adapter, Double Type, Memory Dive, Tyme, Anthea & Concordia,
+Ogre's Mask, Transformation Tome, marca Ancient/Future em Apoiadores...).
+
 **Rotina agendada (pendente: precisa do repositório no GitHub)** — segunda
 às 9h de Belém (`0 12 * * 1` UTC), lote de ~40 efeitos por PR. Prompt:
 
