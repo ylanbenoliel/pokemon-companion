@@ -129,3 +129,18 @@ def test_cues_are_ordered_in_time(state):
     )
     delays = [delay for delay, _ in cues]
     assert delays == sorted(delays) and len(cues) <= sound_cues.MAX_CUES
+
+
+def test_music_tracks_exist_and_loop_cleanly():
+    import wave
+
+    import numpy as np
+
+    from pokemon_companion.ui.sound import MUSIC_DIR
+
+    for track in ("menu", "battle"):
+        with wave.open(str(MUSIC_DIR / f"{track}.wav")) as f:
+            samples = np.frombuffer(f.readframes(f.getnframes()), "<i2").astype(float) / 32768
+            assert f.getnframes() / f.getframerate() > 15
+        # loop sem estalo: o fim encaixa no começo
+        assert abs(samples[0] - samples[-1]) < 0.05
