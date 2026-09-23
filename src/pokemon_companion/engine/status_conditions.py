@@ -74,7 +74,8 @@ def can_retreat(pokemon: PokemonInPlay) -> bool:
 def check_confusion_self_damage(
     pokemon: PokemonInPlay, flip_coin: CoinFlip = default_coin_flip
 ) -> tuple[bool, list[str]]:
-    """Se confuso, sorteia se o ataque falha e causa 30 de dano a si mesmo.
+    """Se confuso, sorteia se o ataque falha e causa `confusion_damage` (30,
+    salvo efeitos) de dano a si mesmo.
 
     Retorna (pode_atacar, mensagens).
     """
@@ -82,7 +83,8 @@ def check_confusion_self_damage(
         return True, []
     if flip_coin():
         return True, [f"{pokemon.card.name} está confuso, mas o ataque prosseguiu (cara)."]
-    pokemon.damage_counters += 30
+    damage = pokemon.confusion_damage
+    pokemon.damage_counters += damage
     return False, [
-        f"{pokemon.card.name} está confuso e falhou o ataque, sofrendo 30 de dano (coroa)."
+        f"{pokemon.card.name} está confuso e falhou o ataque, sofrendo {damage} de dano (coroa)."
     ]

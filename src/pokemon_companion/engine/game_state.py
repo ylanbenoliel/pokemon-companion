@@ -78,8 +78,17 @@ class PokemonInPlay:
     poison_damage: int = 10
     #: último dano recebido de ataque: (quantidade, turno)
     last_attacked: tuple[int, int] | None = None
-    #: turno em que, para atacar, o dono precisa tirar cara numa moeda
+    #: turno em que, para atacar, o dono precisa tirar cara em `attack_coins` moedas
     attack_coin_turn: int | None = None
+    attack_coins: int = 1
+    #: armadilha para energia anexada da mão: (tipo, turno) — "lock", "end_turn",
+    #: "counters:8"
+    attach_trap: tuple[str, int] | None = None
+    #: dano que a confusão causa ao falhar o ataque
+    confusion_damage: int = 30
+    #: prêmios extras para quem nocautear este Pokémon: (quantidade, turno)
+    bounty: tuple[int, int] | None = None
+    healed_this_turn: bool = False
     #: turno em que ataques e recuo deste Pokémon custam {C} a mais
     taxed_turn: int | None = None
 
@@ -126,6 +135,11 @@ class PlayerState:
     damage_bonus_this_turn: list[tuple[int, str]] = field(default_factory=list)
     items_blocked_turn: int | None = None
     supporters_blocked_turn: int | None = None
+    #: Pokémon com menos de N energias não atacam no turno T: (N, T)
+    attack_energy_min: tuple[int, int] | None = None
+    face_up_prizes: int = 0
+    #: prêmios pegos num turno: (quantidade, turno)
+    prizes_taken_last: tuple[int, int] | None = None
     #: no fim do turno N, descarta a mão se tiver pelo menos X cartas: (X, N)
     discard_hand_at_end: tuple[int, int] | None = None
     stadiums_blocked_turn: int | None = None

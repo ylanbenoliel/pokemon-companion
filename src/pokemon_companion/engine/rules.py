@@ -145,6 +145,11 @@ def _can_evolve_onto(state: GameState, pid: PlayerId, card: Card, mon: PokemonIn
     )
 
 
+def _attach_locked(state: GameState, mon: PokemonInPlay) -> bool:
+    trap = mon.attach_trap
+    return trap is not None and trap == ("lock", state.turn_number)
+
+
 def _can_attach(card: Card, mon: PokemonInPlay) -> bool:
     if card.name == "Team Rocket's Energy":
         return in_group(mon.card, "Team Rocket's")
@@ -319,10 +324,14 @@ def legal_actions(state: GameState) -> list[Action]:
         for i, card in enumerate(player.hand):
             if card.supertype != Supertype.ENERGY or not first("energy", card):
                 continue
-            if player.active and _can_attach(card, player.active):
+            if (
+                player.active
+                and _can_attach(card, player.active)
+                and not _attach_locked(state, player.active)
+            ):
                 actions.append(AttachEnergy(hand_index=i, target_is_active=True))
             for bi, mon in enumerate(player.bench):
-                if _can_attach(card, mon):
+                if _can_attach(card, mon) and not _attach_locked(state, mon):
                     actions.append(
                         AttachEnergy(hand_index=i, target_is_active=False, bench_index=bi)
                     )
@@ -408,6 +417,9 @@ def _process_knockouts(
             owner.knocked_out_turn = state.turn_number
             owner.knocked_out_names.append(mon.card.name)
             taken = min(max(prizes, 0), len(taker.prizes))
+            last = taker.prizes_taken_last
+            already = last[0] if last and last[1] == state.turn_number else 0
+            taker.prizes_taken_last = (already + taken, state.turn_number)
             for _ in range(taken):
                 taker.hand.append(taker.prizes.pop())
             if taken:
@@ -603,6 +615,7 @@ def _reset_turn_flags(state: GameState, pid: PlayerId) -> None:
     player.played_this_turn = []
     for mon in player.all_pokemon_in_play():
         mon.evolved_this_turn = False
+        mon.healed_this_turn = False
         mon.abilities_used = set()
 
 
@@ -664,6 +677,17 @@ def apply_action(state: GameState, action: Action) -> list[str]:
         core.attach_energy_card(target, card)
         passives.after_hand_attach(state, pid, target)
         player.has_attached_energy_this_turn = True
+        trap = target.attach_trap
+        if trap is not None and trap[1] == state.turn_number:
+            if trap[0].startswith("counters:"):
+                target.damage_counters += 10 * int(trap[0].partition(":")[2])
+                messages.append(f"Armadilha: contadores em {target.card.name}.")
+            elif trap[0] == "end_turn":
+                messages.append("Anexar essa energia encerrou o turno.")
+                _after_action(state, messages)
+                if state.winner is None and state.pending_promotion is None:
+                    messages.extend(_end_turn(state))
+                return messages
         messages.append(f"{who} anexou {card.name} em {target.card.name}.")
         if card.name == "Enriching Energy":
             drawn = core.draw(player, 4)
@@ -766,7 +790,8 @@ def _apply_attack(state: GameState, pid: PlayerId, action: UseAttack) -> list[st
     player.attacks_this_turn += 1
     can_proceed, confusion_messages = check_confusion_self_damage(attacker)
     messages.extend(confusion_messages)
-    if can_proceed and attacker.attack_coin_turn == state.turn_number and not core.coin():
+    coin_check = can_proceed and attacker.attack_coin_turn == state.turn_number
+    if coin_check and not all(core.coin() for _ in range(attacker.attack_coins)):
         messages.append(f"Coroa: {attacker.card.name} não consegue atacar.")
         can_proceed = False
     player.last_attack = (attack.name, state.turn_number)

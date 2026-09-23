@@ -53,8 +53,8 @@ def test_hand_registered_attacks_win_over_the_compiler():
 @pytest.mark.parametrize(
     "text",
     [
-        # "a number of cards" não é o nome de uma carta
-        "Search your deck for a number of cards up to the number of heads and put them "
+        # "a number of cards ..." não é o nome de uma carta
+        "Search your deck for a number of cards up to the number of your dreams and put them "
         "into your hand. Then, shuffle your deck.",
         # "3 or more Energy" não é o nome de um Pokémon
         "If you have 3 or more Pokémon named Foo in play, this attack does 70 more damage.",
@@ -637,3 +637,17 @@ def test_trigger_when_moved_from_active_to_bench(state):
     rules.apply_action(state, UseAbility(position=0, ability_name="Test Reload"))
 
     assert state.player.bench[0].attached_energies == ["Water", "Water"]
+
+
+def test_search_as_many_cards_as_heads(state, monkeypatch):
+    text = (
+        "Flip a coin until you get tails. Search your deck for a number of cards up to the number "
+        "of heads and put them into your hand. Then, shuffle your deck."
+    )
+    flips = iter([True, True, False])
+    monkeypatch.setattr(core, "coin", lambda: next(flips))
+    attack_with(state, text)
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert len(state.player.hand) == 2

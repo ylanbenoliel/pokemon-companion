@@ -171,8 +171,28 @@ def energy_satisfies(units: list[str], cost: list[str]) -> bool:
     return assign(0, list(units))
 
 
+def _cost_from_text(mon: PokemonInPlay, attack: Attack) -> list[str] | None:
+    """Custos alternativos escritos no próprio ataque."""
+    import re
+
+    text = attack.text
+    alt = re.search(
+        r"If this Pokémon has any damage counters on it, this attack can be used for [\[{](\w)[\]}]",
+        text,
+    )
+    if alt and mon.damage_counters:
+        from pokemon_companion.engine.effects.attacks import ENERGY_SYMBOLS
+
+        return [ENERGY_SYMBOLS.get(alt.group(1), "Colorless")]
+    free = "If this Pokémon is affected by a Special Condition, ignore all Energy in this attack's cost"
+    if free in text and mon.status.name != "NONE":
+        return []
+    return None
+
+
 def attack_cost(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack: Attack) -> list[str]:
-    cost = list(attack.cost)
+    alternative = _cost_from_text(mon, attack)
+    cost = list(attack.cost) if alternative is None else alternative
     if mon.taxed_turn == state.turn_number:
         cost.append("Colorless")
     if stadium_is(state, "Nighttime Mine") and is_tera(mon.card):
@@ -219,6 +239,9 @@ def attack_allowed(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack
     if mon.blocked_attack == (attack.name, state.turn_number):
         return False
     if any(holder is mon for _, holder in compiled(state, owner, "no_attack")):
+        return False
+    minimum = state.state_of(owner).attack_energy_min
+    if minimum and minimum[1] == state.turn_number and len(mon.attached_energies) <= minimum[0]:
         return False
     going_second_lock = "If you go second, you can't use this attack during your first turn"
     if going_second_lock in attack.text and state.turn_number == 2:
@@ -583,6 +606,9 @@ def prize_adjustment(
     from pokemon_companion.engine.effects.core import coin
 
     change = 0
+    bounty = knocked_out.bounty
+    if bounty and bounty[1] == state.turn_number:
+        change += bounty[0]
     for passive, holder in compiled(state, owner, "prize_none"):
         if holder is knocked_out and (attacker is None or passive.attacker(attacker)):  # type: ignore[attr-defined]
             return -prizes

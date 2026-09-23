@@ -482,6 +482,8 @@ def set_status(ctx: Ctx, owner: PlayerId, mon: PokemonInPlay, status: StatusCond
     mon.status = status
     if status == StatusCondition.POISONED:
         mon.poison_damage = 10
+    if status == StatusCondition.CONFUSED:
+        mon.confusion_damage = 30
     ctx.log(f"{mon.card.name} agora está {status.name}.")
     return True
 
@@ -508,6 +510,8 @@ def place_counters(
 def heal(mon: PokemonInPlay, amount: int) -> int:
     healed = min(amount, mon.damage_counters)
     mon.damage_counters -= healed
+    if healed:
+        mon.healed_this_turn = True
     return healed
 
 
