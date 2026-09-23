@@ -6,7 +6,7 @@ da simulação com quem venceu de verdade.
     uv run python tools/replay_top_cut.py --tournament 515 --labs 0071 --series 40
 
 Mundial 2026 (San Francisco): tournament 515, labs 0071. As listas ficam em
-`examples/decks/worlds2026/` e o relatório em `data/top_cut/`.
+`src/pokemon_companion/decks/worlds2026/` e o relatório em `data/top_cut/`.
 """
 
 from __future__ import annotations
@@ -28,6 +28,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from fetch_top_decks import decklist_text, slug  # noqa: E402
 from tournament import _init_worker, load_all, play_game  # noqa: E402
+
+from pokemon_companion.paths import BUNDLED_DECKS  # noqa: E402
 
 LIMITLESS = "https://limitlesstcg.com"
 LABS = "https://labs.limitlesstcg.com"
@@ -156,7 +158,7 @@ def main() -> None:
     parser.add_argument("--labs", default="0071", help="id do torneio no labs.limitlesstcg.com")
     parser.add_argument("--series", type=int, default=40, help="melhores de 3 por confronto")
     parser.add_argument("--level", default="hard", choices=["easy", "medium", "hard"])
-    parser.add_argument("--decks", type=Path, default=Path("examples/decks/worlds2026"))
+    parser.add_argument("--decks", type=Path, default=BUNDLED_DECKS / "worlds2026")
     parser.add_argument("--out", type=Path, default=Path("data/top_cut"))
     args = parser.parse_args()
 

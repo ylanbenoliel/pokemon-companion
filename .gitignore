@@ -11,9 +11,6 @@ wheels/
 
 # Cache/dados locais do projeto (banco de cartas, decklists, imagens baixadas)
 /data/*
-!/data/decks/
-/data/decks/*
-!/data/decks/.gitkeep
 
 # Ferramentas de tipagem/lint
 .mypy_cache/

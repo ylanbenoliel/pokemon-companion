@@ -19,25 +19,25 @@ uv run black --check . && uv run ruff check .   # formatação/lint
 uv run python -m pokemon_companion.main --difficulty medium
 
 # CLI com decklists reais (precisa de internet; formato Limitless/PTCGO):
-uv run python -m pokemon_companion.main --player-deck data/decks/meu_deck.txt --opponent-deck data/decks/deck_da_ia.txt --record-history data/partida1.json
+uv run python -m pokemon_companion.main --player-deck meu_deck.txt --opponent-deck deck_da_ia.txt --record-history data/partida1.json
 
 # Tabuleiro gráfico (PyQt6): sem argumentos abre a tela de seleção de decks
 # (seu deck × deck da IA × dificuldade, estilo TCG Pocket; Esc volta ao menu):
 uv run python -m pokemon_companion.ui.app
 # Direto numa partida, sem passar pelo menu:
 uv run python -m pokemon_companion.ui.app --difficulty hard \
-  --player-deck examples/decks/top/01_dragapult_ex.txt \
-  --opponent-deck examples/decks/worlds2026/1_andrew_hedrick_dragapult.txt
+  --player-deck src/pokemon_companion/decks/top/01_dragapult_ex.txt \
+  --opponent-deck src/pokemon_companion/decks/worlds2026/1_andrew_hedrick_dragapult.txt
 
 # Modo espectador: duas IAs no difícil com decks competitivos (Regional de Baltimore, 09/2026):
 uv run python -m pokemon_companion.ui.app --spectate --difficulty hard --player-difficulty hard \
-  --player-deck examples/decks/dragapult_ex.txt --opponent-deck examples/decks/ns_zoroark_ex.txt \
+  --player-deck src/pokemon_companion/decks/dragapult_ex.txt --opponent-deck src/pokemon_companion/decks/ns_zoroark_ex.txt \
   --speed 1.5 --record-history data/partida.json
 
 # Torneio IA vs IA (round robin, sem interface, paralelo) com os 25 decks do meta:
-uv run python tools/tournament.py examples/decks/top --games 4 --level hard
+uv run python tools/tournament.py src/pokemon_companion/decks/top --games 4 --level hard
 # Quais textos de cartas dos decks ainda não têm efeito implementado:
-uv run python tools/effect_coverage.py examples/decks/top
+uv run python tools/effect_coverage.py src/pokemon_companion/decks/top
 # Atualizar os decks do meta a partir do limitlesstcg.com (o ranking tem 25):
 uv run python tools/fetch_top_decks.py --top 25
 # Reproduzir o top cut de um torneio real (padrão: Mundial 2026):
@@ -84,7 +84,7 @@ uv run python tools/replay_top_cut.py --series 40
 125 testes passando (`uv run pytest`), `black`/`ruff`/`mypy` limpos.
 
 - ✅ **Decks competitivos + modo espectador (pós-plano)**: duas listas reais do
-  Limitless em `examples/decks/` (Dragapult ex, 3º no Regional de Baltimore;
+  Limitless em `src/pokemon_companion/decks/` (Dragapult ex, 3º no Regional de Baltimore;
   N's Zoroark ex). Parser aceita o export atual do Limitless (`Pokémon (19)`,
   `3 Fire Energy MEE 2`, comentários `#`). Cartas via pokemontcg.io com
   fallback automático para a TCGdex (`cards_db/tcgdex_client.py`,
@@ -137,8 +137,8 @@ uv run python tools/replay_top_cut.py --series 40
   (baixa a melhor lista publicada), colar o link de uma lista/arquétipo, ou
   colar o texto da decklist. O HTML é lido por regex (o site não tem API
   pública), então o parsing é testável sem rede; só `fetch()` faz requisição
-  de verdade, isolado por injeção nos testes. O deck importado é salvo em
-  `data/decks/` e a tira da tela inicial se atualiza na hora, já selecionado
+  de verdade, isolado por injeção nos testes. O deck importado é salvo na
+  pasta de decks do usuário (`paths.USER_DECKS`) e a tira da tela inicial se atualiza na hora, já selecionado
   para o lado armado.
 
 ## Regras completas e motor de efeitos (09/2026)
@@ -281,12 +281,30 @@ textos-impressão; torneio de 600 partidas com os 25 decks, 0 erros.
 > viram `options`; o resto é heurística. 4) Teste cada mecanismo novo em
 > `tests/test_effects.py`. Tudo verde antes do PR: `uv run black . && uv run
 > ruff check . && uv run mypy src && uv run pytest -q`; `uv run python
-> tools/effect_coverage.py examples/decks/top` com 0 faltando; `uv run
-> python tools/tournament.py examples/decks/top --games 2 --level hard` sem
+> tools/effect_coverage.py src/pokemon_companion/decks/top` com 0 faltando; `uv run
+> python tools/tournament.py src/pokemon_companion/decks/top --games 2 --level hard` sem
 > erros. 5) Atualize os números desta seção do PLANO.md. 6) Commits em
 > português, numa branch nova; abra um PR para `main` com a cobertura antes e
 > depois e a lista do que foi implementado. Nunca faça push na `main` nem
 > force push. Se não houver nada a fazer, não abra PR.
+
+## Executável (PyInstaller)
+
+    uv run pyinstaller --noconfirm packaging/pokemon_companion.spec
+
+Gera `dist/Pokemon Companion.app` (~140 MB, quase tudo Qt e OpenCV). Nada
+depende da pasta de onde o app é aberto: os decks que acompanham o app ficam
+no pacote (`src/pokemon_companion/decks`) e os dados do usuário (decks
+importados, cache de cartas, artes) na pasta de dados do SO
+(`paths.USER_DATA`; no Mac, `~/Library/Application Support/pokemon-companion`).
+O `Info.plist` declara `NSCameraUsageDescription` — sem isso o macOS encerra
+o app ao abrir a câmera.
+
+Limites atuais: sem build cruzado (o `.exe` precisa ser gerado num Windows —
+o caminho é GitHub Actions quando houver repositório); o build sai só para a
+arquitetura da máquina (arm64 aqui; Mac Intel precisa de build próprio); sem
+assinatura/notarização o macOS mostra "desenvolvedor não identificado"
+(abrir com botão direito → Abrir) e o Windows mostra o SmartScreen.
 
 ## Torneio IA vs IA — top 20 do meta (resultados e ajustes)
 
@@ -345,7 +363,7 @@ para reproduzir são os confrontos, não os lances.
 
 Mundial 2026 (San Francisco, 28–30/08/2026, 797 jogadores, formato
 TEF–Pitch Black): campeão Andrew Hedrick (Dragapult); as 8 listas ficam em
-`examples/decks/worlds2026/` (o 5º e o 6º colocados usaram a mesma lista, é
+`src/pokemon_companion/decks/worlds2026/` (o 5º e o 6º colocados usaram a mesma lista, é
 assim no Limitless).
 
 Medida mais estável que "acertou o vencedor" (7 confrontos em melhor de 3

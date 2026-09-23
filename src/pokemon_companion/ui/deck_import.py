@@ -2,7 +2,8 @@
 
 Três caminhos, na mesma janela: procurar o arquétipo pelo nome no Limitless
 (o app baixa a melhor lista publicada), colar o link de uma lista, ou colar o
-texto da decklist (formato Limitless/PTCGO). O deck vai para `data/decks/` e
+texto da decklist (formato Limitless/PTCGO). O deck vai para a pasta de decks
+do usuário (`paths.USER_DECKS`) e
 aparece na tira da tela inicial.
 """
 
@@ -28,9 +29,8 @@ from PyQt6.QtWidgets import (
 
 from pokemon_companion.cards_db import limitless
 from pokemon_companion.cards_db.limitless import Archetype
+from pokemon_companion.paths import USER_DECKS
 from pokemon_companion.ui.theme import FELT_DEEP, FELT_LIT, display_font, ui_font
-
-USER_DECKS = Path("data/decks")
 
 SearchFn = Callable[[str], list[Archetype]]
 DownloadFn = Callable[[Archetype], tuple[str, str, int]]

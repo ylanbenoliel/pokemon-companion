@@ -24,7 +24,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 import requests
-from platformdirs import user_data_dir
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import (
     QBrush,
@@ -39,6 +38,7 @@ from PyQt6.QtGui import (
 )
 
 from pokemon_companion.cards_db.models import Card, Supertype
+from pokemon_companion.paths import USER_DATA
 from pokemon_companion.ui.theme import energy_color
 from pokemon_companion.vision.recognition_index import load_or_download_card_image
 
@@ -46,7 +46,7 @@ POKEAPI_ARTWORK_URL = (
     "https://raw.githubusercontent.com/PokeAPI/sprites/master/"
     "sprites/pokemon/other/official-artwork/{number}.png"
 )
-DEFAULT_ART_DIR = Path(user_data_dir("pokemon-companion", "pokemon-companion")) / "card_art"
+DEFAULT_ART_DIR = USER_DATA / "card_art"
 
 # Janela da ilustração dentro do scan de uma carta (frações de largura/altura).
 CARD_ILLUSTRATION_WINDOW = (0.085, 0.105, 0.915, 0.47)

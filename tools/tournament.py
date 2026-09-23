@@ -1,7 +1,7 @@
 """Torneio IA vs IA (round robin) entre decklists, sem interface.
 
 Uso:
-    uv run python tools/tournament.py examples/decks/top --games 4 --level hard
+    uv run python tools/tournament.py src/pokemon_companion/decks/top --games 4 --level hard
 
 Cada par de decks joga `--games` partidas (alternando quem começa). Gera
 `<saída>/results.json` (uma linha por partida) e imprime um resumo: taxa de

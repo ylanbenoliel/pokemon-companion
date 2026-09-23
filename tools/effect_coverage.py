@@ -3,7 +3,7 @@ implementação (ataques com texto sem registro, Habilidades sem registro nem
 efeito passivo, Treinadores sem registro).
 
 Uso:
-    uv run python tools/effect_coverage.py examples/decks/top
+    uv run python tools/effect_coverage.py src/pokemon_companion/decks/top
 """
 
 from __future__ import annotations

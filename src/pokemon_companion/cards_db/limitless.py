@@ -6,7 +6,7 @@ Três formas de trazer um deck do competitivo para o app:
   os arquétipos do formato atual com a fatia do meta de cada um;
 - por **link** de uma lista ou de um arquétipo (`deck_text_from_url`);
 - colando o texto da decklist (formato Limitless/PTCGO), que não passa por
-  aqui — é só salvar o arquivo em `data/decks/`.
+  aqui — é só salvar o arquivo na pasta de decks do usuário.
 
 O HTML é lido por expressão regular (o site não tem API pública): as funções
 de parse recebem a página como texto, então dá para testá-las sem rede.

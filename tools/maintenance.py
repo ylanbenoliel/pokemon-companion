@@ -5,7 +5,7 @@
 
 1. baixa todas as cartas legais no Standard (TCGdex) e regrava as
    assinaturas de legalidade (`cards_db/standard_legal.json`);
-2. atualiza os decks do meta (Limitless, `examples/decks/top`);
+2. atualiza os decks do meta (Limitless, `src/pokemon_companion/decks/top`);
 3. mede a cobertura de efeitos no pool inteiro e nos decks do meta, e
    procura cartas fora da rotação nos decks.
 
@@ -29,8 +29,9 @@ from pokemon_companion.cards_db.cache import CardCache
 from pokemon_companion.cards_db.decklist_parser import load_deck
 from pokemon_companion.cards_db.models import Card
 from pokemon_companion.deck_loading import make_lookup
+from pokemon_companion.paths import BUNDLED_DECKS
 
-META_DIR = Path("examples/decks/top")
+META_DIR = BUNDLED_DECKS / "top"
 REPORT = Path("data/maintenance_report.md")
 TOOLS = Path(__file__).parent
 

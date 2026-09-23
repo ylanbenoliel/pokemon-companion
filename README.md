@@ -36,7 +36,7 @@ visão computacional por último:
   de ataques, nocaute no banco, prêmios por tipo (ex/V = 2, Mega ex/VMAX/
   VSTAR = 3), escolha manual do Ativo/Banco no setup e após nocaute, e
   Morte Súbita. Os efeitos de cartas são registrados por nome em
-  `engine/effects/` e cobrem os 20 decks do meta em `examples/decks/top/`;
+  `engine/effects/` e cobrem os 20 decks do meta em `src/pokemon_companion/decks/top/`;
   cartas fora deles podem ficar sem efeito (ver `tools/effect_coverage.py`).
 - Regras de torneio (tempo, deck check) não são aplicadas.
 - A interface abre numa tela de confronto (seu deck × deck da IA e a

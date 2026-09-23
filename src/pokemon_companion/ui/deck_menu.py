@@ -4,7 +4,8 @@ A tela é o próprio duelo: o seu deck e o da IA ficam frente a frente, em
 tamanho de carta, e a tira embaixo é a caixa de decks de onde você tira o
 próximo. Clicar num dos dois lados diz qual deles a tira vai trocar.
 
-Os decks vêm de `examples/decks/` (meta atual e Mundial) e de `data/decks/`.
+Os decks vêm do pacote (`decks/`: meta atual, Mundial e exemplos) e da pasta
+de decks do usuário (os importados).
 A arte é a do Pokémon principal da lista, buscada **só no cache local** — a
 tela abre rápido e sem internet; deck ainda não importado mostra só a cor.
 """
@@ -32,6 +33,7 @@ from PyQt6.QtWidgets import (
 from pokemon_companion.cards_db.cache import CardCache
 from pokemon_companion.cards_db.decklist_parser import load_deck
 from pokemon_companion.cards_db.models import Card
+from pokemon_companion.paths import BUNDLED_DECKS, USER_DECKS
 from pokemon_companion.ui.art import ArtProvider
 from pokemon_companion.ui.deck_import import DeckImportDialog
 from pokemon_companion.ui.theme import (
@@ -47,17 +49,12 @@ from pokemon_companion.ui.theme import (
 )
 
 DECK_FOLDERS = (
-    Path("examples/decks/top"),
-    Path("examples/decks/worlds2026"),
-    Path("examples/decks"),
-    Path("data/decks"),
+    BUNDLED_DECKS / "top",
+    BUNDLED_DECKS / "worlds2026",
+    BUNDLED_DECKS,
+    USER_DECKS,
 )
-GROUP_LABELS = {
-    "top": "Meta atual",
-    "worlds2026": "Mundial 2026",
-    "decks": "Exemplos",
-    "data": "Meus decks",
-}
+GROUP_LABELS = {"top": "Meta atual", "worlds2026": "Mundial 2026"}
 DIFFICULTIES = (("easy", "Fácil"), ("medium", "Média"), ("hard", "Difícil"))
 HERO_SIZE = QSize(300, 306)
 THUMB_SIZE = QSize(132, 124)
@@ -91,8 +88,15 @@ def read_entry(path: Path) -> DeckEntry:
         head, _, tail = first.partition("—")
         title = head.strip() or title
         subtitle = tail.strip()
-    group = GROUP_LABELS.get(path.parent.name, path.parent.name)
-    return DeckEntry(path=path, title=title, subtitle=subtitle, group=group)
+    return DeckEntry(path=path, title=title, subtitle=subtitle, group=_group(path.parent))
+
+
+def _group(folder: Path) -> str:
+    if folder == USER_DECKS:
+        return "Meus decks"
+    if folder == BUNDLED_DECKS:
+        return "Exemplos"
+    return GROUP_LABELS.get(folder.name, folder.name)
 
 
 def discover_decks(folders: tuple[Path, ...] = DECK_FOLDERS) -> list[DeckEntry]:

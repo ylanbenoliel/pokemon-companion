@@ -12,11 +12,10 @@ import json
 import sqlite3
 from pathlib import Path
 
-from platformdirs import user_data_dir
-
 from pokemon_companion.cards_db.models import Ability, Attack, Card, Supertype, WeaknessResistance
+from pokemon_companion.paths import USER_DATA
 
-DEFAULT_DB_PATH = Path(user_data_dir("pokemon-companion", "pokemon-companion")) / "cards_cache.db"
+DEFAULT_DB_PATH = USER_DATA / "cards_cache.db"
 
 
 def card_to_json(card: Card) -> str:

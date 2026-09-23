@@ -1,5 +1,5 @@
 """Baixa os N arquétipos mais jogados do Limitless (formato atual) e salva a
-lista mais bem colocada de cada um em `examples/decks/top/NN_nome.txt`.
+lista mais bem colocada de cada um em `src/pokemon_companion/decks/top/NN_nome.txt`.
 
     uv run python tools/fetch_top_decks.py --top 20
 """
@@ -12,6 +12,8 @@ import re
 from pathlib import Path
 
 import requests
+
+from pokemon_companion.paths import BUNDLED_DECKS
 
 BASE = "https://limitlesstcg.com"
 HEADERS = {"User-Agent": "Mozilla/5.0 (pokemon-companion deck fetcher)"}
@@ -64,7 +66,7 @@ def slug(name: str) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--top", type=int, default=20)
-    parser.add_argument("--out", type=Path, default=Path("examples/decks/top"))
+    parser.add_argument("--out", type=Path, default=BUNDLED_DECKS / "top")
     parser.add_argument(
         "--clean", action="store_true", help="remove os decks que saíram do ranking"
     )
