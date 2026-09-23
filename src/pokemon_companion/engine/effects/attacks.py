@@ -83,7 +83,13 @@ def estimated_damage(state: object, side: object, mon: PokemonInPlay, attack_: A
 
 
 def spec_for(attack_: Attack) -> AttackSpec | None:
-    return ATTACKS.get(attack_.name)
+    """Registro à mão pelo nome; senão, o texto compilado (`text_effects`)."""
+    spec = ATTACKS.get(attack_.name)
+    if spec is None and attack_.text:
+        from pokemon_companion.engine.effects.text_effects import compiled_spec
+
+        spec = compiled_spec(attack_.text)
+    return spec
 
 
 def attack_options(ctx: Ctx, attack_: Attack) -> list[Target | None]:

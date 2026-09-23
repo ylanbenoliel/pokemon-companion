@@ -35,7 +35,7 @@ def missing_effects(cards: Iterable[Card]) -> tuple[Counter[str], Counter[str]]:
             for attack in card.attacks:
                 if attack.text:
                     total["ataque"] += 1
-                    if attack.name not in attacks.ATTACKS:
+                    if attacks.spec_for(attack) is None:
                         missing[f"ataque  {attack.name} ({card.name})"] += 1
             for ability in card.abilities:
                 total["habilidade"] += 1
