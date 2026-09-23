@@ -58,6 +58,7 @@ class PokemonInPlay:
     damage_reduction: tuple[int, int] | None = None  # (quantidade, turno)
     attack_debuff: tuple[int, int] | None = None  # (quantidade, turno)
     moved_to_active_turn: int | None = None
+    moved_to_bench_turn: int | None = None
     #: turno em que foi jogado da mão para o banco (Habilidades "quando você
     #: jogar este Pokémon da mão no seu banco")
     played_from_hand_turn: int | None = None

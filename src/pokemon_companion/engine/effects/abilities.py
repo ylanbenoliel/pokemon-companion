@@ -40,6 +40,16 @@ class AbilitySpec:
     options: OptionsFn | None = None
     #: limite "não pode usar mais de 1 Habilidade X por turno" (por jogador)
     shared_limit: str | None = None
+    #: "As often as you like during your turn" (com teto por turno)
+    repeatable: bool = False
+
+
+#: teto de usos por turno de uma Habilidade repetível (evita laço na IA)
+MAX_REPEATS = 8
+
+
+def _uses(mon: PokemonInPlay, name: str) -> int:
+    return sum(1 for used in mon.abilities_used if used.startswith(f"{name}#"))
 
 
 ABILITIES: dict[str, AbilitySpec] = {}
@@ -77,6 +87,8 @@ def usable_abilities(ctx: Ctx, mon: PokemonInPlay) -> list[tuple[str, AbilitySpe
         spec = spec_for(ab)
         if spec is None or ab.name in mon.abilities_used:
             continue
+        if spec.repeatable and _uses(mon, ab.name) >= MAX_REPEATS:
+            continue
         if not passives.ability_active(ctx.state, mon, ab.name):
             continue
         if spec.shared_limit and spec.shared_limit in ctx.me.used_ability_names:
@@ -102,7 +114,8 @@ def use_ability(ctx: Ctx, name: str) -> None:
     ability_ = next(ab for ab in ctx.source.card.abilities if ab.name == name)
     spec = spec_for(ability_)
     assert spec is not None
-    ctx.source.abilities_used.add(name)
+    used = f"{name}#{_uses(ctx.source, name)}" if spec.repeatable else name
+    ctx.source.abilities_used.add(used)
     if spec.shared_limit:
         ctx.me.used_ability_names.add(spec.shared_limit)
     ctx.log(f"{ctx.who()} usou a Habilidade {name} de {ctx.source.card.name}.")

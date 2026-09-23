@@ -581,3 +581,59 @@ def test_stadium_reduction_and_free_retreat(state):
     state.stadium = trainer_card("N's Castle", "Stadium", "")
     ns = PokemonInPlay(card=mon("N's Zorua"))
     assert passives.retreat_cost(state, PlayerId.PLAYER, ns) == 0
+
+
+# --------------------------------------------------------------------------
+# lote 6: Habilidades repetíveis, custo antes do cabeçalho e novos gatilhos
+
+
+def test_repeatable_ability_stops_when_it_has_nothing_to_do(state):
+    text = (
+        "As often as you like during your turn, you may attach a Basic {L} Energy card from your "
+        "hand to 1 of your Iono's Pokémon."
+    )
+    streamer = with_ability_text(mon("Iono's Bellibolt ex"), "Test Streamer", text)
+    state.player.active = PokemonInPlay(card=streamer)
+    state.player.hand = [BASIC_ENERGIES["Lightning"], BASIC_ENERGIES["Lightning"], mon("X")]
+
+    for _ in range(2):
+        rules.apply_action(state, UseAbility(position=-1, ability_name="Test Streamer"))
+
+    assert state.player.active.attached_energies == ["Lightning", "Lightning"]
+    assert not any(isinstance(a, UseAbility) for a in rules.legal_actions(state))
+
+
+def test_cost_written_before_the_head(state):
+    text = (
+        "You must discard a Basic {L} Energy from this Pokémon in order to use this Ability. Once "
+        "during your turn, you may draw cards until you have 6 cards in your hand."
+    )
+    drawer = with_ability_text(mon("Kilowattrel"), "Test Flashing Draw", text)
+    state.player.active = PokemonInPlay(card=drawer)
+    assert not any(isinstance(a, UseAbility) for a in rules.legal_actions(state))
+
+    state.player.active.attached_energies = ["Lightning"]
+    rules.apply_action(state, UseAbility(position=-1, ability_name="Test Flashing Draw"))
+
+    assert state.player.active.attached_energies == []
+    assert len(state.player.hand) == 6
+
+
+def test_trigger_when_moved_from_active_to_bench(state):
+    text = (
+        "Once during your turn, when this Pokémon moves from the Active Spot to your Bench, you "
+        "may use this Ability. Attach up to 2 Basic {W} Energy cards from your hand to this "
+        "Pokémon."
+    )
+    reloader = with_ability_text(mon("Clawitzer"), "Test Reload", text)
+    state.player.active = PokemonInPlay(card=reloader)
+    state.player.bench = [PokemonInPlay(card=mon("Pivot"))]
+    state.player.hand = [BASIC_ENERGIES["Water"], BASIC_ENERGIES["Water"]]
+    assert not any(isinstance(a, UseAbility) for a in rules.legal_actions(state))
+
+    from pokemon_companion.engine.effects import core
+
+    core.switch_active(state, state.player, 0)
+    rules.apply_action(state, UseAbility(position=0, ability_name="Test Reload"))
+
+    assert state.player.bench[0].attached_energies == ["Water", "Water"]

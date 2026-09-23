@@ -424,6 +424,7 @@ def switch_active(state: GameState, player: PlayerState, bench_index: int) -> No
         return
     incoming = player.bench[bench_index]
     player.active.status = StatusCondition.NONE
+    player.active.moved_to_bench_turn = state.turn_number
     player.bench[bench_index] = player.active
     player.active = incoming
     incoming.moved_to_active_turn = state.turn_number

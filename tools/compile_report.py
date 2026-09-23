@@ -168,7 +168,7 @@ def main() -> None:
             continue
         if spec is None:
             parts = text_effects._ability_parts(text)
-            effect = parts[2] if parts else text
+            effect = parts.effect if parts else text
             label = "[H] " if parts else "[H passiva] "
             for sentence in text_effects.unknown_sentences(effect) or [effect[:120]]:
                 unknown[label + normalize(sentence)] += 1

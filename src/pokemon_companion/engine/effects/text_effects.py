@@ -21,6 +21,7 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
+from typing import NamedTuple
 
 from pokemon_companion.cards_db.models import Attack, Card
 from pokemon_companion.engine.effects import attacks, core, passives
@@ -75,6 +76,8 @@ class Run:
     drawn: int = 0
     #: cartas escolhidas/vistas ("those cards", "you find there")
     picked: list[Card] = field(default_factory=list)
+    #: condição especial escolhida ("that Special Condition")
+    chosen_status: StatusCondition | None = None
 
     @property
     def me(self) -> PlayerState:
@@ -987,8 +990,13 @@ def _destination(sentence: str) -> MonTest | None:
     tail = sentence.rsplit(" to ", 1)[-1].strip()
     if tail == "this Pokémon":
         return lambda run, m: m is run.source
-    if tail == "your Active Pokémon":
-        return lambda run, m: m is run.me.active
+    active = re.fullmatch(r"your Active (.*?)Pokémon", tail)
+    if active:
+        qualifier = _qualifier(active.group(1))
+        if qualifier is None:
+            return None
+        only = qualifier
+        return lambda run, m: m is run.me.active and only(m)
     match = re.fullmatch(
         expand(r"(?:{N} of )?your (Benched )?(.*?)Pokémon(?: in any way you like)?"), tail
     )
@@ -3212,6 +3220,11 @@ _ABILITY_HEADS: list[tuple[str, str | None, Callable[[Ctx], bool] | None]] = [
     ),
     (r"if this Pokémon is in the Active Spot,? ", None, lambda ctx: ctx.me.active is ctx.source),
     (
+        r"when this Pokémon moves from the Active Spot to (?:your|the) Bench,? ",
+        None,
+        lambda ctx: ctx.source is not None and ctx.source.moved_to_bench_turn == ctx.turn,
+    ),
+    (
         r"if this Pokémon is on your Bench,? ",
         None,
         lambda ctx: any(ctx.source is b for b in ctx.me.bench),
@@ -3219,20 +3232,95 @@ _ABILITY_HEADS: list[tuple[str, str | None, Callable[[Ctx], bool] | None]] = [
 ]
 
 
-def _ability_parts(
-    text: str,
-) -> tuple[str, list[Callable[[Ctx], bool]], str, Act | None] | None:
-    """(gatilho, checagens, texto do efeito, custo) de uma Habilidade ativada."""
+class AbilityParts(NamedTuple):
+    trigger: str
+    checks: list[Callable[[Ctx], bool]]
+    effect: str
+    cost: Act | None
+    repeatable: bool
+    shared_limit: str | None
+
+
+def _cost_before_head(text: str) -> tuple[Act, Callable[[Ctx], bool], str] | None:
+    """ "You must discard/put X ... in order to use this Ability." no começo."""
+    match = re.match(r"You must (.+?) in order to use this Ability\. ", text)
+    if not match:
+        return None
+    what = match.group(1)
+    rest = text[match.end() :]
+    energy_self = re.fullmatch(expand(r"discard an? Basic {E} Energy from this Pokémon"), what)
+    if energy_self:
+        kind_ = energy(energy_self.group(1))
+
+        def pay_energy(run: Run) -> None:
+            if run.source is not None and kind_ in run.source.attached_energies:
+                run.me.discard.append(core.detach_energy(run.source, kind_))
+
+        return (
+            pay_energy,
+            lambda ctx: ctx.source is not None and kind_ in ctx.source.attached_energies,
+            rest,
+        )
+    from_hand = re.fullmatch(expand(r"discard {N} (.+?) from your hand"), what)
+    if from_hand:
+        amount = num(from_hand.group(1))
+        card_filter = parse_kind(from_hand.group(2))
+        if card_filter is None:
+            return None
+        found = card_filter
+
+        def pay_hand(run: Run) -> None:
+            for card in [c for c in run.me.hand if found(c)][:amount]:
+                run.me.hand.remove(card)
+                run.me.discard.append(card)
+
+        return pay_hand, lambda ctx: sum(1 for c in ctx.me.hand if found(c)) >= amount, rest
+    if what == "put a card from your hand on the bottom of your deck":
+
+        def pay_bottom(run: Run) -> None:
+            worst = min(
+                run.me.hand, key=lambda c: core.card_priority(run.ctx.state, run.ctx.player_id, c)
+            )
+            run.me.hand.remove(worst)
+            run.me.deck.append(worst)
+
+        return pay_bottom, lambda ctx: bool(ctx.me.hand), rest
+    return None
+
+
+def _ability_parts(text: str) -> AbilityParts | None:
+    """Gatilho, checagens, texto do efeito, custo e repetição de uma
+    Habilidade ativada ou de entrada em jogo."""
     text = _clean(text)
-    trigger, checks = "turn", []
-    head = re.match(r"(?:Once during your turn, |(?=When you play this Pokémon))", text)
+    checks: list[Callable[[Ctx], bool]] = []
+    cost: Act | None = None
+    early = _cost_before_head(text)
+    if early is not None:
+        cost, early_check, text = early
+        checks.append(early_check)
+    shared: str | None = None
+    limit = re.search(r"\s*You can't use more than 1 (.+?) Ability during your turn\.?$", text)
+    if limit:
+        shared, text = limit.group(1), text[: limit.start()]
+    trigger, repeatable = "turn", False
+    head = re.match(
+        r"(Once during your turn, |Once during your first turn, |As often as you like during "
+        r"your turn, |(?=When you play this Pokémon))",
+        text,
+    )
     if head is None:
         return None
+    if head.group(1).startswith("As often"):
+        repeatable = True
+    if head.group(1).startswith("Once during your first turn"):
+        checks.append(lambda ctx: ctx.turn <= 2)
     rest = text[head.end() :]
     rest = rest[0].lower() + rest[1:]
     changed = True
     while changed:
         changed = False
+        if rest.startswith("and "):
+            rest, changed = rest[4:], True
         for prefix, new_trigger, check in _ABILITY_HEADS:
             match = re.match(prefix, rest, re.IGNORECASE)
             if match:
@@ -3240,14 +3328,13 @@ def _ability_parts(
                 trigger = new_trigger or trigger
                 if check is not None:
                     checks.append(check)
-        match = re.match(r"if (.+?), (?=you may )", rest, re.IGNORECASE)
+        match = re.match(r"if (.+?), (?=(?:and if |you may ))", rest, re.IGNORECASE)
         if match:
             predicate = parse_condition(match.group(1))
             if predicate is None:
                 return None
             checks.append(_check(predicate))
             rest, changed = rest[match.end() :], True
-    cost: Act | None = None
     match = re.match(r"you may discard (.+?) from your hand in order to use this Ability\. ", rest)
     if match:
         wanted = re.sub(r"^(?:an?) ", "", match.group(1))
@@ -3270,7 +3357,7 @@ def _ability_parts(
     else:
         return None
     rest = rest[0].upper() + rest[1:]
-    return trigger, checks, rest, cost
+    return AbilityParts(trigger, checks, rest, cost, repeatable, shared)
 
 
 def _opp_any_targets(ctx: Ctx) -> list[Target | None]:
@@ -3297,7 +3384,7 @@ def compiled_ability(text: str) -> AbilitySpec | None:
     parts = _ability_parts(text)
     if parts is None:
         return None
-    trigger, checks, effect, cost = parts
+    trigger, checks, effect, cost = parts.trigger, parts.checks, parts.effect, parts.cost
     compiled = compile_card_text(effect)
     if compiled is None:
         return None
@@ -3306,12 +3393,45 @@ def compiled_ability(text: str) -> AbilitySpec | None:
         program.steps.insert(0, Step("pre", cost, desc="custo da Habilidade"))
     all_checks = checks + more_checks
     options = _ABILITY_OPTIONS.get(program.option or "")
+
+    def can_use(ctx: Ctx) -> bool:
+        if not all(check(ctx) for check in all_checks):
+            return False
+        return not parts.repeatable or _changes_something(ctx, program)
+
     return AbilitySpec(
         lambda ctx: _run_effect(program, ctx),
-        lambda ctx: all(check(ctx) for check in all_checks),
+        can_use,
         trigger,
         options,
+        shared_limit=parts.shared_limit,
+        repeatable=parts.repeatable,
     )
+
+
+def _signature(ctx: Ctx) -> tuple[object, ...]:
+    def side(player: PlayerState) -> tuple[object, ...]:
+        mons = tuple(
+            (m.card.name, tuple(m.attached_energies), m.damage_counters, m.status)
+            for m in player.all_pokemon_in_play()
+        )
+        return len(player.hand), len(player.deck), len(player.discard), mons
+
+    return side(ctx.me), side(ctx.opp)
+
+
+def _changes_something(ctx: Ctx, program: Program) -> bool:
+    """Habilidade repetível só é oferecida se usá-la muda o jogo (senão a IA
+    a repetiria à toa)."""
+    twin = ctx.state.clone()
+    source = None
+    if ctx.source is not None:
+        position = core.position_of(ctx.me, ctx.source)
+        source = core.mon_at(twin.state_of(ctx.player_id), position)
+    twin_ctx = Ctx(twin, ctx.player_id, source)
+    before = _signature(twin_ctx)
+    _run_effect(program, twin_ctx)
+    return _signature(twin_ctx) != before
 
 
 @phrase("If you use this Ability, this Pokémon is Knocked Out")
@@ -5512,3 +5632,336 @@ def _bargain_no(n: str) -> Step:
 @count(r"Pokémon you find there")
 def _n_found_pokemon() -> Counter_:
     return lambda run: sum(1 for c in run.opp.hand if c.is_pokemon)
+
+
+# ---------------------------------------------------------------------------
+# lote 6: efeitos de Habilidades ativadas e de entrada em jogo
+
+
+@phrase("Put {N} damage counters on each of them", "put {N} damage counters on each of them")
+def _counters_on_chosen(n: str) -> Step:
+    return after(_counters_on(lambda r: list(r.chosen), num(n)))
+
+
+@phrase(
+    "Switch in {N} of your opponent's Benched Pokémon that has {N} HP or less remaining to the "
+    "Active Spot"
+)
+def _gust_weak(_n: str, hp: str) -> Step:
+    def act(run: Run) -> None:
+        weak = [i for i, m in enumerate(run.opp.bench) if m.current_hp <= num(hp)]
+        if weak:
+            best = max(weak, key=lambda i: core._prize_value(run.opp.bench[i].card))
+            core.switch_active(run.ctx.state, run.opp, best)
+
+    return Step("before", act)
+
+
+@phrase(
+    "Have your opponent reveal their hand and you put any number of Basic Pokémon you find there "
+    "onto their Bench"
+)
+def _fill_their_bench_all() -> Step:
+    def act(run: Run) -> None:
+        for card in [c for c in run.opp.hand if c.is_basic]:
+            if not core.bench_space(run.ctx.state, run.opp):
+                break
+            run.opp.hand.remove(card)
+            core.put_on_bench(run.ctx.state, run.opp, card)
+
+    return after(act)
+
+
+@phrase(
+    "Your opponent reveals their hand, and you put a Basic Pokémon with {N} HP or less that you "
+    "find there onto your opponent's Bench"
+)
+def _fill_their_bench_one(hp: str) -> Step:
+    def act(run: Run) -> None:
+        small = [c for c in run.opp.hand if c.is_basic and (c.hp or 0) <= num(hp)]
+        if small and core.bench_space(run.ctx.state, run.opp):
+            run.opp.hand.remove(small[0])
+            core.put_on_bench(run.ctx.state, run.opp, small[0])
+
+    return after(act)
+
+
+def _heal_all_of(test: Callable[[Run, PokemonInPlay], bool]) -> Act:
+    def act(run: Run) -> None:
+        run.chosen = []
+        for mon in run.me.all_pokemon_in_play():
+            if test(run, mon) and core.heal(mon, mon.damage_counters):
+                run.chosen.append(mon)
+        run.did = bool(run.chosen)
+
+    return act
+
+
+@phrase("Heal all damage from each of your (.*?)Pokémon")
+def _heal_all_each(qualifier: str) -> Step | None:
+    test = _qualifier(qualifier)
+    if test is None:
+        return None
+    only = test
+    return after(_heal_all_of(lambda run, m: only(m)))
+
+
+@phrase("Heal all damage from your Active (.*?)Pokémon")
+def _heal_all_active(qualifier: str) -> Step | None:
+    test = _qualifier(qualifier)
+    if test is None:
+        return None
+    only = test
+    return after(_heal_all_of(lambda run, m: m is run.me.active and only(m)))
+
+
+@phrase(
+    "If you healed any damage in this way, discard all Energy from those Pokémon",
+    "If you healed any damage in this way, discard all Energy from that Pokémon",
+)
+def _discard_energy_of_healed() -> Step:
+    def act(run: Run) -> None:
+        for mon in run.chosen:
+            for energy_name in list(mon.attached_energies):
+                run.me.discard.append(core.detach_energy(mon, energy_name))
+
+    return after(act)
+
+
+@kind(r"(.+ Energy) card")
+def _k_special_energy_named(name: str) -> CardFilter | None:
+    words = name.split()
+    if len(words) < 2 or words[0] == "Basic" or any(not w[0].isupper() for w in words):
+        return None
+    return lambda card: card.name == name
+
+
+@phrase("Heal {N} damage from your Active Pokémon and have it recover from a Special Condition")
+def _heal_and_recover(n: str) -> Step:
+    def act(run: Run) -> None:
+        active = run.me.active
+        if active is not None:
+            core.heal(active, num(n))
+            active.status = StatusCondition.NONE
+
+    return after(act)
+
+
+@phrase("Search your deck for a card")
+def _search_card_for_top() -> Step:
+    def act(run: Run) -> None:
+        if run.me.deck:
+            run.picked = core.choose_cards(run.ctx.state, run.ctx.player_id, run.me.deck, 1)
+
+    return after(act)
+
+
+@phrase("Shuffle your deck, then put that card on top of it")
+def _put_on_top() -> Step:
+    def act(run: Run) -> None:
+        for card in run.picked:
+            if card in run.me.deck:
+                run.me.deck.remove(card)
+        core.shuffle_deck(run.me)
+        run.me.deck[:0] = [c for c in run.picked]
+
+    return after(act)
+
+
+@phrase(
+    "Devolve {N} of your opponent's evolved Pokémon by putting the highest Stage Evolution card "
+    "on it into your opponent's hand"
+)
+def _devolve_one(_n: str) -> Step:
+    def act(run: Run) -> None:
+        evolved = [m for m in run.opp.all_pokemon_in_play() if m.prior_cards]
+        if not evolved:
+            return
+        mon = max(evolved, key=lambda m: (core._prize_value(m.card), m.card.hp or 0))
+        run.opp.hand.append(mon.card)
+        mon.card = mon.prior_cards[0]
+        mon.prior_cards = mon.prior_cards[1:]
+        mon.hp_bonus = passives.hp_bonus(run.ctx.state, mon)
+
+    return after(act)
+
+
+@phrase("Switch a card from your hand with the top card of your deck")
+def _swap_with_top() -> Step:
+    def act(run: Run) -> None:
+        if not run.me.hand or not run.me.deck:
+            return
+        worst = min(
+            run.me.hand, key=lambda c: core.card_priority(run.ctx.state, run.ctx.player_id, c)
+        )
+        run.me.hand.remove(worst)
+        run.me.hand.append(run.me.deck.pop(0))
+        run.me.deck.insert(0, worst)
+
+    return after(act)
+
+
+def _other_than(mon: PokemonInPlay) -> Callable[[PokemonInPlay], bool]:
+    return lambda other: other is not mon
+
+
+@phrase("Move a Basic Energy from {N} of your Pokémon to another of your Pokémon")
+def _shift_energy(_n: str) -> Step:
+    def act(run: Run) -> None:
+        for donor in run.me.all_pokemon_in_play():
+            spare = [e for e in donor.attached_energies if e in core.BASIC_ENERGIES]
+            if not spare:
+                continue
+            choice = core.least_useful_energy(donor) if donor.attached_energies else spare[0]
+            if choice not in core.BASIC_ENERGIES:
+                choice = spare[0]
+            target = core.best_energy_target(
+                run.ctx.state, run.ctx.player_id, choice, _other_than(donor)
+            )
+            if target is not None:
+                core.attach_energy_card(target, core.detach_energy(donor, choice))
+            return
+
+    return after(act)
+
+
+@phrase(
+    "Search your deck for a Basic {E} Energy card, a Basic {E} Energy card, or 1 of each and "
+    "attach them to your {E} Pokémon and {E} Pokémon in any way you like"
+)
+def _search_two_types(a: str, b: str, *_: str) -> Step:
+    kinds = [energy(a), energy(b)]
+
+    def act(run: Run) -> None:
+        for kind_ in kinds:
+            card = next(
+                (c for c in run.me.deck if is_basic_energy(c) and energy_type_of(c) == kind_),
+                None,
+            )
+            if card is None:
+                continue
+            target = core.best_energy_target(
+                run.ctx.state,
+                run.ctx.player_id,
+                kind_,
+                lambda m: pokemon_type(m.card) in kinds,
+            )
+            if target is not None:
+                run.me.deck.remove(card)
+                core.attach_energy_card(target, card)
+        core.shuffle_deck(run.me)
+
+    return after(act)
+
+
+@phrase("If heads, choose Burned, Confused, or Poisoned")
+def _choose_condition() -> Step:
+    def act(run: Run) -> None:
+        if not run.heads:
+            return
+        # Confuso ameaça mais o próximo ataque; se já está Confuso, Envenenado
+        defender = run.defender
+        confused = defender is not None and defender.status == StatusCondition.CONFUSED
+        run.chosen_status = StatusCondition.POISONED if confused else StatusCondition.CONFUSED
+
+    return after(act)
+
+
+@phrase("Your opponent's Active Pokémon is now affected by that Special Condition")
+def _apply_chosen_condition() -> Step:
+    def act(run: Run) -> None:
+        if run.chosen_status is not None:
+            attacks.status_on_defender(run.ctx, run.chosen_status)
+
+    return after(act)
+
+
+@phrase("Your opponent shuffles their hand and puts it on the bottom of their deck")
+def _their_hand_to_bottom() -> Step:
+    def act(run: Run) -> None:
+        run.counted = len(run.opp.hand)
+        run.opp.deck.extend(run.opp.hand)
+        run.opp.hand.clear()
+        run.did = run.counted > 0
+
+    return after(act)
+
+
+@phrase("If they put any cards on the bottom of their deck in this way, they draw {N} cards")
+def _they_draw(n: str) -> Step:
+    return after(lambda run: core.draw(run.opp, num(n)) if run.did else None)
+
+
+@phrase(
+    "Look at the top {N} cards of your deck and attach any number of {X} you find there to your "
+    "Pokémon in any way you like"
+)
+def _attach_from_top(n: str, what: str) -> Step | None:
+    card_filter = parse_kind(what)
+    if card_filter is None:
+        return None
+
+    def act(run: Run) -> None:
+        found = [c for c in run.me.deck[: num(n)] if card_filter(c)]
+        for card in found:
+            run.me.deck.remove(card)
+        core.attach_from(run.ctx, found, lambda c: True, len(found))
+        run.me.deck.extend(found)
+        core.shuffle_deck(run.me)
+
+    return after(act)
+
+
+@phrase("Switch this Pokémon with your Active Pokémon")
+def _switch_in_self_2() -> list[Step] | Step | None:
+    return _switch_in_self()
+
+
+@phrase("Search your deck for up to {N} {X} and discard them")
+def _search_discard_kind(n: str, what: str) -> Step | None:
+    card_filter = parse_kind(what)
+    if card_filter is None:
+        return None
+
+    def act(run: Run) -> None:
+        for card in [c for c in run.me.deck if card_filter(c)][: num(n)]:
+            run.me.deck.remove(card)
+            run.me.discard.append(card)
+        core.shuffle_deck(run.me)
+
+    return after(act)
+
+
+@phrase("Search your deck for {X} and put it onto this {X} to evolve it")
+def _evolve_self_named(what: str, _base: str) -> Step | None:
+    options = re.sub(r"^(?:an?|any) ", "", what.strip())
+    card_filter = _combo_filter(options) if " or " in options else parse_kind(options)
+    if card_filter is None:
+        return None
+
+    def act(run: Run) -> None:
+        mon = run.source
+        if mon is None:
+            return
+        card = next(
+            (c for c in run.me.deck if card_filter(c) and c.evolves_from == mon.card.name), None
+        )
+        if card is not None:
+            run.me.deck.remove(card)
+            core.evolve_into(run.ctx.state, run.me, mon, card)
+        core.shuffle_deck(run.me)
+
+    return after(act)
+
+
+@condition(r"this Pokémon has any Energy attached")
+def _c_self_any_energy() -> Predicate:
+    return lambda run: run.source is not None and bool(run.source.attached_energies)
+
+
+@kind(r"{E} Pokémon with {N} HP or less")
+def _k_typed_small(symbol: str, hp: str) -> CardFilter:
+    kind_ = energy(symbol)
+    return (
+        lambda card: card.is_pokemon and pokemon_type(card) == kind_ and (card.hp or 0) <= num(hp)
+    )
