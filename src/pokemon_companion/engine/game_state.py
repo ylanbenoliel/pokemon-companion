@@ -79,6 +79,8 @@ class PokemonInPlay:
     last_attacked: tuple[int, int] | None = None
     #: turno em que, para atacar, o dono precisa tirar cara numa moeda
     attack_coin_turn: int | None = None
+    #: turno em que ataques e recuo deste Pokémon custam {C} a mais
+    taxed_turn: int | None = None
 
     @property
     def max_hp(self) -> int:
@@ -122,10 +124,14 @@ class PlayerState:
     #: bônus de dano válidos só neste turno: (quantidade, condição)
     damage_bonus_this_turn: list[tuple[int, str]] = field(default_factory=list)
     items_blocked_turn: int | None = None
+    supporters_blocked_turn: int | None = None
+    stadiums_blocked_turn: int | None = None
     evolution_blocked_turn: int | None = None
     #: turno em que um Pokémon deste jogador foi nocauteado (para "se algum dos
     #: seus Pokémon foi nocauteado no último turno do oponente")
     knocked_out_turn: int | None = None
+    #: nomes dos Pokémon nocauteados nesse turno
+    knocked_out_names: list[str] = field(default_factory=list)
     played_team_rocket_supporter_turn: int | None = None
     legacy_energy_used: bool = False
     #: ataques já feitos neste turno (Festival Lead permite 2)
@@ -154,6 +160,7 @@ class PlayerState:
         twin.used_ability_names = set(self.used_ability_names)
         twin.damage_bonus_this_turn = list(self.damage_bonus_this_turn)
         twin.played_this_turn = list(self.played_this_turn)
+        twin.knocked_out_names = list(self.knocked_out_names)
         return twin
 
 

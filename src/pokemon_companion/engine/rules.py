@@ -153,6 +153,8 @@ def _trainer_playable(state: GameState, pid: PlayerId, card: Card) -> bool:
     if kind == "Supporter":
         if player.supporter_played_this_turn:
             return False
+        if player.supporters_blocked_turn == state.turn_number:
+            return False
         if state.turn_number == 1 and card.name != "Team Rocket's Proton":
             return False
     elif kind in ("Item", "Tool") or ("Item" in card.subtypes):
@@ -164,6 +166,8 @@ def _trainer_playable(state: GameState, pid: PlayerId, card: Card) -> bool:
         return False
     if kind == "Stadium":
         if player.stadium_played_this_turn:
+            return False
+        if player.stadiums_blocked_turn == state.turn_number:
             return False
         if state.stadium is not None and state.stadium.name == card.name:
             return False
@@ -387,7 +391,10 @@ def _process_knockouts(
                 owner.active = None
             else:
                 del owner.bench[core.index_of(owner.bench, mon)]
+            if owner.knocked_out_turn != state.turn_number:
+                owner.knocked_out_names = []
             owner.knocked_out_turn = state.turn_number
+            owner.knocked_out_names.append(mon.card.name)
             taken = min(max(prizes, 0), len(taker.prizes))
             for _ in range(taken):
                 taker.hand.append(taker.prizes.pop())

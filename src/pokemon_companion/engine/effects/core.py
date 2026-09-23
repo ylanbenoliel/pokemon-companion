@@ -556,7 +556,8 @@ def deal_damage(
         ctx.log(f"{defender.card.name} sofreu {amount} de dano.")
         retaliation = defender.retaliation
         if attacker is not None and retaliation and retaliation[1] == state.turn_number:
-            attacker.damage_counters += 10 * retaliation[0]
+            # contadores < 0: "iguais ao dano causado a este Pokémon"
+            attacker.damage_counters += amount if retaliation[0] < 0 else 10 * retaliation[0]
             ctx.log(
                 f"{defender.card.name} revidou: {retaliation[0]} contador(es) em {attacker.card.name}."
             )

@@ -464,3 +464,50 @@ def test_mill_counts_what_was_discarded(state):
 
     assert state.opponent.active.damage_counters == 200
     assert len(state.player.discard) == 6
+
+
+# --------------------------------------------------------------------------
+# lote 4: ordem entre frases que dependem uma da outra
+
+
+def test_chosen_pokemon_is_the_one_shuffled_and_nothing_on_tails(state, monkeypatch):
+    text = (
+        "Flip a coin. If heads, choose 1 of your opponent's Pokémon. Shuffle that Pokémon and all "
+        "attached cards into their deck."
+    )
+    heads(monkeypatch, False)
+    attack_with(state, text)
+    state.opponent.bench = [PokemonInPlay(card=mon("Benched"))]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.card.name == "Defender"  # coroa: ninguém sai
+    assert len(state.opponent.bench) == 1
+
+
+def test_damage_to_the_new_active_after_the_switch(state):
+    text = (
+        "Switch in 1 of your opponent's Benched Pokémon to the Active Spot. If you do, this attack "
+        "does 120 damage to the new Active Pokémon."
+    )
+    attack_with(state, text)
+    state.opponent.bench = [PokemonInPlay(card=mon("Pulled"))]
+
+    rules.apply_action(state, UseAttack(attack_index=0, target=("opp", 0)))
+
+    assert state.opponent.active.card.name == "Pulled"
+    assert state.opponent.active.damage_counters == 120
+
+
+def test_bonus_that_depends_on_discarding_the_hand(state):
+    text = (
+        "You may discard your hand. If you discarded any cards in this way, this attack does 120 "
+        "more damage."
+    )
+    attack_with(state, text, "120+")
+    state.player.hand = [mon("A")]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert state.opponent.active.damage_counters == 240
+    assert state.player.hand == []

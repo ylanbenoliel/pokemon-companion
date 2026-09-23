@@ -87,6 +87,8 @@ def refresh_hp_bonuses(state: GameState) -> None:
 
 def retreat_cost(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> int:
     cost = len(mon.card.retreat_cost)
+    if mon.taxed_turn == state.turn_number:
+        cost += 1
     if tool_active(state, mon, "Air Balloon"):
         cost -= 2
     if stage_of(mon.card) == "Basic" and any_ability_in_play(state, owner, "Skyliner"):
@@ -157,6 +159,8 @@ def energy_satisfies(units: list[str], cost: list[str]) -> bool:
 
 def attack_cost(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack: Attack) -> list[str]:
     cost = list(attack.cost)
+    if mon.taxed_turn == state.turn_number:
+        cost.append("Colorless")
     if stadium_is(state, "Nighttime Mine") and is_tera(mon.card):
         cost.append("Colorless")
     if attack.name == "Blood Moon" and ability_active(state, mon, "Seasoned Skill"):
@@ -334,6 +338,14 @@ def shield_blocks(
         return is_ex(attacker.card)
     if kind == "evolution":
         return attacker.card.evolves_from is not None
+    if kind == "burned":
+        return attacker.status.name == "BURNED"
+    if kind == "ancient":
+        from pokemon_companion.engine.effects.cardinfo import is_ancient
+
+        return is_ancient(attacker.card)
+    if kind == "ability":
+        return bool(attacker.card.abilities)
     if kind.startswith("basic"):
         excluded = kind.partition(":")[2]
         return stage_of(attacker.card) == "Basic" and pokemon_type(attacker.card) != excluded
