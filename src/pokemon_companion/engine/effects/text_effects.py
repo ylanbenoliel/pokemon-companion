@@ -300,6 +300,7 @@ def _clean(text: str) -> str:
     # "Choose 1 or both:" + tópicos: a IA faz os dois (nunca é pior)
     text = re.sub(r"Choose (?:1|one) or both:\s*", "", text)
     text = re.sub(r"\s*•\s*", " ", text)
+    text = _RULE_REMINDERS.sub("", text)
     # "Basic Fire Energy" (tipo por extenso, em algumas impressões) = "Basic {R} Energy"
     text = re.sub(
         r"\bBasic (Grass|Fire|Water|Lightning|Psychic|Fighting|Darkness|Metal) Energy",
@@ -308,6 +309,19 @@ def _clean(text: str) -> str:
     )
     return text.replace("’", "'").strip()
 
+
+#: lembretes de regra do jogo impressos nas cartas (a pokemontcg.io os traz
+#: em `rules`); não são efeitos da carta
+_RULE_REMINDERS = re.compile(
+    r"\s*(?:You may play only 1 Supporter card during your turn"
+    r"|You may play any number of Item cards during your turn"
+    r"|You may play only 1 Stadium card during your turn"
+    r"|You can't have more than 1 ACE SPEC card in your deck"
+    r"|Attach a Pokémon Tool to 1 of your Pokémon that doesn't already have a Pokémon Tool "
+    r"attached"
+    r"|This card stays in play when you play it"
+    r"|Discard this card if another Stadium card comes into play)\.?"
+)
 
 _TYPE_SYMBOL = {
     "Grass": "G",
@@ -2111,8 +2125,27 @@ def _take_prize(n: str) -> Step:
 
 
 def _per_discarded() -> int:
-    match = re.search(r"(\d+) (?:more )?damage for each (?:Energy )?card you discarded", _whole[0])
-    return int(match.group(1)) if match else 0
+    """Dano por carta descartada; negativo quando multiplica ("does 90
+    damage for each...", sem "more": o número impresso não soma)."""
+    match = re.search(r"(\d+) (more )?damage for each (?:Energy )?card you discarded", _whole[0])
+    if not match:
+        return 0
+    return int(match.group(1)) if match.group(2) else -int(match.group(1))
+
+
+def _discards_needed(run: Run, per: int, available: int) -> int:
+    """Quantas descartar para nocautear o Ativo (Fraqueza incluída); se não
+    der para nocautear, todas."""
+    defender = run.defender
+    if not per or defender is None:
+        return available
+    remaining = defender.current_hp if per < 0 else max(defender.current_hp - run.damage, 0)
+    attacker = run.source
+    if attacker is not None and pokemon_type(attacker.card) in passives.weakness_types(
+        run.ctx.state, run.ctx.opp_id, defender
+    ):
+        remaining = -(-remaining // 2)
+    return min(available, max(-(-remaining // abs(per)), 1))
 
 
 def _discard_for_damage(
@@ -2126,9 +2159,7 @@ def _discard_for_damage(
         cards = pile(run)
         available = [c for c in (cards or []) if what(c)][:limit]
         wanted = len(available)
-        if per and run.defender is not None:
-            needed = -(-max(run.defender.current_hp - run.damage, 0) // per)
-            wanted = min(wanted, max(needed, 1))
+        wanted = _discards_needed(run, per, wanted)
         run.counted = wanted
         run.did = wanted > 0
         if run.estimate or cards is None:
@@ -2156,9 +2187,7 @@ def _discard_attached_for_damage(what: CardFilter, limit: int) -> Act:
         pairs = [(e, core.energy_card_from(mon, e)) for e in mon.attached_energies]
         chosen = [e for e, card in pairs if what(card)][:limit]
         wanted = len(chosen)
-        if per and run.defender is not None:
-            needed = -(-max(run.defender.current_hp - run.damage, 0) // per)
-            wanted = min(wanted, max(needed, 1))
+        wanted = _discards_needed(run, per, wanted)
         run.counted = wanted
         run.did = wanted > 0
         if run.estimate:
@@ -2180,9 +2209,7 @@ def _among_your_pokemon(what: CardFilter, limit: int) -> Act:
             if what(core.energy_card_from(m, e))
         ][:limit]
         wanted = len(donors)
-        if per and run.defender is not None:
-            needed = -(-max(run.defender.current_hp - run.damage, 0) // per)
-            wanted = min(wanted, max(needed, 1))
+        wanted = _discards_needed(run, per, wanted)
         run.counted = wanted
         run.did = wanted > 0
         if run.estimate:
@@ -4341,9 +4368,7 @@ def _discard_bench_for_damage(n: str, what: str) -> Step | None:
             if card_filter(core.energy_card_from(m, e))
         ][:limit]
         wanted = len(donors)
-        if per and run.defender is not None:
-            needed = -(-max(run.defender.current_hp - run.damage, 0) // per)
-            wanted = min(wanted, max(needed, 1))
+        wanted = _discards_needed(run, per, wanted)
         run.counted = wanted
         if run.estimate:
             return

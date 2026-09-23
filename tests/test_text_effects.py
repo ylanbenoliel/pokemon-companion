@@ -774,3 +774,37 @@ def test_energy_moves_toward_the_active_only(state):
         step.execute(ctx, big)
     assert state.player.active.attached_energies == ["Water", "Water"]
     assert state.player.bench[0].attached_energies == []
+
+
+def test_rule_reminders_are_not_effects():
+    text = (
+        "Put up to 2 Basic Energy cards from your discard pile into your hand. You may play any "
+        "number of Item cards during your turn."
+    )
+    assert text_effects.compiled_trainer(text) is not None
+
+
+def test_multiplier_discard_counts_the_whole_hp(state):
+    """ "does 90 damage for each card" multiplica: 360 HP pede 4 descartes."""
+    attack = Attack(
+        name="Inferno Test",
+        cost=["Colorless"],
+        damage="90×",
+        text=(
+            "Discard any amount of {R} Energy from among your Pokémon, and this attack does 90 "
+            "damage for each card you discarded in this way."
+        ),
+    )
+    card = dataclasses.replace(mon("Attacker"), attacks=[attack])
+    state.player.active = PokemonInPlay(card=card, attached_energies=["Fire"] * 3 + ["Colorless"])
+    state.player.bench = [PokemonInPlay(card=mon("Holder"), attached_energies=["Fire"] * 4)]
+    state.opponent.active = PokemonInPlay(card=mon("Big", hp=360))
+    state.opponent.bench = [PokemonInPlay(card=mon("Next"))]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    remaining = state.player.active.attached_energies.count("Fire") + state.player.bench[
+        0
+    ].attached_energies.count("Fire")
+    assert remaining == 7 - 4
+    assert len(state.player.prizes) == 5
