@@ -50,11 +50,12 @@ from pokemon_companion.ui.theme import (
 
 DECK_FOLDERS = (
     BUNDLED_DECKS / "top",
+    BUNDLED_DECKS / "originais",
     BUNDLED_DECKS / "worlds2026",
     BUNDLED_DECKS,
     USER_DECKS,
 )
-GROUP_LABELS = {"top": "Meta atual", "worlds2026": "Mundial 2026"}
+GROUP_LABELS = {"top": "Meta atual", "originais": "Originais", "worlds2026": "Mundial 2026"}
 DIFFICULTIES = (("easy", "Fácil"), ("medium", "Média"), ("hard", "Difícil"))
 HERO_SIZE = QSize(300, 306)
 THUMB_SIZE = QSize(132, 124)

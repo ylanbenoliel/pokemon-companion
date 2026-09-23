@@ -202,6 +202,15 @@ class BattleController(QObject):
         elif not self.busy:
             self._on_idle()
 
+    def set_hints(self, enabled: bool) -> None:
+        """Liga/desliga as dicas e já avalia a situação atual (a primeira dica,
+        a de montar o time, nasce antes de a janela ligar as dicas)."""
+        self.hints_enabled = enabled
+        if not enabled:
+            self.scene.hide_hint()
+        elif not self.busy:
+            self._refresh_controls()
+
     def concede(self) -> None:
         """Desistir: o oponente vence (conta como derrota)."""
         if rules.is_game_over(self.state):
@@ -756,7 +765,7 @@ class MainWindow(QMainWindow):
                 self.sounds,
                 match_info,
             )
-        self.controller.hints_enabled = self.settings.hints
+        self.controller.set_hints(self.settings.hints)
         self.sounds.play_music("battle")
         shortcuts: list[tuple[Qt.Key, Callable[[], None]]] = [
             (Qt.Key.Key_Escape, self.open_pause_menu),
@@ -774,9 +783,7 @@ class MainWindow(QMainWindow):
     # -- configurações -----------------------------------------------------
     def apply_settings(self, settings: Settings) -> None:
         self.settings = settings
-        self.controller.hints_enabled = settings.hints
-        if not settings.hints:
-            self.scene.hide_hint()
+        self.controller.set_hints(settings.hints)
         apply_settings(settings, self.sounds)
         self.settings_changed.emit(settings)
 

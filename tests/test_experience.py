@@ -161,3 +161,22 @@ def test_hints_stay_off_when_disabled(controller):
     controller.hints_enabled = False
     controller._refresh_controls()
     assert controller.scene.hint is None
+
+
+def test_setup_hint_shows_when_the_window_turns_hints_on(qtbot, tmp_path):
+    from pokemon_companion.ui.app import MainWindow
+
+    window = MainWindow(
+        state_factory=lambda: turn_manager.start_new_game(
+            build_demo_deck(),
+            build_demo_deck(),
+            first_player=PlayerId.PLAYER,
+            manual=frozenset({PlayerId.PLAYER}),
+        ),
+        ai_factory=EasyAI,
+        art=ArtProvider(art_dir=tmp_path, fetch=lambda url: None),
+        settings=Settings(hints=True),
+    )
+    qtbot.addWidget(window)
+    qtbot.waitUntil(lambda: window.scene.hint is not None, timeout=2000)
+    assert window.scene.hint.key == "setup"
