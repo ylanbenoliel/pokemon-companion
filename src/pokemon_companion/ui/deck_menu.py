@@ -373,6 +373,7 @@ class DeckMenu(QWidget):
         art: ArtProvider | None = None,
         cache_factory: Callable[[], CardCache] = CardCache,
         import_dialog: Callable[..., DeckImportDialog] = DeckImportDialog,
+        difficulty: str = "medium",
     ) -> None:
         super().__init__()
         self._entries = entries if entries is not None else discover_decks()
@@ -380,7 +381,7 @@ class DeckMenu(QWidget):
         self._cache_factory = cache_factory
         self._import_dialog = import_dialog
         self._cards: dict[Path, Card | None] = {}
-        self.difficulty = "medium"
+        self.difficulty = difficulty
         self.armed = PLAYER
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -471,6 +472,9 @@ class DeckMenu(QWidget):
             """)
         self.import_button.clicked.connect(self._import_deck)
         row.addWidget(self.import_button)
+        self.nav_row = QHBoxLayout()
+        self.nav_row.setSpacing(8)
+        row.addLayout(self.nav_row)
         self.status = QLabel("")
         self.status.setFont(ui_font(9.5))
         self.status.setStyleSheet("color: rgba(247,239,225,150); background: transparent;")
@@ -526,6 +530,25 @@ class DeckMenu(QWidget):
 
     def _set_difficulty(self, key: str) -> None:
         self.difficulty = key
+
+    def set_difficulty(self, key: str) -> None:
+        """Dificuldade padrão vinda das configurações."""
+        self.difficulty = key
+        for button, (button_key, _) in zip(
+            self.difficulty_buttons.buttons(), DIFFICULTIES, strict=True
+        ):
+            button.setChecked(button_key == key)
+
+    def add_nav_button(self, text: str, handler: Callable[[], None]) -> QPushButton:
+        """Botão de navegação no rodapé (ajuda, configurações, estatísticas...)."""
+        button = QPushButton(text)
+        button.setFont(ui_font(10, QFont.Weight.DemiBold))
+        button.setMinimumHeight(38)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.setStyleSheet(self.import_button.styleSheet())
+        button.clicked.connect(handler)
+        self.nav_row.addWidget(button)
+        return button
 
     def _pixmap(self, card: Card) -> QPixmap | None:
         art = self._art or ArtProvider()

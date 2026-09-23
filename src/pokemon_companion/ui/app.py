@@ -25,6 +25,7 @@ jogo corre sozinho, com as mesmas animações — útil para testar decks.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import random
 import sys
 from collections.abc import Callable, Sequence
@@ -68,8 +69,11 @@ from pokemon_companion.ui.anim import AnimationQueue, Animator, par
 from pokemon_companion.ui.art import ArtProvider
 from pokemon_companion.ui.battle_scene import BattleScene, Target
 from pokemon_companion.ui.deck_menu import DeckMenu, menu_size_hint, read_entry
+from pokemon_companion.ui.dialogs import PauseMenu, SettingsDialog
+from pokemon_companion.ui.help import HelpDialog
 from pokemon_companion.ui.items import HandCard, PokemonToken
-from pokemon_companion.ui.sound import NullSounds, create_sound_player
+from pokemon_companion.ui.settings import Settings, load_settings, save_settings
+from pokemon_companion.ui.sound import NullSounds, sound_player
 from pokemon_companion.ui.sound_cues import attack_cue, cues_for, snapshot
 from pokemon_companion.ui.theme import FELT_DEEP, primary_type, ui_font
 
@@ -102,6 +106,8 @@ class BattleController(QObject):
         self._retreat_mode = False
         self._choice_actions: list[Action] = []
         self._game_over_shown = False
+        #: menu de pausa aberto: a IA espera
+        self.paused = False
         self._ai_timer = QTimer(self)
         self._ai_timer.setSingleShot(True)
         self._ai_timer.timeout.connect(self._ai_step)
@@ -164,6 +170,23 @@ class BattleController(QObject):
     def legal_actions(self) -> list[Action]:
         return rules.legal_actions(self.state) if self.is_player_turn else []
 
+    def set_paused(self, paused: bool) -> None:
+        self.paused = paused
+        if paused:
+            self._ai_timer.stop()
+        elif not self.busy:
+            self._on_idle()
+
+    def concede(self) -> None:
+        """Desistir: o oponente vence (conta como derrota)."""
+        if rules.is_game_over(self.state):
+            return
+        self._ai_timer.stop()
+        self.state.winner = PlayerId.OPPONENT
+        self.scene.show_toast("Você desistiu da partida.")
+        if not self.busy:
+            self._on_idle()
+
     def _on_idle(self) -> None:
         self.scene.clear_temp_items()
         if rules.is_game_over(self.state):
@@ -177,7 +200,7 @@ class BattleController(QObject):
         self._refresh_controls()
         if self.is_player_turn and self.state.pending_promotion == PlayerId.PLAYER:
             self._offer_promotion()
-        if not self.is_player_turn:
+        if not self.is_player_turn and not self.paused:
             self._ai_timer.start(Animator.ms(AI_THINK_MS))
 
     def _show_game_over(self) -> None:
@@ -571,13 +594,19 @@ class BattleController(QObject):
         )
 
     def _ai_step(self) -> None:
-        if self.busy or rules.is_game_over(self.state) or self.is_player_turn:
+        if self.busy or self.paused or rules.is_game_over(self.state) or self.is_player_turn:
             return
         bottom = rules.decision_player(self.state) == PlayerId.PLAYER
         ai = self.player_ai if bottom else self.ai
         actions = rules.legal_actions(self.state)
         if actions and ai is not None:
-            self.perform(ai.choose_action(self.state, actions))
+            # A IA simula jogadas (moedas, embaralhar) no `random` global, que é
+            # o da partida: restaurar o estado mantém a partida reproduzível a
+            # partir da semente e das ações (replays).
+            saved = random.getstate()
+            action = ai.choose_action(self.state, actions)
+            random.setstate(saved)
+            self.perform(action)
 
 
 class BattleView(QGraphicsView):
@@ -610,6 +639,10 @@ class BattleView(QGraphicsView):
 
 
 class MainWindow(QMainWindow):
+    #: "Voltar ao menu" no fim da partida
+    leave_requested = pyqtSignal()
+    settings_changed = pyqtSignal(object)
+
     def __init__(
         self,
         state_factory: Callable[[], GameState],
@@ -619,35 +652,82 @@ class MainWindow(QMainWindow):
         history_path: Path | None = None,
         player_ai_factory: Callable[[], AIPlayer] | None = None,
         player_label: str = "Você",
+        settings: Settings | None = None,
     ) -> None:
         super().__init__()
         self.setWindowTitle("Pokémon Companion")
+        self.settings = settings or load_settings()
         self.scene = BattleScene(art or ArtProvider(), opponent_label, player_label)
         if player_ai_factory is not None:
             self.scene.set_names(display_name(player_label), display_name(opponent_label))
         self.view = BattleView(self.scene)
         self.setCentralWidget(self.view)
-        self.sounds = create_sound_player()
+        self.sounds = sound_player(self.settings)
         self.controller = BattleController(
             self.scene, state_factory, ai_factory, history_path, player_ai_factory, self.sounds
         )
-        mute = QShortcut(QKeySequence(Qt.Key.Key_M), self)
-        mute.activated.connect(self._toggle_mute)
-        for key, step in (
-            (Qt.Key.Key_Plus, 0.1),
-            (Qt.Key.Key_Equal, 0.1),
-            (Qt.Key.Key_Minus, -0.1),
-        ):
+        self.sounds.play_music("battle")
+        shortcuts: list[tuple[Qt.Key, Callable[[], None]]] = [
+            (Qt.Key.Key_Escape, self.open_pause_menu),
+            (Qt.Key.Key_F1, self.open_help),
+            (Qt.Key.Key_M, self._toggle_mute),
+            (Qt.Key.Key_Plus, lambda: self._change_volume(0.1)),
+            (Qt.Key.Key_Equal, lambda: self._change_volume(0.1)),
+            (Qt.Key.Key_Minus, lambda: self._change_volume(-0.1)),
+        ]
+        for key, handler in shortcuts:
             shortcut = QShortcut(QKeySequence(key), self)
-            shortcut.activated.connect(lambda s=step: self._change_volume(s))
+            shortcut.activated.connect(handler)
+
+    # -- configurações -----------------------------------------------------
+    def apply_settings(self, settings: Settings) -> None:
+        self.settings = settings
+        apply_settings(settings, self.sounds)
+        self.settings_changed.emit(settings)
+
+    def _update_settings(self, **values: object) -> None:
+        settings = dataclasses.replace(self.settings, **values)  # type: ignore[arg-type]
+        save_settings(settings)
+        self.apply_settings(settings)
 
     def _toggle_mute(self) -> None:
-        muted = self.sounds.toggle_mute()
-        self.scene.show_toast("Som desligado (M)" if muted else "Som ligado (M)")
+        self._update_settings(muted=not self.settings.muted)
+        self.scene.show_toast("Som desligado (M)" if self.settings.muted else "Som ligado (M)")
 
     def _change_volume(self, step: float) -> None:
-        self.sounds.set_volume(self.sounds.volume + step)
-        self.scene.show_toast(f"Volume {round(self.sounds.volume * 100)}%")
+        volume = round(min(1.0, max(0.0, self.settings.volume + step)), 2)
+        self._update_settings(volume=volume, muted=False)
+        self.scene.show_toast(f"Volume {round(volume * 100)}%")
+
+    # -- pausa ---------------------------------------------------------------
+    def open_help(self) -> None:
+        self.controller.set_paused(True)
+        HelpDialog(self).exec()
+        self.controller.set_paused(False)
+
+    def open_settings(self) -> None:
+        dialog = SettingsDialog(self.settings, self)
+        dialog.changed.connect(self.apply_settings)
+        dialog.exec()
+
+    def open_pause_menu(self) -> None:
+        over = rules.is_game_over(self.controller.state)
+        self.controller.set_paused(True)
+        while True:
+            menu = PauseMenu(game_over=over, parent=self)
+            menu.exec()
+            if menu.choice == PauseMenu.HELP:
+                HelpDialog(self).exec()
+                continue
+            if menu.choice == PauseMenu.SETTINGS:
+                self.open_settings()
+                continue
+            break
+        self.controller.set_paused(False)
+        if menu.choice == PauseMenu.CONCEDE:
+            self.controller.concede()
+        elif menu.choice == PauseMenu.LEAVE:
+            self.leave_requested.emit()
 
     def log_message(self, message: str) -> None:
         self.scene.show_toast(message)
@@ -683,22 +763,56 @@ class LauncherWindow(QMainWindow):
         self._history_path = history_path
         self._loader: DeckLoader | None = None
         self.battle: MainWindow | None = None
+        self.settings = load_settings()
+        self.sounds = sound_player(self.settings)
+        apply_settings(self.settings, self.sounds)
 
         self.setStyleSheet(f"QMainWindow {{ background: {FELT_DEEP.name()}; }}")
         self.stack = QStackedWidget()
-        self.menu = DeckMenu(art=self._art)
+        self.menu = DeckMenu(art=self._art, difficulty=self.settings.difficulty)
         self.menu.start_requested.connect(self._load_and_start)
+        self.menu.add_nav_button("Como jogar", self.open_help)
+        self.menu.add_nav_button("Configurações", self.open_settings)
         self.stack.addWidget(self.menu)
         self.setCentralWidget(self.stack)
         self.resize(menu_size_hint())
-
-        back = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
-        back.activated.connect(self.show_menu)
+        help_key = QShortcut(QKeySequence(Qt.Key.Key_F1), self)
+        help_key.activated.connect(self._help_from_menu)
+        self.sounds.play_music("menu")
+        self._apply_window_settings()
 
     def show_menu(self) -> None:
         self.stack.setCurrentWidget(self.menu)
         self.menu.play_button.setEnabled(True)
         self.menu.status.setText("")
+        self.sounds.play_music("menu")
+
+    # -- configurações e ajuda -------------------------------------------------
+    def apply_settings(self, settings: Settings) -> None:
+        self.settings = settings
+        apply_settings(settings, self.sounds)
+        self.menu.set_difficulty(settings.difficulty)
+        if self.battle is not None:
+            self.battle.settings = settings
+        self._apply_window_settings()
+
+    def _apply_window_settings(self) -> None:
+        if self.settings.fullscreen and not self.isFullScreen():
+            self.showFullScreen()
+        elif not self.settings.fullscreen and self.isFullScreen():
+            self.showNormal()
+
+    def open_settings(self) -> None:
+        dialog = SettingsDialog(self.settings, self)
+        dialog.changed.connect(self.apply_settings)
+        dialog.exec()
+
+    def open_help(self) -> None:
+        HelpDialog(self).exec()
+
+    def _help_from_menu(self) -> None:
+        if self.stack.currentWidget() is self.menu:
+            self.open_help()
 
     def _load_and_start(self, player_deck: Path, opponent_deck: Path, difficulty: str) -> None:
         self._difficulty = difficulty
@@ -731,7 +845,10 @@ class LauncherWindow(QMainWindow):
             art=self._art,
             history_path=self._history_path,
             player_label="Você",
+            settings=self.settings,
         )
+        window.leave_requested.connect(self.show_menu)
+        window.settings_changed.connect(self.apply_settings)
         window.scene.set_names("Você", read_entry(opponent_path).title)
         for warning in warnings:
             window.log_message(f"! {warning}")
@@ -741,7 +858,16 @@ class LauncherWindow(QMainWindow):
         self.battle = window
         self.stack.addWidget(window)
         self.stack.setCurrentWidget(window)
-        self.resize(1280, 900)
+        if not self.isFullScreen():
+            self.resize(1280, 900)
+
+
+def apply_settings(settings: Settings, sounds: NullSounds | None = None) -> None:
+    """Leva as configurações aos lugares que as usam."""
+    Animator.speed = 1.0 / max(settings.speed, 0.1)
+    Animator.reduce_motion = settings.reduce_motion
+    if sounds is not None:
+        sounds.apply(settings)
 
 
 def display_name(label: str) -> str:
@@ -811,16 +937,20 @@ def main() -> None:
     )
     parser.add_argument("--player-difficulty", choices=["easy", "medium", "hard"], default="hard")
     parser.add_argument(
-        "--speed", type=float, default=1.0, help="Velocidade das animações (2 = 2x mais rápido)."
+        "--speed",
+        type=float,
+        default=None,
+        help="Velocidade das animações (2 = 2x mais rápido); padrão: a das configurações.",
     )
     args = parser.parse_args()
 
     app = QApplication(sys.argv)
     app.setFont(ui_font(10))
-    Animator.speed = 1.0 / max(args.speed, 0.1)
 
     if args.menu or (args.player_deck is None and args.opponent_deck is None and not args.spectate):
         launcher = LauncherWindow(history_path=args.record_history)
+        if args.speed is not None:
+            Animator.speed = 1.0 / max(args.speed, 0.1)
         launcher.show()
         sys.exit(app.exec())
 
@@ -836,6 +966,10 @@ def main() -> None:
         QMessageBox.critical(None, "Erro ao carregar deck", str(exc))
         sys.exit(1)
 
+    apply_settings(window.settings, window.sounds)
+    if args.speed is not None:
+        Animator.speed = 1.0 / max(args.speed, 0.1)
+    window.leave_requested.connect(window.close)
     window.resize(1280, 900)
     window.show()
     sys.exit(app.exec())

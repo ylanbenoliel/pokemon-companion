@@ -32,6 +32,8 @@ Step = Callable[[], QAbstractAnimation | None]
 
 class Animator:
     speed: float = 1.0
+    #: acessibilidade: sem tremor de tela e com clarões bem mais fracos
+    reduce_motion: bool = False
 
     @classmethod
     def ms(cls, value: float) -> int:

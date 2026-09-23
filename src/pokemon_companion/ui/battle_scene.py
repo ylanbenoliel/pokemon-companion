@@ -133,6 +133,10 @@ STADIUM_POS = QPointF(1000, 305)
 Target = tuple[str, object]  # ("token", id(mon)) | ("zone", "bench" | "active" | "play")
 ItemT = TypeVar("ItemT", bound=QGraphicsObject)
 
+#: partículas usam um gerador próprio: o `random` global é o da partida
+#: (replays reproduzem a partida a partir da semente e das ações)
+_FX_RANDOM = random.Random()
+
 
 def fan_layout(count: int) -> list[tuple[QPointF, float]]:
     """Posições/rotações das cartas na mão: arco suave, cartas das pontas
@@ -780,11 +784,11 @@ class BattleScene(QGraphicsScene):
     ) -> QAbstractAnimation:
         animations = []
         for i in range(count):
-            angle = (2 * math.pi * i / count) + random.uniform(-0.25, 0.25)
-            reach = distance * random.uniform(0.6, 1.15)
-            particle = self._temp(Particle(color, random.uniform(4, 9)), center, z=1450)
+            angle = (2 * math.pi * i / count) + _FX_RANDOM.uniform(-0.25, 0.25)
+            reach = distance * _FX_RANDOM.uniform(0.6, 1.15)
+            particle = self._temp(Particle(color, _FX_RANDOM.uniform(4, 9)), center, z=1450)
             end = center + QPointF(math.cos(angle) * reach, math.sin(angle) * reach)
-            duration = random.uniform(380, 620)
+            duration = _FX_RANDOM.uniform(380, 620)
             animations.append(
                 par(
                     prop(particle, b"pos", end, duration, easing=QEasingCurve.Type.OutQuad),
@@ -809,6 +813,8 @@ class BattleScene(QGraphicsScene):
         duration: float = 320,
         fade_in: float = 60,
     ) -> QAbstractAnimation:
+        if Animator.reduce_motion:
+            strength = min(strength, 0.25)
         token.set_flash_color(color)
         return seq(
             prop(token, b"flash", strength, fade_in, start=0.0) if fade_in else None,
@@ -816,6 +822,8 @@ class BattleScene(QGraphicsScene):
         )
 
     def shake(self, strength: float = 10) -> QAbstractAnimation:
+        if Animator.reduce_motion:
+            return pause(300)
         animation = QPropertyAnimation(self.root, b"pos")
         animation.setDuration(Animator.ms(300))
         offsets = [(1, -0.6), (-0.9, 0.7), (0.7, 0.4), (-0.5, -0.5), (0.3, 0.3), (-0.15, 0.1)]
