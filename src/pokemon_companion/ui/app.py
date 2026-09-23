@@ -69,6 +69,7 @@ from pokemon_companion.engine.replay import Replay, load_replay, save_replay
 from pokemon_companion.engine.serialization import SerializationError
 from pokemon_companion.stats import MatchRecord, record_match
 from pokemon_companion.ui.anim import AnimationQueue, Animator, par
+from pokemon_companion.ui.app_icon import install_app_identity, set_windows_app_id
 from pokemon_companion.ui.art import ArtProvider
 from pokemon_companion.ui.battle_scene import BattleScene, Target
 from pokemon_companion.ui.deck_menu import DeckMenu, menu_size_hint, read_entry
@@ -1103,7 +1104,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    set_windows_app_id()
     app = QApplication(sys.argv)
+    install_app_identity(app)
     app.setFont(ui_font(10))
 
     if args.menu or (args.player_deck is None and args.opponent_deck is None and not args.spectate):

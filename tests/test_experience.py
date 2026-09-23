@@ -180,3 +180,16 @@ def test_setup_hint_shows_when_the_window_turns_hints_on(qtbot, tmp_path):
     qtbot.addWidget(window)
     qtbot.waitUntil(lambda: window.scene.hint is not None, timeout=2000)
     assert window.scene.hint.key == "setup"
+
+
+def test_app_icon_has_every_size_and_identity(qtbot):
+    from PyQt6.QtWidgets import QApplication
+
+    from pokemon_companion.ui.app_icon import ICON_DIR, app_icon, install_app_identity
+
+    sizes = sorted(int(p.stem.split("_")[1]) for p in ICON_DIR.glob("app_*.png"))
+    assert sizes[0] <= 16 and sizes[-1] >= 512
+    icon = app_icon()
+    assert not icon.isNull()
+    install_app_identity(QApplication.instance())
+    assert not QApplication.instance().windowIcon().isNull()

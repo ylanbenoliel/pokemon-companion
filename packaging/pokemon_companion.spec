@@ -16,13 +16,16 @@ a = Analysis(
     datas=collect_data_files("pokemon_companion"),
 )
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name=NAME, console=False)
+# ícones gerados por tools/make_icon.py
+ICON = os.path.join(SPECPATH, "app.icns" if sys.platform == "darwin" else "app.ico")
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name=NAME, console=False, icon=ICON)
 coll = COLLECT(exe, a.binaries, a.datas, name=NAME)
 
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,
         name=f"{NAME}.app",
+        icon=ICON,
         bundle_identifier="com.pokemoncompanion.app",
         info_plist={
             # sem esta chave o macOS encerra o app ao abrir a câmera
