@@ -126,6 +126,38 @@ def main() -> None:
         f"Treinadores/Estádios sem registro à mão: {len(trainer_cards)}; compilados: {trainer_ok}"
     )
 
+    from pokemon_companion.engine.effects import abilities
+
+    ability_cards = {
+        (ab.name, ab.text): card
+        for card in pool
+        if card.is_pokemon
+        for ab in card.abilities
+        if ab.name not in abilities.ABILITIES and ab.text
+    }
+    ability_ok = 0
+    for (name, text), card in ability_cards.items():
+        spec = text_effects.compiled_ability(text)
+        if spec is None:
+            parts = text_effects._ability_parts(text)
+            effect = parts[2] if parts else text
+            label = "[H] " if parts else "[H passiva] "
+            for sentence in text_effects.unknown_sentences(effect) or [effect[:120]]:
+                unknown[label + normalize(sentence)] += 1
+            continue
+        ability_ok += 1
+        for _ in range(3):
+            state = synthetic_state(card, pool, rng)
+            ctx = Ctx(state, PlayerId.PLAYER, state.player.active)
+            try:
+                if spec.can_use(ctx):
+                    options = spec.options(ctx) if spec.options else [None]
+                    ctx.target = rng.choice(options or [None])
+                    spec.fn(ctx)
+            except Exception:  # noqa: BLE001 - relatório de falhas
+                errors[f"[H] {name}: {traceback.format_exc().splitlines()[-1]}"] += 1
+    print(f"Habilidades sem registro à mão: {len(ability_cards)}; compiladas: {ability_ok}")
+
     total = len(missing)
     print(
         f"Ataques sem registro à mão: {total}; compilados: {len(compiled)} "

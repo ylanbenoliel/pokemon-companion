@@ -24,6 +24,7 @@ from functools import lru_cache
 
 from pokemon_companion.cards_db.models import Attack, Card
 from pokemon_companion.engine.effects import attacks, core, passives
+from pokemon_companion.engine.effects.abilities import AbilitySpec
 from pokemon_companion.engine.effects.attacks import AttackSpec, Target
 from pokemon_companion.engine.effects.cardinfo import (
     energy_type_of,
@@ -959,53 +960,74 @@ def _energy_to_hand(n: str) -> Step:
     return after(act)
 
 
-def _destination(sentence: str) -> str:
-    """Onde a energia vai, pelo fim da frase: "self", "bench" ou "any"."""
-    tail = sentence.rsplit(" to ", 1)[-1]
-    if "this Pokémon" in tail:
-        return "self"
-    return "bench" if "Benched" in tail else "any"
+MonTest = Callable[[Run, PokemonInPlay], bool]
 
 
-def _attach(source: Callable[[Run], list[Card]], what: CardFilter, amount: int, where: str) -> Act:
+def _qualifier(text: str) -> Callable[[PokemonInPlay], bool] | None:
+    """ "{L} ", "Ethan's ", "Basic ", "" → filtro do Pokémon; senão None."""
+    text = text.strip()
+    if not text:
+        return lambda m: True
+    typed = re.fullmatch(expand("{E}"), text)
+    if typed:
+        kind_ = energy(typed.group(1))
+        return lambda m: pokemon_type(m.card) == kind_
+    if text == "Basic":
+        return lambda m: stage_of(m.card) == "Basic"
+    if re.fullmatch(r"[A-Z][\w.]*'s", text):
+        return lambda m: m.card.name.startswith(text)
+    return None
+
+
+def _destination(sentence: str) -> MonTest | None:
+    """Quem pode receber a energia, pelo fim da frase ("to this Pokémon",
+    "to 1 of your Benched {L} Pokémon"...). None se não reconhecer."""
+    tail = sentence.rsplit(" to ", 1)[-1].strip()
+    if tail == "this Pokémon":
+        return lambda run, m: m is run.source
+    if tail == "your Active Pokémon":
+        return lambda run, m: m is run.me.active
+    match = re.fullmatch(
+        expand(r"(?:{N} of )?your (Benched )?(.*?)Pokémon(?: in any way you like)?"), tail
+    )
+    if not match:
+        return None
+    qualifier = _qualifier(match.group(3))
+    if qualifier is None:
+        return None
+    test = qualifier
+    if match.group(2):
+        return lambda run, m: any(m is b for b in run.me.bench) and test(m)
+    return lambda run, m: test(m)
+
+
+def _attach(
+    source: Callable[[Run], list[Card]], what: CardFilter, amount: int, where: MonTest
+) -> Act:
     def act(run: Run) -> None:
-        me, bench = run.source, run.me.bench
-        allowed: Callable[[PokemonInPlay], bool] | None = None
-        if where == "self":
-            allowed = lambda m: m is me  # noqa: E731
-        elif where == "bench":
-            allowed = lambda m: any(m is b for b in bench)  # noqa: E731
         pile = source(run)
-        core.attach_from(run.ctx, pile, what, amount, allowed=allowed)
+        core.attach_from(run.ctx, pile, what, amount, allowed=lambda m: where(run, m))
         if pile is run.me.deck:
             core.shuffle_deck(run.me)
 
     return act
 
 
-@phrase(
-    "Attach {X} from your discard pile to this Pokémon",
-    "Attach {X} from your discard pile to your Pokémon in any way you like",
-    "Attach {X} from your discard pile to your Benched Pokémon in any way you like",
-    "Attach {X} from your discard pile to {N} of your Pokémon",
-    "Attach {X} from your discard pile to {N} of your Benched Pokémon",
-)
+@phrase("Attach {X} from your discard pile to {X}")
 def _attach_discard(what: str, *_: str) -> Step | None:
     return _energy_search(what, lambda r: r.me.discard, _destination(_current[0]))
 
 
-@phrase(
-    "Search your deck for {X} and attach {X} to this Pokémon",
-    "Search your deck for {X} and attach {X} to your Pokémon in any way you like",
-    "Search your deck for {X} and attach {X} to your Benched Pokémon in any way you like",
-    "Search your deck for {X} and attach {X} to {N} of your Pokémon",
-    "Search your deck for {X} and attach {X} to {N} of your Benched Pokémon",
-)
+@phrase("Search your deck for {X} and attach {X} to {X}")
 def _attach_deck(what: str, *_: str) -> Step | None:
     return _energy_search(what, lambda r: r.me.deck, _destination(_current[0]))
 
 
-def _energy_search(what: str, source: Callable[[Run], list[Card]], where: str) -> Step | None:
+def _energy_search(
+    what: str, source: Callable[[Run], list[Card]], where: MonTest | None
+) -> Step | None:
+    if where is None:
+        return None
     match = re.fullmatch(expand(r"(?:up to )?{N} (.+)"), what.strip(), re.IGNORECASE)
     if not match:
         return None
@@ -2249,12 +2271,7 @@ def _energy_each_bench(symbol: str) -> Step:
     return after(act)
 
 
-@phrase(
-    "Attach any number of {X} from your hand to your Pokémon in any way you like",
-    "Attach {X} from your hand to {N} of your Benched Pokémon",
-    "Attach {X} from your hand to this Pokémon",
-    "Attach {X} from your hand to your Pokémon in any way you like",
-)
+@phrase("Attach any number of {X} from your hand to {X}", "Attach {X} from your hand to {X}")
 def _attach_from_hand(what: str, *_: str) -> Step | None:
     many = _current[0].lower().startswith("attach any number")
     match = re.fullmatch(expand(r"(?:up to )?{N} (.+)"), what.strip(), re.IGNORECASE)
@@ -2263,6 +2280,8 @@ def _attach_from_hand(what: str, *_: str) -> Step | None:
     if card_filter is None:
         return None
     where = _destination(_current[0])
+    if where is None:
+        return None
 
     def act(run: Run) -> None:
         before = {id(m): len(m.attached_energies) for m in run.me.all_pokemon_in_play()}
@@ -3151,3 +3170,341 @@ def _k_owner_group(owner: str) -> CardFilter | None:
     if not owner.endswith("'s"):
         return None
     return lambda card: card.is_pokemon and card.name.startswith(owner)
+
+
+# ---------------------------------------------------------------------------
+# Habilidades ativadas ("Once during your turn, ...") e gatilhos de entrada
+
+_ABILITY_HEADS: list[tuple[str, str | None, Callable[[Ctx], bool] | None]] = [
+    # (prefixo, gatilho, checagem)
+    (
+        r"when you play this Pokémon from your hand to evolve 1 of your Pokémon"
+        r"(?: during your turn)?,? ",
+        "evolve",
+        None,
+    ),
+    (
+        r"when you play this Pokémon from your hand onto your Bench(?: during your turn)?,? ",
+        "bench",
+        None,
+    ),
+    (
+        r"when this Pokémon moves from your Bench to the Active Spot,? ",
+        None,
+        lambda ctx: ctx.source is not None and ctx.source.moved_to_active_turn == ctx.turn,
+    ),
+    (r"if this Pokémon is in the Active Spot,? ", None, lambda ctx: ctx.me.active is ctx.source),
+    (
+        r"if this Pokémon is on your Bench,? ",
+        None,
+        lambda ctx: any(ctx.source is b for b in ctx.me.bench),
+    ),
+]
+
+
+def _ability_parts(
+    text: str,
+) -> tuple[str, list[Callable[[Ctx], bool]], str, Act | None] | None:
+    """(gatilho, checagens, texto do efeito, custo) de uma Habilidade ativada."""
+    text = _clean(text)
+    trigger, checks = "turn", []
+    head = re.match(r"(?:Once during your turn, |(?=When you play this Pokémon))", text)
+    if head is None:
+        return None
+    rest = text[head.end() :]
+    rest = rest[0].lower() + rest[1:]
+    changed = True
+    while changed:
+        changed = False
+        for prefix, new_trigger, check in _ABILITY_HEADS:
+            match = re.match(prefix, rest, re.IGNORECASE)
+            if match:
+                rest, changed = rest[match.end() :], True
+                trigger = new_trigger or trigger
+                if check is not None:
+                    checks.append(check)
+        match = re.match(r"if (.+?), (?=you may )", rest, re.IGNORECASE)
+        if match:
+            predicate = parse_condition(match.group(1))
+            if predicate is None:
+                return None
+            checks.append(_check(predicate))
+            rest, changed = rest[match.end() :], True
+    cost: Act | None = None
+    match = re.match(r"you may discard (.+?) from your hand in order to use this Ability\. ", rest)
+    if match:
+        wanted = re.sub(r"^(?:an?) ", "", match.group(1))
+        card_filter = parse_kind(wanted)
+        if card_filter is None:
+            return None
+        found = card_filter
+        checks.append(lambda ctx: any(found(c) for c in ctx.me.hand))
+
+        def pay(run: Run) -> None:
+            card = next(c for c in run.me.hand if found(c))
+            run.me.hand.remove(card)
+            run.me.discard.append(card)
+
+        cost, rest = pay, rest[match.end() :]
+    elif re.match(r"you may use this Ability\. ", rest):
+        rest = rest[len("you may use this Ability. ") :]
+    elif rest.startswith("you may "):
+        rest = rest[len("you may ") :]
+    else:
+        return None
+    rest = rest[0].upper() + rest[1:]
+    return trigger, checks, rest, cost
+
+
+def _opp_any_targets(ctx: Ctx) -> list[Target | None]:
+    return [("opp", p) for p in core.positions(ctx.opp)]
+
+
+def _opp_bench_targets(ctx: Ctx) -> list[Target | None]:
+    return [("opp", i) for i in range(len(ctx.opp.bench))]
+
+
+def _own_bench_targets(ctx: Ctx) -> list[Target | None]:
+    return [("own", i) for i in range(len(ctx.me.bench))]
+
+
+_ABILITY_OPTIONS: dict[str, Callable[[Ctx], list[Target | None]]] = {
+    "opp_any": _opp_any_targets,
+    "opp_bench": _opp_bench_targets,
+    "own_bench": _own_bench_targets,
+}
+
+
+@lru_cache(maxsize=1024)
+def compiled_ability(text: str) -> AbilitySpec | None:
+    parts = _ability_parts(text)
+    if parts is None:
+        return None
+    trigger, checks, effect, cost = parts
+    compiled = compile_card_text(effect)
+    if compiled is None:
+        return None
+    program, more_checks = compiled
+    if cost is not None:
+        program.steps.insert(0, Step("pre", cost, desc="custo da Habilidade"))
+    all_checks = checks + more_checks
+    options = _ABILITY_OPTIONS.get(program.option or "")
+    return AbilitySpec(
+        lambda ctx: _run_effect(program, ctx),
+        lambda ctx: all(check(ctx) for check in all_checks),
+        trigger,
+        options,
+    )
+
+
+@phrase("If you use this Ability, this Pokémon is Knocked Out")
+def _self_ko() -> Step:
+    return after(lambda run: _nocaute(run, run.source))
+
+
+@phrase("If you use this Ability, your turn ends")
+def _ability_ends_turn() -> list[Step] | Step | None:
+    return _turn_ends()
+
+
+@phrase(
+    "Place {N} damage counters on {N} of your opponent's Pokémon",
+    "Place {N} damage counters on your opponent's Active Pokémon",
+    "Place {N} damage counters on each of your opponent's Pokémon",
+)
+def _place_counters(*groups: str) -> list[Step] | Step | None:
+    text = _current[0].replace("Place ", "Put ", 1)
+    return parse_clause(text)
+
+
+@phrase("Switch your Active Pokémon with {N} of your Benched Pokémon")
+def _switch_active(_n: str) -> Step:
+    def act(run: Run) -> None:
+        index = attacks.target_index(run.ctx, -2)
+        if index < 0:
+            index = core.best_bench_index(run.ctx.state, run.ctx.player_id) or 0
+        if run.me.bench:
+            core.switch_active(run.ctx.state, run.me, index)
+            run.did = True
+
+    return after(act, "own_bench")
+
+
+@phrase("Heal {N} damage from your Active Pokémon")
+def _heal_active(n: str) -> Step:
+    return after(lambda run: run.me.active and core.heal(run.me.active, num(n)))
+
+
+@phrase(
+    "Heal all damage from {N} of your Pokémon", "Heal all damage from {N} of your Benched Pokémon"
+)
+def _heal_all_some(k: str) -> Step:
+    bench_only = "Benched" in _current[0]
+
+    def act(run: Run) -> None:
+        pool = run.me.bench if bench_only else run.me.all_pokemon_in_play()
+        for mon in sorted(pool, key=lambda m: -m.damage_counters)[: num(k)]:
+            core.heal(mon, mon.damage_counters)
+
+    return after(act)
+
+
+@phrase("Put {N} Energy attached to your opponent's Active Pokémon into their hand")
+def _bounce_energy(n: str) -> Step:
+    def act(run: Run) -> None:
+        defender = run.defender
+        for _ in range(num(n)):
+            if defender is None or not defender.attached_energies:
+                return
+            run.opp.hand.append(core.detach_energy(defender, defender.attached_energies[0]))
+
+    return after(act)
+
+
+@phrase("Put {X} from your discard pile onto your Bench")
+def _discard_onto_bench(what: str) -> Step | None:
+    match = re.fullmatch(expand(r"(?:up to )?{N} (.+)"), what.strip(), re.IGNORECASE)
+    if not match:
+        return None
+    card_filter = parse_kind(match.group(2))
+    if card_filter is None:
+        return None
+    amount = num(match.group(1))
+
+    def act(run: Run) -> None:
+        room = core.bench_space(run.ctx.state, run.me)
+        found = [c for c in run.me.discard if card_filter(c) and c.is_basic][: min(amount, room)]
+        for card in found:
+            run.me.discard.remove(card)
+            core.put_on_bench(run.ctx.state, run.me, card)
+
+    return after(act)
+
+
+@kind(r"Basic Pokémon with {N} HP or less")
+def _k_small_basic(n: str) -> CardFilter:
+    return lambda card: card.is_basic and (card.hp or 0) <= num(n)
+
+
+@phrase("Put {N} damage counters on this Pokémon")
+def _counters_self(n: str) -> Step:
+    def act(run: Run) -> None:
+        if run.source is not None:
+            run.source.damage_counters += 10 * num(n)
+            run.did = True
+
+    return after(act)
+
+
+@phrase(
+    "During this turn, attacks used by this Pokémon do {N} more damage to your opponent's Active "
+    "Pokémon"
+)
+def _bonus_this_turn(n: str) -> Step:
+    def act(run: Run) -> None:
+        if run.source is not None:
+            run.source.attack_bonus = ("*", num(n), run.ctx.turn)
+
+    return after(act)
+
+
+@phrase("Have your opponent shuffle their hand into their deck and draw {N} cards")
+def _opp_reshuffle(n: str) -> Step:
+    def act(run: Run) -> None:
+        core.shuffle_hand_into_deck(run.opp)
+        core.draw(run.opp, num(n))
+
+    return after(act)
+
+
+@phrase("Move any amount of {E} Energy from your other Pokémon to this Pokémon")
+def _gather_energy(symbol: str) -> Step:
+    kind_ = energy(symbol)
+
+    def act(run: Run) -> None:
+        mon = run.source
+        if mon is None:
+            return
+        for donor in run.me.all_pokemon_in_play():
+            while donor is not mon and kind_ in donor.attached_energies:
+                core.attach_energy_card(mon, core.detach_energy(donor, kind_))
+
+    return after(act)
+
+
+@condition(
+    r"you played {X} from your hand this turn", r"you played {X} from your hand during this turn"
+)
+def _c_played(name: str) -> Predicate | None:
+    found = card_name(name)
+    return None if found is None else (lambda run: found in run.me.played_this_turn)
+
+
+@condition(r"you have any {X} in play", r"you have any {X} on your Bench")
+def _c_any_kind(what: str) -> Predicate | None:
+    card_filter = parse_kind(what)
+    if card_filter is None:
+        return None
+    on_bench = "Bench" in _current[0]
+
+    def test(run: Run) -> bool:
+        mons = run.me.bench if on_bench else run.me.all_pokemon_in_play()
+        return any(card_filter(m.card) for m in mons)
+
+    return test
+
+
+@kind(r"Mega Evolution Pokémon ex")
+def _k_mega() -> CardFilter:
+    return lambda card: card.is_pokemon and "Mega" in card.subtypes
+
+
+@kind(r"{E} Mega Evolution Pokémon ex")
+def _k_mega_typed(symbol: str) -> CardFilter:
+    return lambda card: (
+        card.is_pokemon and "Mega" in card.subtypes and pokemon_type(card) == energy(symbol)
+    )
+
+
+@kind(r"Tera Pokémon")
+def _k_tera() -> CardFilter:
+    return is_tera
+
+
+@kind(r"(.+?) card")
+def _k_named_card(text: str) -> CardFilter | None:
+    name = card_name(text)
+    return None if name is None else (lambda card: card.name == name)
+
+
+@kind(r"(.+ or .+)")
+def _k_either(text: str) -> CardFilter | None:
+    return _combo_filter(text)
+
+
+@phrase("Switch it with your Active Pokémon")
+def _switch_in_self() -> Step:
+    def act(run: Run) -> None:
+        mon = run.source
+        if mon is not None and any(mon is b for b in run.me.bench):
+            core.switch_active(run.ctx.state, run.me, core.index_of(run.me.bench, mon))
+
+    return after(act)
+
+
+@phrase(
+    "Attach a Basic {E} Energy card, a Basic {E} Energy card, or 1 of each from your hand to your "
+    "Pokémon in any way you like"
+)
+def _attach_one_of_each(first: str, second: str) -> Step:
+    kinds = [energy(first), energy(second)]
+
+    def act(run: Run) -> None:
+        for kind_ in kinds:
+            core.attach_from(run.ctx, run.me.hand, _basic_energy_of(kind_), 1)
+
+    return after(act)
+
+
+def _basic_energy_of(kind_: str) -> CardFilter:
+    return lambda card: is_basic_energy(card) and energy_type_of(card) == kind_

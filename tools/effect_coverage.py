@@ -39,7 +39,7 @@ def missing_effects(cards: Iterable[Card]) -> tuple[Counter[str], Counter[str]]:
                         missing[f"ataque  {attack.name} ({card.name})"] += 1
             for ability in card.abilities:
                 total["habilidade"] += 1
-                known = ability.name in abilities.ABILITIES
+                known = abilities.spec_for(ability) is not None
                 if not known and f'"{ability.name}"' not in PASSIVE_SOURCE:
                     missing[f"habilid {ability.name} ({card.name})"] += 1
         elif card.supertype == Supertype.TRAINER:

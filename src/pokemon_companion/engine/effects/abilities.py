@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from pokemon_companion.cards_db.models import Ability
 from pokemon_companion.engine.effects import core, passives
 from pokemon_companion.engine.effects.cardinfo import (
     energy_type_of,
@@ -59,11 +60,21 @@ def ability(
     return decorator
 
 
+def spec_for(ability_: Ability) -> AbilitySpec | None:
+    """Registro à mão pelo nome; senão, o texto compilado (`text_effects`)."""
+    spec = ABILITIES.get(ability_.name)
+    if spec is None and ability_.text:
+        from pokemon_companion.engine.effects.text_effects import compiled_ability
+
+        spec = compiled_ability(ability_.text)
+    return spec
+
+
 def usable_abilities(ctx: Ctx, mon: PokemonInPlay) -> list[tuple[str, AbilitySpec]]:
     """Habilidades de `mon` que podem ser usadas agora."""
     result: list[tuple[str, AbilitySpec]] = []
     for ab in mon.card.abilities:
-        spec = ABILITIES.get(ab.name)
+        spec = spec_for(ab)
         if spec is None or ab.name in mon.abilities_used:
             continue
         if not passives.ability_active(ctx.state, mon, ab.name):
@@ -87,8 +98,10 @@ def ability_options(ctx: Ctx, spec: AbilitySpec) -> list[Target | None]:
 
 
 def use_ability(ctx: Ctx, name: str) -> None:
-    spec = ABILITIES[name]
     assert ctx.source is not None
+    ability_ = next(ab for ab in ctx.source.card.abilities if ab.name == name)
+    spec = spec_for(ability_)
+    assert spec is not None
     ctx.source.abilities_used.add(name)
     if spec.shared_limit:
         ctx.me.used_ability_names.add(spec.shared_limit)

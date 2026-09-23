@@ -351,3 +351,52 @@ def test_compiled_stadium_is_used_by_the_current_player(state):
     rules.apply_action(state, UseStadium())
 
     assert [c.name for c in state.player.hand] == ["Lightning Energy"] * 2
+
+
+# --------------------------------------------------------------------------
+# Habilidades compiladas
+
+from pokemon_companion.cards_db.models import Ability  # noqa: E402
+from pokemon_companion.engine.actions import UseAbility  # noqa: E402
+
+
+def with_ability_text(card: Card, name: str, text: str) -> Card:
+    return dataclasses.replace(card, abilities=[Ability(name=name, text=text)])
+
+
+def test_activated_ability_with_active_check_and_discard_cost(state):
+    text = (
+        "Once during your turn, if this Pokémon is in the Active Spot, you may discard a Basic "
+        "{W} Energy card from your hand in order to use this Ability. Place 6 damage counters on "
+        "1 of your opponent's Pokémon."
+    )
+    shuriken = with_ability_text(mon("Ninja"), "Test Shuriken", text)
+    state.player.active = PokemonInPlay(card=shuriken)
+    assert not any(isinstance(a, UseAbility) for a in rules.legal_actions(state))  # sem energia
+
+    state.player.hand = [BASIC_ENERGIES["Water"]]
+    state.opponent.active = PokemonInPlay(card=mon("Weak", hp=60))
+    rules.apply_action(state, UseAbility(position=-1, ability_name="Test Shuriken"))
+
+    assert "Water Energy" not in [c.name for c in state.player.hand]  # custo pago
+    assert "Water Energy" in [c.name for c in state.player.discard]
+    assert len(state.player.prizes) == 5  # 6 contadores nocautearam o Weak
+    uses = [a for a in rules.legal_actions(state) if isinstance(a, UseAbility)]
+    assert uses == []  # uma vez por turno
+
+
+def test_ability_switch_then_if_you_do(state):
+    text = (
+        "Once during your turn, you may switch your Active Pokémon with 1 of your Benched "
+        "Pokémon. If you do, switch out your opponent's Active Pokémon to the Bench."
+    )
+    whirl = with_ability_text(mon("Samurott"), "Test Whirlpool", text)
+    state.player.bench = [PokemonInPlay(card=whirl)]
+    state.opponent.bench = [PokemonInPlay(card=mon("Benched"))]
+
+    rules.apply_action(
+        state, UseAbility(position=0, ability_name="Test Whirlpool", target=("own", 0))
+    )
+
+    assert state.player.active.card.name == "Samurott"
+    assert state.opponent.active.card.name == "Benched"

@@ -130,6 +130,8 @@ class PlayerState:
     attacks_this_turn: int = 0
     #: Briar: prêmio extra se um Tera nocautear o Ativo neste turno
     extra_prize_turn: int | None = None
+    #: nomes das cartas de Treinador jogadas da mão neste turno
+    played_this_turn: list[str] = field(default_factory=list)
 
     def all_pokemon_in_play(self) -> list[PokemonInPlay]:
         return ([self.active] if self.active else []) + self.bench
@@ -147,6 +149,7 @@ class PlayerState:
         twin.bench = [mon.clone() for mon in self.bench]
         twin.used_ability_names = set(self.used_ability_names)
         twin.damage_bonus_this_turn = list(self.damage_bonus_this_turn)
+        twin.played_this_turn = list(self.played_this_turn)
         return twin
 
 

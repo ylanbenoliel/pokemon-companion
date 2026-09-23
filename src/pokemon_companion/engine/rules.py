@@ -563,6 +563,7 @@ def _reset_turn_flags(state: GameState, pid: PlayerId) -> None:
     player.used_ability_names = set()
     player.damage_bonus_this_turn = []
     player.attacks_this_turn = 0
+    player.played_this_turn = []
     for mon in player.all_pokemon_in_play():
         mon.evolved_this_turn = False
         mon.abilities_used = set()
@@ -684,6 +685,7 @@ def _play_trainer(state: GameState, pid: PlayerId, action: PlayTrainer) -> list[
     card = player.hand.pop(action.hand_index)
     kind = trainer_kind(card)
     messages.append(f"{pid.value} jogou {card.name}.")
+    player.played_this_turn.append(card.name)
     ctx = Ctx(state, pid, None, action.target, messages)
 
     if kind == "Supporter":
