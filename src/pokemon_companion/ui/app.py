@@ -873,6 +873,7 @@ class LauncherWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.menu = DeckMenu(art=self._art, difficulty=self.settings.difficulty)
         self.menu.start_requested.connect(self._load_and_start)
+        self.menu.add_nav_button("Montar deck", self.open_deck_builder)
         self.menu.add_nav_button("Replays", self.open_replays)
         self.menu.add_nav_button("Estatísticas", self.open_stats)
         self.menu.add_nav_button("Como jogar", self.open_help)
@@ -913,6 +914,13 @@ class LauncherWindow(QMainWindow):
 
     def open_help(self) -> None:
         HelpDialog(self).exec()
+
+    def open_deck_builder(self) -> None:
+        from pokemon_companion.ui.deck_builder import DeckBuilderDialog
+
+        dialog = DeckBuilderDialog(parent=self)
+        if dialog.exec() and dialog.saved_path is not None:
+            self.menu.add_deck(dialog.saved_path, "Deck salvo")
 
     def open_stats(self) -> None:
         StatsDialog(parent=self).exec()

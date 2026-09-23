@@ -594,12 +594,16 @@ class DeckMenu(QWidget):
         dialog = self._import_dialog(parent=self)
         if dialog.exec() != QDialog.DialogCode.Accepted or dialog.imported_path is None:
             return
-        entry = read_entry(dialog.imported_path)
+        self.add_deck(dialog.imported_path, "Importado")
+
+    def add_deck(self, path: Path, verb: str = "Salvo") -> None:
+        """Um deck novo (importado ou montado) entra na tira e vira o seu."""
+        entry = read_entry(path)
         self._entries = [e for e in self._entries if e.path != entry.path] + [entry]
         self._rebuild_strip()
         self.choose(self.armed, entry)
         self.arm(OPPONENT if self.armed == PLAYER else PLAYER)
-        self.status.setText(f"Importado: {entry.title}")
+        self.status.setText(f"{verb}: {entry.title}")
         self._load_entry_art(entry)
 
     def _rebuild_strip(self) -> None:

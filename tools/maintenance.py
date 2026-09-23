@@ -24,7 +24,7 @@ from pathlib import Path
 
 from effect_coverage import missing_effects
 
-from pokemon_companion.cards_db import standard
+from pokemon_companion.cards_db import catalog, standard
 from pokemon_companion.cards_db.cache import CardCache
 from pokemon_companion.cards_db.decklist_parser import load_deck
 from pokemon_companion.cards_db.models import Card
@@ -41,6 +41,10 @@ def refresh() -> None:
     cards, marks = standard.fetch_pool()
     standard.save_pool(cards, marks)
     print(f"  {len(cards)} impressões, marcas {', '.join(marks)}")
+    set_ids = {parts[0] for card in cards if (parts := catalog.split_id(card.id))}
+    entries = catalog.build_catalog(cards, catalog.fetch_set_codes(set_ids))
+    catalog.save_catalog(entries)
+    print(f"  catálogo do construtor de deck: {len(entries)} cartas distintas")
     print("Atualizando os decks do meta (Limitless)…")
     subprocess.run(
         [sys.executable, str(TOOLS / "fetch_top_decks.py"), "--top", "100", "--clean"],
