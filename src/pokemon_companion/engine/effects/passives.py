@@ -393,6 +393,11 @@ def shield_blocks(
     kind = defender.shield[0]
     if kind.startswith("le:"):
         return amount <= int(kind[3:])
+    if kind.endswith("|anchored"):
+        owner = state.state_of(owner_of(state, defender))
+        if owner.active is None or owner.active.shield_anchor_turn != state.turn_number:
+            return False
+        kind = kind.removesuffix("|anchored")
     if kind == "ex":
         return is_ex(attacker.card)
     if kind == "evolution":

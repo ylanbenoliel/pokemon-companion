@@ -25,7 +25,7 @@ from functools import lru_cache
 from typing import NamedTuple
 
 from pokemon_companion.cards_db.models import Attack, Card
-from pokemon_companion.engine.effects import attacks, core, pack, passives
+from pokemon_companion.engine.effects import attacks, cardinfo, core, pack, passives
 from pokemon_companion.engine.effects.abilities import AbilitySpec
 from pokemon_companion.engine.effects.attacks import AttackSpec, Target
 from pokemon_companion.engine.effects.cardinfo import (
@@ -87,6 +87,8 @@ class Run:
     picked: list[Card] = field(default_factory=list)
     #: condição especial escolhida ("that Special Condition")
     chosen_status: StatusCondition | None = None
+    #: de quem foi o último descarte do topo do deck ("me"/"opp"), para "in this way"
+    milled: str = "opp"
     #: moeda de cada jogador ("each player flips a coin")
     coins_by_player: dict[PlayerId, bool] = field(default_factory=dict)
 
@@ -1143,6 +1145,7 @@ def _no_op() -> Step:
 def _mill(player: Callable[[Run], PlayerState], amount: int) -> Act:
     def act(run: Run) -> None:
         target = player(run)
+        run.milled = "me" if target is run.me else "opp"
         for _ in range(min(amount, len(target.deck))):
             target.discard.append(target.deck.pop(0))
 
@@ -1155,6 +1158,12 @@ def _mill(player: Callable[[Run], PlayerState], amount: int) -> Act:
 )
 def _mill_opp(n: str = "1") -> Step:
     return after(_mill(lambda r: r.opp, num(n)))
+
+
+@phrase("discard {N} more cards in this way", "Discard {N} more cards in this way")
+def _mill_more(n: str) -> Step:
+    """Repete o último descarte do topo do deck ("in this way")."""
+    return after(lambda run: _mill(lambda r: r.me if run.milled == "me" else r.opp, num(n))(run))
 
 
 @phrase("Discard the top card of your deck", "Discard the top {N} cards of your deck")
@@ -3637,7 +3646,20 @@ def _gather_energy(symbol: str) -> Step:
 )
 def _c_played(name: str) -> Predicate | None:
     found = card_name(name)
-    return None if found is None else (lambda run: found in run.me.played_this_turn)
+    return None if found is None else (lambda run: _played(run, lambda c: c.name == found))
+
+
+def _played(run: Run, test: Callable[[Card], bool]) -> bool:
+    return any(test(card) for card in run.me.played_this_turn)
+
+
+@condition(
+    r"you played an? (Ancient|Future) Supporter card from your hand during this turn",
+    r"you played an? (Ancient|Future) Supporter card from your hand this turn",
+)
+def _c_played_group(group: str) -> Predicate:
+    test = cardinfo.is_ancient if group == "Ancient" else cardinfo.is_future
+    return lambda run: _played(run, lambda c: trainer_kind(c) == "Supporter" and test(c))
 
 
 @condition(r"you have any {X} in play", r"you have any {X} on your Bench")
@@ -3669,6 +3691,14 @@ def _k_mega_typed(symbol: str) -> CardFilter:
 @kind(r"Tera Pokémon")
 def _k_tera() -> CardFilter:
     return is_tera
+
+
+@kind(r"(Ancient|Future) Pokémon")
+def _k_paradox(group: str) -> CardFilter:
+    test = cardinfo.is_ancient if group.lower() == "ancient" else cardinfo.is_future
+    return lambda card: card.is_pokemon and test(card)
+
+
 
 
 @kind(r"(.+?) card")
@@ -4463,7 +4493,7 @@ def _c_all_bench_hurt() -> Predicate:
 @condition(r"you didn't play {X} from your hand during this turn")
 def _c_not_played(name: str) -> Predicate | None:
     found = card_name(name)
-    return None if found is None else (lambda run: found not in run.me.played_this_turn)
+    return None if found is None else (lambda run: not _played(run, lambda c: c.name == found))
 
 
 @condition(r"your opponent has a Stadium in play")
@@ -6126,6 +6156,47 @@ def _c_heavy(symbols: str) -> Predicate:
 @condition(r"your opponent has {N} or more Benched Pokémon")
 def _c_opp_bench_size(n: str) -> Predicate:
     return lambda run: len(run.opp.bench) >= num(n)
+
+
+@condition(r"1 of your other (.*?)Pokémon used an attack during your last turn")
+def _c_other_attacked(kind_: str) -> Predicate | None:
+    test = parse_kind(f"{kind_}Pokémon")
+    if test is None:
+        return None
+    return lambda run: any(
+        mon is not run.source and mon.attacked_turn == run.ctx.turn - 2 and test(mon.card)
+        for mon in run.me.all_pokemon_in_play()
+    )
+
+
+@phrase(
+    "During your opponent's next turn, prevent all damage done to each of your {X} by attacks "
+    "from Pokémon ex"
+)
+def _team_shield_ex(what: str) -> Step | None:
+    test = parse_kind(what)
+    if test is None:
+        return None
+
+    def act(run: Run) -> None:
+        for mon in run.me.all_pokemon_in_play():
+            if test(mon.card):
+                mon.shield = ("ex", run.ctx.turn + 1)
+
+    return after(act)
+
+
+@phrase("If this Pokémon is no longer your Active Pokémon, this effect ends")
+def _anchor_shields() -> Step:
+    def act(run: Run) -> None:
+        turn = run.ctx.turn + 1
+        for mon in run.me.all_pokemon_in_play():
+            if mon.shield == ("ex", turn):
+                mon.shield = ("ex|anchored", turn)
+        if run.source is not None:
+            run.source.shield_anchor_turn = turn
+
+    return after(act)
 
 
 @condition(r"this Pokémon used {X} during your last turn")

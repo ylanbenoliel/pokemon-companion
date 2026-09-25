@@ -762,7 +762,7 @@ def _play_trainer(state: GameState, pid: PlayerId, action: PlayTrainer) -> list[
     card = player.hand.pop(action.hand_index)
     kind = trainer_kind(card)
     messages.append(f"{pid.value} jogou {card.name}.")
-    player.played_this_turn.append(card.name)
+    player.played_this_turn.append(card)
     ctx = Ctx(state, pid, None, action.target, messages, playing=kind)
     if is_fossil_item(card):
         core.put_on_bench(state, player, fossil_pokemon(card))
@@ -817,6 +817,7 @@ def _apply_attack(state: GameState, pid: PlayerId, action: UseAttack) -> list[st
         messages.append(f"Coroa: {attacker.card.name} não consegue atacar.")
         can_proceed = False
     player.last_attack = (attack.name, state.turn_number)
+    attacker.attacked_turn = state.turn_number
     if can_proceed:
         messages.append(f"{attacker.card.name} usou {attack.name}.")
         ctx = Ctx(state, pid, attacker, action.target, messages)

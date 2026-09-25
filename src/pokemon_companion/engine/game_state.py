@@ -69,6 +69,10 @@ class PokemonInPlay:
     #: prevenção condicional de dano: (tipo, turno) — "basic", "basic-non:Fire",
     #: "ex", "le:60" (dano de 60 ou menos)
     shield: tuple[str, int] | None = None
+    #: turno em que os escudos "…|anchored" do time valem só com este Pokémon no Ativo
+    shield_anchor_turn: int | None = None
+    #: turno em que este Pokémon usou um ataque pela última vez
+    attacked_turn: int | None = None
     #: efeito no fim de um turno: (tipo, turno) — "ko", "discard", "counters:9"
     doom: tuple[str, int] | None = None
     #: bônus de dano num turno: (nome do ataque ou "*", quantidade, turno)
@@ -159,8 +163,8 @@ class PlayerState:
     extra_prize_turn: int | None = None
     #: último ataque usado: (nome, turno)
     last_attack: tuple[str, int] | None = None
-    #: nomes das cartas de Treinador jogadas da mão neste turno
-    played_this_turn: list[str] = field(default_factory=list)
+    #: cartas de Treinador jogadas da mão neste turno
+    played_this_turn: list[Card] = field(default_factory=list)
 
     def all_pokemon_in_play(self) -> list[PokemonInPlay]:
         return ([self.active] if self.active else []) + self.bench
