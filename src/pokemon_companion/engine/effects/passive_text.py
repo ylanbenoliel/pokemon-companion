@@ -430,6 +430,13 @@ def _on_milled(action: str) -> Passive | None:
     return _owner_effect("on_milled", action)
 
 
+@rule(
+    r"Your opponent's Pokémon in play and all attached cards can't be put into your opponent's hand"
+)
+def _no_return_to_hand() -> Passive:
+    return Passive("no_return_to_hand")
+
+
 @rule(r"This Pokémon can use the attack on this card")
 def _tool_attack() -> Passive:
     return Passive("tool_attack")

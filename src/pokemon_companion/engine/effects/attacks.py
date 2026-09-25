@@ -1090,7 +1090,8 @@ def _push_out(ctx: Ctx, a: Attack) -> None:
 def _tuck_tail(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
     mon = ctx.source
-    if mon is not None and ctx.me.active is mon:
+    blocked = passives.hand_return_blocked(ctx.state, ctx.player_id)
+    if mon is not None and ctx.me.active is mon and not blocked:
         ctx.me.hand.extend(mon.all_cards())
         ctx.me.hand.extend(
             core.BASIC_ENERGIES[e] for e in mon.attached_energies if e in core.BASIC_ENERGIES

@@ -1362,6 +1362,8 @@ def _leave_play(destination: str) -> Act:
         mon = run.source
         if mon is None or run.me.active is not mon:
             return
+        if destination == "hand" and passives.hand_return_blocked(run.ctx.state, run.ctx.player_id):
+            return
         cards = mon.all_cards() + [
             core.BASIC_ENERGIES[e] for e in mon.attached_energies if e in core.BASIC_ENERGIES
         ]
@@ -2960,6 +2962,8 @@ def _self_to_hand() -> Step:
         mon = run.source
         if mon is None or run.me.active is not mon or not run.me.bench:
             return  # sem banco, sair do Ativo perderia o jogo
+        if passives.hand_return_blocked(run.ctx.state, run.ctx.player_id):
+            return
         run.me.discard.extend(mon.special_energy_cards)
         run.me.discard.extend(
             core.BASIC_ENERGIES[e] for e in mon.attached_energies if e in core.BASIC_ENERGIES
@@ -3431,7 +3435,7 @@ def _turn_ends() -> Step:
 def _scoop(n: str) -> Step:
     def act(run: Run) -> None:
         mons = run.me.all_pokemon_in_play()
-        if len(mons) < 2:
+        if len(mons) < 2 or passives.hand_return_blocked(run.ctx.state, run.ctx.player_id):
             return  # tirar o único Pokémon perderia o jogo
         target = max(mons, key=lambda m: (m.damage_counters, m is not run.me.active))
         cards = target.all_cards() + [
@@ -4423,7 +4427,7 @@ def _search_any_number(what: str) -> Step | None:
 @phrase("Put {N} of your Benched Pokémon and all attached cards into your hand")
 def _scoop_bench(_n: str) -> Step:
     def act(run: Run) -> None:
-        if not run.me.bench:
+        if not run.me.bench or passives.hand_return_blocked(run.ctx.state, run.ctx.player_id):
             return
         target = max(run.me.bench, key=lambda m: m.damage_counters)
         cards = target.all_cards() + [
@@ -4517,7 +4521,7 @@ def _look_only(_n: str) -> Step:
 def _devolve_defender() -> Step:
     def act(run: Run) -> None:
         mon = run.defender
-        if mon is None or not mon.prior_cards:
+        if mon is None or not mon.prior_cards or passives.hand_return_blocked(run.ctx.state, run.ctx.opp_id):
             return
         run.opp.hand.append(mon.card)
         mon.card = mon.prior_cards[0]
@@ -6185,7 +6189,7 @@ def _put_on_top() -> Step:
 def _devolve_one(_n: str) -> Step:
     def act(run: Run) -> None:
         evolved = [m for m in run.opp.all_pokemon_in_play() if m.prior_cards]
-        if not evolved:
+        if not evolved or passives.hand_return_blocked(run.ctx.state, run.ctx.opp_id):
             return
         mon = max(evolved, key=lambda m: (core._prize_value(m.card), m.card.hp or 0))
         run.opp.hand.append(mon.card)

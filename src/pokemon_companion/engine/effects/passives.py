@@ -635,6 +635,12 @@ def trainer_locked(state: GameState, player_id: PlayerId, kind: str) -> bool:
     return lock is not None and bool(compiled(state, player_id.other, lock))
 
 
+def hand_return_blocked(state: GameState, owner: PlayerId) -> bool:
+    """ "Your opponent's Pokémon in play and all attached cards can't be put into
+    your opponent's hand": vale para os Pokémon em jogo de `owner`."""
+    return bool(compiled(state, owner.other, "no_return_to_hand"))
+
+
 def pokemon_locked(state: GameState, player_id: PlayerId, card: object) -> bool:
     """Pokémon que o oponente trava de jogar da mão ("can't play any Pokémon that…")."""
     return any(

@@ -780,6 +780,8 @@ def _enhanced_hammer(ctx: Ctx) -> None:
 
 
 def _timepiece_options(ctx: Ctx) -> list[Target | None]:
+    if passives.hand_return_blocked(ctx.state, ctx.player_id):
+        return []
     return [
         ("own", p)
         for p in core.positions(ctx.me)
