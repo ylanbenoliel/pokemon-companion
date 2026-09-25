@@ -453,6 +453,19 @@ def _tool_slots_note() -> list[Passive]:
     return []  # o limite volta a 1 sozinho: ver `rules._enforce_board`
 
 
+@rule(
+    r"If this Pokémon is in your hand when you are setting up to play, you may put it face down "
+    r"in the Active Spot"
+)
+def _setup_active() -> Passive:
+    return Passive("setup_active")
+
+
+def can_start_active(card: Card) -> bool:
+    """Básico, ou carta que pode começar no Ativo no setup (Explosiveness)."""
+    return card.is_basic or any(p.kind == "setup_active" for p in card_passives(card))
+
+
 @rule(r"This Pokémon can use the attack on this card")
 def _tool_attack() -> Passive:
     return Passive("tool_attack")

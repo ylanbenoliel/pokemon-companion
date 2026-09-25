@@ -51,11 +51,14 @@ def _draw_opening_hand(deck: list[Card], rng: random.Random) -> tuple[list[Card]
 
 
 def choose_starting_active(hand: list[Card]) -> int | None:
-    """Básico sem regra de prêmio extra (não-ex/V) primeiro, depois mais HP."""
-    basics = [i for i, card in enumerate(hand) if card.is_basic]
-    if not basics:
+    """Quem pode começar no Ativo (Básico, ou Explosiveness): sem regra de
+    prêmio extra (não-ex/V) primeiro, depois mais HP."""
+    from pokemon_companion.engine.effects.passive_text import can_start_active
+
+    starters = [i for i, card in enumerate(hand) if can_start_active(card)]
+    if not starters:
         return None
-    return max(basics, key=lambda i: (prize_count_for(hand[i]) == 1, hand[i].hp or 0))
+    return max(starters, key=lambda i: (prize_count_for(hand[i]) == 1, hand[i].hp or 0))
 
 
 def _setup_player(

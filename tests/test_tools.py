@@ -18,7 +18,7 @@ def tool(name: str, text: str) -> Card:
         id=f"t-{name}",
         name=name,
         supertype=Supertype.TRAINER,
-        subtypes=["Item", "Pokémon Tool"],
+        subtypes=["Tool"],
         rules=[text],
     )
 

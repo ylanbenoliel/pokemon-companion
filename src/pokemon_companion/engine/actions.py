@@ -66,6 +66,14 @@ class PlayTrainer(Action):
 
 
 @dataclass(frozen=True)
+class UseHandAbility(Action):
+    """Habilidade usada com o Pokémon ainda na mão (ex.: "put this Pokémon onto your Bench")."""
+
+    hand_index: int
+    ability_name: str
+
+
+@dataclass(frozen=True)
 class UseAbility(Action):
     position: int  # -1 = Ativo, 0..n = Banco
     ability_name: str

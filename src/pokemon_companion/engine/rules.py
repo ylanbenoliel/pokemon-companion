@@ -32,6 +32,7 @@ from pokemon_companion.engine.actions import (
     Retreat,
     UseAbility,
     UseAttack,
+    UseHandAbility,
     UseStadium,
 )
 from pokemon_companion.engine.effects import abilities, attacks, core, passives, trainers
@@ -45,6 +46,7 @@ from pokemon_companion.engine.effects.cardinfo import (
     trainer_kind,
 )
 from pokemon_companion.engine.effects.core import Ctx
+from pokemon_companion.engine.effects.passive_text import can_start_active
 from pokemon_companion.engine.game_state import (
     GameState,
     PlayerId,
@@ -279,12 +281,13 @@ def _setup_actions(state: GameState, pid: PlayerId) -> list[Action]:
     actions: list[Action] = []
     seen: set[str] = set()
     for i, card in enumerate(player.hand):
-        if not card.is_basic or card.name in seen:
+        if card.name in seen:
             continue
-        seen.add(card.name)
-        if player.active is None:
+        if player.active is None and can_start_active(card):
+            seen.add(card.name)
             actions.append(PlayBasicToActive(hand_index=i))
-        elif core.bench_space(state, player) > 0:
+        elif card.is_basic and player.active is not None and core.bench_space(state, player) > 0:
+            seen.add(card.name)
             actions.append(PlayBasicToBench(hand_index=i))
     if player.active is not None:
         actions.append(EndSetup())
@@ -358,6 +361,13 @@ def legal_actions(state: GameState) -> list[Action]:
 
     actions.extend(_trainer_actions(state, pid))
     actions.extend(_ability_actions(state, pid))
+    for i, card in enumerate(player.hand):
+        if card.is_pokemon and card.abilities and first("hand_ability", card):
+            ctx = Ctx(state, pid)
+            actions.extend(
+                UseHandAbility(hand_index=i, ability_name=name)
+                for name in abilities.hand_abilities(ctx, card)
+            )
 
     if state.stadium is not None and not player.stadium_used_this_turn:
         spec = trainers.stadium_spec_for(state.stadium)
@@ -726,6 +736,14 @@ def apply_action(state: GameState, action: Action) -> list[str]:
 
     elif isinstance(action, PlayTrainer):
         return _play_trainer(state, pid, action)
+
+    elif isinstance(action, UseHandAbility):
+        card = player.hand.pop(action.hand_index)
+        ctx = Ctx(state, pid, messages=messages, is_ability=True)
+        abilities.use_hand_ability(ctx, card, action.ability_name)
+        if not any(m is ctx.source for m in player.all_pokemon_in_play()):
+            player.hand.append(card)  # o efeito não pôs o Pokémon em jogo
+        _after_action(state, messages)
 
     elif isinstance(action, UseAbility):
         mon = core.mon_at(player, action.position)

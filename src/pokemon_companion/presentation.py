@@ -16,6 +16,7 @@ from pokemon_companion.engine.actions import (
     Retreat,
     UseAbility,
     UseAttack,
+    UseHandAbility,
     UseStadium,
 )
 from pokemon_companion.engine.effects import passives
@@ -48,6 +49,9 @@ def describe_action(state: GameState, action: Action) -> str:
         return f"Jogar {player.hand[action.hand_index].name}{suffix}"
     if isinstance(action, UseAbility):
         return f"Usar Habilidade {action.ability_name}{suffix}"
+    if isinstance(action, UseHandAbility):
+        card = player.hand[action.hand_index].name
+        return f"Usar Habilidade {action.ability_name} de {card} (da mão)"
     if isinstance(action, UseStadium):
         return f"Usar o Estádio {state.stadium.name if state.stadium else ''}"
     if isinstance(action, PromoteActive):

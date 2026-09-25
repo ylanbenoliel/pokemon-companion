@@ -61,6 +61,7 @@ from pokemon_companion.engine.actions import (
     Retreat,
     UseAbility,
     UseAttack,
+    UseHandAbility,
     UseStadium,
 )
 from pokemon_companion.engine.effects import core, passives
@@ -383,7 +384,7 @@ class BattleController(QObject):
     def _scene_target(self, action: Action) -> Target | None:
         """Onde na tela o jogador aponta para escolher esta ação."""
         player = self.state.player
-        if isinstance(action, PlayBasicToBench):
+        if isinstance(action, PlayBasicToBench | UseHandAbility):
             return ("zone", "bench")
         if isinstance(action, PlayBasicToActive):
             return ("zone", "active")
@@ -422,6 +423,8 @@ class BattleController(QObject):
         return passives.available_attacks(self.state, PlayerId.PLAYER, active)
 
     def _label(self, action: Action) -> str:
+        if isinstance(action, UseHandAbility):
+            return action.ability_name
         if isinstance(action, UseAbility):
             detail = rules.describe_target(self.state, PlayerId.PLAYER, action)
             return f"{action.ability_name}" + (f" → {detail}" if detail else "")

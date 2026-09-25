@@ -2255,6 +2255,19 @@ def _tyme_return() -> Step:
     return after(lambda run: None)  # a carta nunca saiu da mão
 
 
+@phrase("Put this Pokémon onto your Bench")
+def _hand_to_bench() -> Step:
+    """Habilidade usada da mão: `run.source` é o Pokémon recém-criado."""
+
+    def act(run: Run) -> None:
+        mon = run.source
+        if mon is not None and core.bench_space(run.ctx.state, run.me) > 0:
+            run.me.bench.append(mon)
+            run.ctx.log(f"{mon.card.name} foi da mão para o Banco.")
+
+    return after(act)
+
+
 @phrase("Discard the bottom card of your deck")
 def _mill_bottom() -> Step:
     def act(run: Run) -> None:
@@ -3703,6 +3716,8 @@ def _ability_parts(text: str) -> AbilityParts | None:
                 trigger = new_trigger or trigger
                 if check is not None:
                     checks.append(check)
+        if re.match(r"if this Pokémon is in your hand and ", rest):
+            rest, trigger, changed = "if " + rest[len("if this Pokémon is in your hand and ") :], "hand", True
         promoted = re.match(r"when your (.+?) moves from your Bench to the Active Spot,? ", rest)
         if promoted:
             name = promoted.group(1)

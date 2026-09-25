@@ -41,4 +41,3 @@ def test_hand_written_matches_the_names_quoted_in_the_engine():
         *(_string_literals(m) for m in (passives, rules, core, trainers, abilities, attacks))
     )
     assert quoted & _catalog_names() == HAND_WRITTEN
-

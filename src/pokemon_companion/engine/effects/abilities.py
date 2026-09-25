@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from pokemon_companion.cards_db.models import Ability
+from pokemon_companion.cards_db.models import Ability, Card
 from pokemon_companion.engine.effects import core, passives
 from pokemon_companion.engine.effects.cardinfo import (
     energy_type_of,
@@ -35,7 +35,8 @@ OptionsFn = Callable[[Ctx], list[Target | None]]
 class AbilitySpec:
     fn: AbilityFn
     can_use: CheckFn
-    #: "turn" (1x por turno), "bench" (ao jogar no banco), "evolve" (ao evoluir)
+    #: "turn" (1x por turno), "bench" (ao jogar no banco), "evolve" (ao evoluir),
+    #: "hand" (usada da mão: `UseHandAbility`)
     trigger: str = "turn"
     options: OptionsFn | None = None
     #: limite "não pode usar mais de 1 Habilidade X por turno" (por jogador)
@@ -96,6 +97,8 @@ def usable_abilities(ctx: Ctx, mon: PokemonInPlay) -> list[tuple[str, AbilitySpe
             continue
         if spec.shared_limit and spec.shared_limit in ctx.me.used_ability_names:
             continue
+        if spec.trigger == "hand":
+            continue  # só da mão: `hand_abilities`
         if spec.trigger == "bench" and mon.played_from_hand_turn != ctx.turn:
             continue
         if spec.trigger == "evolve" and not mon.evolved_this_turn:
@@ -104,6 +107,29 @@ def usable_abilities(ctx: Ctx, mon: PokemonInPlay) -> list[tuple[str, AbilitySpe
         if spec.can_use(ctx):
             result.append((ab.name, spec))
     return result
+
+
+def hand_abilities(ctx: Ctx, card: Card) -> list[str]:
+    """Habilidades usáveis com `card` ainda na mão (1x por turno por nome)."""
+    names = []
+    for ab in card.abilities:
+        spec = spec_for(ab)
+        if spec is None or spec.trigger != "hand" or f"hand:{ab.name}" in ctx.me.used_ability_names:
+            continue
+        ctx.source = PokemonInPlay(card=card, turn_played=ctx.turn)
+        if spec.can_use(ctx):
+            names.append(ab.name)
+    return names
+
+
+def use_hand_ability(ctx: Ctx, card: Card, name: str) -> None:
+    ability_ = next(ab for ab in card.abilities if ab.name == name)
+    spec = spec_for(ability_)
+    assert spec is not None
+    ctx.me.used_ability_names.add(f"hand:{name}")
+    ctx.source = PokemonInPlay(card=card, turn_played=ctx.turn)
+    ctx.log(f"{ctx.who()} usou a Habilidade {name} de {card.name} (da mão).")
+    spec.fn(ctx)
 
 
 def ability_options(ctx: Ctx, spec: AbilitySpec) -> list[Target | None]:
