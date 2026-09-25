@@ -21,6 +21,7 @@ from pathlib import Path
 
 import requests
 
+from pokemon_companion.cards_db import updates
 from pokemon_companion.cards_db.cache import card_from_json, card_to_json
 from pokemon_companion.cards_db.models import Card, Supertype
 from pokemon_companion.cards_db.tcgdex_client import BASE_URL, tcgdex_card_to_card
@@ -81,7 +82,8 @@ def load_pool(pool_file: Path = POOL_FILE) -> list[Card]:
     return [card_from_json(json.dumps(item)) for item in raw]
 
 
-def load_legal(legal_file: Path = LEGAL_FILE) -> set[str] | None:
+def load_legal(legal_file: Path | None = None) -> set[str] | None:
+    legal_file = legal_file or updates.data_file("standard_legal.json")
     if not legal_file.exists():
         return None
     return set(json.loads(legal_file.read_text(encoding="utf-8"))["signatures"])

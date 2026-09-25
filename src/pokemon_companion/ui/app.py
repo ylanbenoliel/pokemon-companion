@@ -28,6 +28,7 @@ import argparse
 import dataclasses
 import random
 import sys
+import threading
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import cast
@@ -43,6 +44,7 @@ from PyQt6.QtWidgets import (
 )
 
 from pokemon_companion.ai.opponent import AIPlayer, build_ai
+from pokemon_companion.cards_db import updates
 from pokemon_companion.cards_db.models import Card
 from pokemon_companion.deck_loading import DeckLoadError, load_decks
 from pokemon_companion.engine import rules, turn_manager
@@ -1108,6 +1110,8 @@ def main() -> None:
     app = QApplication(sys.argv)
     install_app_identity(app)
     app.setFont(ui_font(10))
+    # cartas novas chegam como dados; o que baixar vale a partir da próxima abertura
+    threading.Thread(target=updates.refresh, daemon=True).start()
 
     if args.menu or (args.player_deck is None and args.opponent_deck is None and not args.spectate):
         launcher = LauncherWindow(history_path=args.record_history)

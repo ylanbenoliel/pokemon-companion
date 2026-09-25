@@ -23,11 +23,13 @@ def _isolated_user_data(tmp_path_factory, monkeypatch):
     """Configurações, estatísticas e replays dos testes vão para uma pasta
     temporária, nunca para os dados reais de quem roda a suíte."""
     from pokemon_companion import paths
+    from pokemon_companion.cards_db import updates
     from pokemon_companion.ui import settings
 
     folder = tmp_path_factory.mktemp("user-data")
     monkeypatch.setattr(settings, "STORE_FILE", folder / "settings.ini")
     monkeypatch.setattr(paths, "USER_DATA", folder)
+    monkeypatch.setattr(updates, "UPDATES_DIR", folder / "updates")
     yield folder
 
 

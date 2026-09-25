@@ -17,6 +17,7 @@ from pathlib import Path
 
 import requests
 
+from pokemon_companion.cards_db import updates
 from pokemon_companion.cards_db.cache import card_from_json, card_to_json
 from pokemon_companion.cards_db.models import Card
 from pokemon_companion.cards_db.standard import signature
@@ -110,7 +111,8 @@ def save_catalog(entries: list[CatalogEntry], path: Path = CATALOG_FILE) -> None
     path.write_text(json.dumps(rows, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 
-def load_catalog(path: Path = CATALOG_FILE) -> list[CatalogEntry]:
+def load_catalog(path: Path | None = None) -> list[CatalogEntry]:
+    path = path or updates.data_file("standard_catalog.json")
     if not path.exists():
         return []
     rows = json.loads(path.read_text(encoding="utf-8"))

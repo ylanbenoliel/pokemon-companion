@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from pokemon_companion.cards_db.models import Ability, Card
+from pokemon_companion.engine.effects import pack
 from pokemon_companion.engine.effects.cardinfo import (
     has_rule_box,
     is_ancient,
@@ -560,6 +561,7 @@ def _parse_sentence(sentence: str) -> list[Passive] | None:
 
 @lru_cache(maxsize=2048)
 def compile_passive(text: str) -> tuple[Passive, ...] | None:
+    text = pack.rewrite(text)
     found: list[Passive] = []
     stacks = True
     whole = re.sub(r"\s*The effect of .+ doesn't stack\.?$", "", _clean(text)).rstrip(".")

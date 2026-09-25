@@ -25,7 +25,7 @@ from functools import lru_cache
 from typing import NamedTuple
 
 from pokemon_companion.cards_db.models import Attack, Card
-from pokemon_companion.engine.effects import attacks, core, passives
+from pokemon_companion.engine.effects import attacks, core, pack, passives
 from pokemon_companion.engine.effects.abilities import AbilitySpec
 from pokemon_companion.engine.effects.attacks import AttackSpec, Target
 from pokemon_companion.engine.effects.cardinfo import (
@@ -457,6 +457,7 @@ def _parse_compound(text: str) -> list[Step] | None:
 @lru_cache(maxsize=4096)
 def compile_text(text: str) -> Program | None:
     """Programa do texto, ou None se alguma frase não for reconhecida."""
+    text = pack.rewrite(text)
     program = Program()
     _whole[0] = _clean(text)
     try:
