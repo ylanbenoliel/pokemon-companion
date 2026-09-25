@@ -318,6 +318,9 @@ Standard (1961 cartas distintas): **0 efeitos faltando** (eram 53, contando
 - *Rotina semanal*: o repositório existe; falta criar a rotina (prompt
   abaixo) e incluir nela `tools/publish_data.py` depois dos testes.
 - *Empacotar de novo* (`dist/` é anterior a estas mudanças).
+- *Primeiro release do app*: não há nenhum `vX.Y.Z` no GitHub; o aviso de
+  versão nova só funciona para quem instalar a partir de um release. Publicar
+  o `v0.1.0` com os executáveis (ver "Versões e aviso de atualização").
 
 **Rotina agendada (pendente: repositório criado, rotina ainda não)** — segunda
 às 9h de Belém (`0 12 * * 1` UTC), lote de ~40 efeitos por PR. Prompt:
