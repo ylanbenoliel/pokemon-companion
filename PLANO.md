@@ -267,7 +267,58 @@ textos-impressão (27 efeitos distintos faltando, todos casos únicos e
 complexos: Multi Adapter, Double Type, Memory Dive, Tyme, Anthea & Concordia,
 Ogre's Mask, Transformation Tome, marca Ancient/Future em Apoiadores...).
 
-**Rotina agendada (pendente: precisa do repositório no GitHub)** — segunda
+**Lote 9 e endpoint de dados (25/09/2026)** — cobertura do catálogo
+Standard (1961 cartas distintas): **0 efeitos faltando** (eram 53, contando
+26 Ferramentas que a checagem antiga dava como prontas sem efeito nenhum).
+
+- *Carta nova é dado, não código.* `cards_db/updates.py` baixa ao abrir o
+  app (thread, timeout curto) o `manifest.json` do release `data` de
+  github.com/ylanbenoliel/pokemon-companion, confere o sha256 de cada arquivo
+  e guarda em `USER_DATA/updates`; sem rede usa os arquivos embutidos. Vale a
+  partir da próxima abertura. Arquivos: `standard_legal.json`,
+  `standard_catalog.json` e `engine/effects/effects.json` (`rewrites`: texto
+  original → texto com frases que os compiladores conhecem; `groups`:
+  assinaturas Tera/Ancient/Future, que a TCGdex não marca). `min_app`
+  (`APP_DATA_VERSION`) bloqueia pacote que exige vocabulário mais novo.
+  Publicar: `uv run python tools/publish_data.py` (usa `gh`).
+- *Grupos por dados.* `is_tera/is_ancient/is_future` leem `effects.json`
+  (39/25/25 cartas; antes 10/12/17 por nome fixo, 25 Tera tratados como
+  comuns). `maintenance.py --refresh` acrescenta novos via pokemontcg.io.
+- *Ferramentas compiladas do texto* (`passive_text.tool_passives`: "the
+  Pokémon this card is attached to" vira "this Pokémon"; uso único via
+  `discard_tool`). Novo vocabulário: Berries, bônus contra ex, custo
+  reduzido/qualquer energia, recuo próprio/dos dois Ativos, gatilhos
+  condicionais (Heavy Baton, Adversity Policy, Tremendous Bomb), moedas de
+  novo (Backtrack Badge), ataque da Ferramenta (Core Memory, TMs, descarte no
+  fim do turno).
+- *Motor:* `Ctx.exposed_defender` (proteção num lugar só),
+  `engine/effects/coverage.py` (resposta única do que falta, usada pela UI e
+  pelas ferramentas), `HAND_WRITTEN` fixo (o app empacotado não lê o fonte),
+  `available_attacks` (Memory Dive, Ferramentas com ataque), `types_of` (tipo
+  duplo), `extra_tools` (Multi Adapter), `prize_bonus` (Briar, Anthea &
+  Concordia), `core.mill` (Startling Drop), `UseHandAbility` (Emergency
+  Rotation), `can_start_active` (Explosiveness), trava de voltar à mão
+  (Mentally Calm), trava de Pokémon com Habilidade (Potent Glare).
+
+**O que falta / riscos conhecidos**
+
+- *Publicar o primeiro pacote*: `tools/publish_data.py` ainda não foi rodado
+  (o release `data` não existe); até lá o app só usa os dados embutidos.
+- *Simulação IA×IA lenta*: depois deste lote uma partida do torneio (Slowking
+  × Basic Box, semente 1) passou de 20 s no nível difícil; conferir se é só
+  lentidão ou laço (`scratchpad` não fica no repo: repetir com
+  `tools/tournament.py`).
+- *Aproximações marcadas com `ponytail:`*: prêmio virado por Bother-Bot não
+  fica marcado na UI; com Multi Adapter a Ferramenta de uso único descartada
+  é sempre a 1ª; tipo duplo só vale para Fraqueza/Resistência; Tyme usa o HP
+  mais comum do catálogo como palpite.
+- *UI*: a 2ª Ferramenta (Multi Adapter) não aparece no desenho do Pokémon;
+  ataques extras (Memory Dive, TM) já aparecem nos botões.
+- *Rotina semanal*: o repositório existe; falta criar a rotina (prompt
+  abaixo) e incluir nela `tools/publish_data.py` depois dos testes.
+- *Empacotar de novo* (`dist/` é anterior a estas mudanças).
+
+**Rotina agendada (pendente: repositório criado, rotina ainda não)** — segunda
 às 9h de Belém (`0 12 * * 1` UTC), lote de ~40 efeitos por PR. Prompt:
 
 > Você é a rotina semanal de manutenção das regras do projeto
