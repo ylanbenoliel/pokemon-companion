@@ -1070,15 +1070,18 @@ _CARD_INDEX: dict[int, tuple[Card, dict[str, tuple[tuple[Passive, str], ...]]]] 
 _EMPTY: dict[str, tuple[tuple[Passive, str], ...]] = {}
 
 
-def kind_entries(mon: PokemonInPlay, kind: str) -> tuple[tuple[Passive, str], ...]:
-    card = mon.card
+def _card_table(card: Card) -> dict[str, tuple[tuple[Passive, str], ...]]:
     if not card.abilities:
-        return ()
+        return _EMPTY
     entry = _CARD_INDEX.get(id(card))
     if entry is None or entry[0] is not card:
         entry = (card, _by_kind(tuple(card.abilities)) or _EMPTY)
         _CARD_INDEX[id(card)] = entry
-    return entry[1].get(kind, ())
+    return entry[1]
+
+
+def kind_entries(mon: PokemonInPlay, kind: str) -> tuple[tuple[Passive, str], ...]:
+    return _card_table(mon.card).get(kind, ())
 
 
 def _tool_entries(
@@ -1086,13 +1089,24 @@ def _tool_entries(
 ) -> tuple[tuple[Passive, str], ...]:
     from pokemon_companion.engine.effects.passives import tool_active
 
-    return tuple(
-        (p, tool.name)
-        for tool in mon.tools
-        if tool_active(state, mon, tool.name)
-        for p in tool_passives(tool)
-        if p.kind == kind
-    )
+    found = []
+    for tool in mon.tools:
+        matching = [p for p in tool_passives(tool) if p.kind == kind]
+        if matching and tool_active(state, mon, tool.name):
+            found += [(p, tool.name) for p in matching]
+    return tuple(found)
+
+
+def kinds_in_play(state: GameState, owner: PlayerId) -> set[str]:
+    """Tipos de passiva presentes entre os Pokémon de `owner` (Habilidades e
+    Ferramentas), para pular consultas que não teriam resultado."""
+    kinds: set[str] = set()
+    for mon in state.state_of(owner).all_pokemon_in_play():
+        kinds.update(_card_table(mon.card))
+        if mon.tool is not None:
+            for tool in mon.tools:
+                kinds.update(p.kind for p in tool_passives(tool))
+    return kinds
 
 
 def rules_in_play(
@@ -1106,6 +1120,8 @@ def rules_in_play(
     found: list[tuple[Passive, PokemonInPlay, str]] = []
     seen_non_stacking: set[str] = set()
     for mon in player.all_pokemon_in_play():
+        if not mon.card.abilities and mon.tool is None:  # a maioria: sai sem chamar nada
+            continue
         entries = kind_entries(mon, kind)
         if mon.tool is not None:
             entries += _tool_entries(state, mon, kind)

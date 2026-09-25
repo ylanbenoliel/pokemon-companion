@@ -201,7 +201,8 @@ def _cost_from_text(mon: PokemonInPlay, attack: Attack) -> list[str] | None:
 def attack_cost(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack: Attack) -> list[str]:
     alternative = _cost_from_text(mon, attack)
     cost = list(attack.cost) if alternative is None else alternative
-    for passive, holder in compiled(state, owner, "attack_cost"):
+    alternatives = mon.card.abilities and compiled(state, owner, "attack_cost")
+    for passive, holder in alternatives or ():
         if holder is mon and passive.event(attack.name):  # type: ignore[attr-defined]
             cost = list(passive.cost)  # type: ignore[attr-defined]
     if mon.taxed_turn == state.turn_number:
@@ -735,6 +736,13 @@ def compiled_cost(
     state: GameState, owner: PlayerId, mon: PokemonInPlay, cost: list[str]
 ) -> list[str]:
     """Custo do ataque com as passivas compiladas (descontos e taxas)."""
+    from pokemon_companion.engine.effects.passive_text import kinds_in_play
+
+    mine, theirs = kinds_in_play(state, owner), kinds_in_play(state, owner.other)
+    if not mine & {"ignore_colorless", "cost_minus", "cost_minus_any"} and (
+        "tax_opponent" not in theirs
+    ):
+        return cost
     if any(holder is mon for _, holder in compiled(state, owner, "ignore_colorless")):
         cost = [c for c in cost if c != "Colorless"]
     for passive, holder in compiled(state, owner, "cost_minus"):
