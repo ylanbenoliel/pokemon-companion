@@ -49,14 +49,6 @@ def with_attack(card: Card, name: str, cost: list[str], damage: str) -> Card:
     return dataclasses.replace(card, attacks=[Attack(name=name, cost=cost, damage=damage)])
 
 
-@pytest.fixture
-def state():
-    s = build_state(player_active=mon("Attacker"), opponent_active=mon("Defender"))
-    s.player.deck = [mon(f"Deck{i}") for i in range(20)]
-    s.opponent.deck = [mon(f"ODeck{i}") for i in range(20)]
-    return s
-
-
 # --------------------------------------------------------------------------
 # Apoiadores, Itens, Ferramentas, Estádios
 

@@ -9,7 +9,7 @@ from pokemon_companion.engine import rules
 from pokemon_companion.engine.actions import UseAttack
 from pokemon_companion.engine.game_state import PokemonInPlay
 
-from .test_effects import mon, state, trainer  # noqa: F401
+from .test_effects import mon, trainer
 
 
 def attacker(state, text: str, damage: str = "", name: str = "Attacker", attacks=()) -> None:

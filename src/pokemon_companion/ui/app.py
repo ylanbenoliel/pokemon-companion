@@ -33,8 +33,24 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import cast
 
-from PyQt6.QtCore import QAbstractAnimation, QObject, QPointF, Qt, QThread, QTimer, pyqtSignal
-from PyQt6.QtGui import QKeySequence, QPainter, QResizeEvent, QShortcut, QShowEvent
+from PyQt6.QtCore import (
+    QAbstractAnimation,
+    QObject,
+    QPointF,
+    Qt,
+    QThread,
+    QTimer,
+    QUrl,
+    pyqtSignal,
+)
+from PyQt6.QtGui import (
+    QDesktopServices,
+    QKeySequence,
+    QPainter,
+    QResizeEvent,
+    QShortcut,
+    QShowEvent,
+)
 from PyQt6.QtWidgets import (
     QApplication,
     QGraphicsView,
@@ -43,6 +59,7 @@ from PyQt6.QtWidgets import (
     QStackedWidget,
 )
 
+from pokemon_companion import version_check
 from pokemon_companion.ai.opponent import AIPlayer, build_ai
 from pokemon_companion.cards_db import updates
 from pokemon_companion.cards_db.models import Attack, Card
@@ -1086,6 +1103,34 @@ def build_main_window(
     return window
 
 
+class UpdateNotice(QObject):
+    """Checagens de rede ao abrir, fora da thread da interface: dados de
+    cartas (valem na próxima abertura) e versão nova do app (vira aviso)."""
+
+    found = pyqtSignal(str, str)  # tag, página do release
+
+    def run(self) -> None:
+        updates.refresh()
+        newer = version_check.check()
+        if newer is not None:
+            self.found.emit(*newer)
+
+
+def offer_update(tag: str, url: str) -> None:
+    box = QMessageBox(QApplication.activeWindow())
+    box.setIcon(QMessageBox.Icon.Information)
+    box.setWindowTitle("Nova versão")
+    box.setText(
+        f"A versão {tag} do Pokémon Companion está disponível "
+        f"(você tem a {version_check.current_version()})."
+    )
+    download = box.addButton("Baixar", QMessageBox.ButtonRole.AcceptRole)
+    box.addButton("Agora não", QMessageBox.ButtonRole.RejectRole)
+    box.exec()
+    if box.clickedButton() is download:
+        QDesktopServices.openUrl(QUrl(url))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="pokemon-companion — tabuleiro gráfico (PyQt6)")
     parser.add_argument("--difficulty", choices=["easy", "medium", "hard"], default="medium")
@@ -1115,8 +1160,9 @@ def main() -> None:
     app = QApplication(sys.argv)
     install_app_identity(app)
     app.setFont(ui_font(10))
-    # cartas novas chegam como dados; o que baixar vale a partir da próxima abertura
-    threading.Thread(target=updates.refresh, daemon=True).start()
+    notice = UpdateNotice()
+    notice.found.connect(offer_update)
+    threading.Thread(target=notice.run, daemon=True).start()
 
     if args.menu or (args.player_deck is None and args.opponent_deck is None and not args.spectate):
         launcher = LauncherWindow(history_path=args.record_history)

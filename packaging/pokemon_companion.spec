@@ -5,7 +5,7 @@
 import os
 import sys
 
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, copy_metadata
 
 NAME = "Pokemon Companion"
 
@@ -13,7 +13,8 @@ a = Analysis(
     [os.path.join(SPECPATH, "launch.py")],
     pathex=[os.path.join(SPECPATH, "..", "src")],
     # decks, fontes, pesos da IA, legalidade do Standard, settings
-    datas=collect_data_files("pokemon_companion"),
+    # metadados: o app lê a própria versão para o aviso de versão nova
+    datas=collect_data_files("pokemon_companion") + copy_metadata("pokemon-companion"),
 )
 pyz = PYZ(a.pure)
 # ícones gerados por tools/make_icon.py

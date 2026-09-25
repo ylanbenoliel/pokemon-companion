@@ -10,7 +10,7 @@ from pokemon_companion.engine.actions import UseAttack
 from pokemon_companion.engine.effects import passives
 from pokemon_companion.engine.game_state import PlayerId, PokemonInPlay
 
-from .test_effects import _attacker, mon, state  # noqa: F401
+from .test_effects import _attacker, mon
 
 
 def tool(name: str, text: str) -> Card:

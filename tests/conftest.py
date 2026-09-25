@@ -133,3 +133,15 @@ def sample_api_card_json() -> dict:
             "large": "https://images.pokemontcg.io/svi/26_hires.png",
         },
     }
+
+
+@pytest.fixture
+def state():
+    """Partida mínima para testar efeitos: Ativos e decks de Pokémon genéricos."""
+    from .test_effects import mon
+    from .test_rules import build_state
+
+    s = build_state(player_active=mon("Attacker"), opponent_active=mon("Defender"))
+    s.player.deck = [mon(f"Deck{i}") for i in range(20)]
+    s.opponent.deck = [mon(f"ODeck{i}") for i in range(20)]
+    return s

@@ -350,6 +350,15 @@ Standard (1961 cartas distintas): **0 efeitos faltando** (eram 53, contando
 
 ## Executável (PyInstaller)
 
+**Versões e aviso de atualização (25/09/2026).** O app não se substitui
+sozinho: ao abrir, `version_check.py` consulta os releases do GitHub e, se
+houver um `vX.Y.Z` publicado mais novo que a versão do `pyproject.toml`
+(lida dos metadados do pacote; o `.spec` copia os metadados para o
+executável), mostra "Nova versão" com um botão que abre a página do
+release. Para lançar: subir `version` no `pyproject.toml`, `uv sync`,
+empacotar e `gh release create vX.Y.Z <executáveis>`. O release `data`
+(cartas) é separado e não dispara o aviso.
+
     uv run pyinstaller --noconfirm packaging/pokemon_companion.spec
 
 Gera `dist/Pokemon Companion.app` (~140 MB, quase tudo Qt e OpenCV). Nada
