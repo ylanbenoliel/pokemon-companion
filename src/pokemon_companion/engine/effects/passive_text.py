@@ -74,6 +74,10 @@ class Passive:
     discard_tool: bool = False
     #: efeito do dono do Pokémon (texto compilado como Treinador), ex.: "draw 3 cards"
     effect: str = ""
+    #: custo que substitui o do ataque citado ("attack_cost"; `event` testa o nome)
+    cost: tuple[str, ...] = ()
+    #: tipos que o Pokémon passa a ter ("types")
+    types: tuple[str, ...] = ()
 
     def value(self, state: GameState, owner: PlayerId, holder: PokemonInPlay) -> int:
         return self.amount * (self.per(state, owner, holder) if self.per else 1)
@@ -205,6 +209,11 @@ def _self_condition(text: str) -> HolderTest | None:
     if low:
         limit = int(low.group(1))
         return lambda s, o, h: h.current_hp <= limit
+    any_in_play = re.fullmatch(r"you have any (.*?)Pokémon in play", text)
+    if any_in_play:
+        test = pokemon_filter(any_in_play.group(1))
+        if test is not None:
+            return lambda s, o, h: any(test(m) for m in s.state_of(o).all_pokemon_in_play())
     if text == "you have more Prize cards remaining than your opponent":
         return lambda s, o, h: len(s.state_of(o).prizes) > len(s.state_of(o.other).prizes)
     if text == "you have the same number of cards in your hand as your opponent":
@@ -389,6 +398,37 @@ def _cheaper_attacks(symbols: str) -> Passive:
 )
 def _cheaper_and_stronger(symbols: str, n: str) -> list[Passive]:
     return [_cheaper_attacks(symbols), Passive("bonus", int(n))]
+
+
+@rule(rf"this Pokémon can use the (.+?) attack for ((?:{E})+)")
+def _attack_for(name: str, symbols: str, *_: str) -> Passive:
+    cost = tuple(energy(sym) for sym in re.findall(E, symbols))
+    return Passive("attack_cost", cost=cost, event=lambda attack: attack == name)
+
+
+@rule(r"ignore all Energy in the cost of (.+?) used by this Pokémon")
+def _attack_free(name: str) -> Passive:
+    return Passive("attack_cost", event=lambda attack: attack == name)
+
+
+@rule(r"This Pokémon can use the attack on this card")
+def _tool_attack() -> Passive:
+    return Passive("tool_attack")
+
+
+@rule(r"If this card is attached to 1 of your Pokémon, discard it at the end of your turn")
+def _tool_expires() -> Passive:
+    return Passive("tool_expires")
+
+
+@rule(r"Each of your evolved Pokémon can use any attack from its previous Evolutions")
+def _prior_attacks() -> Passive:
+    return Passive("prior_attacks", scope="team", target=lambda m: bool(m.prior_cards))
+
+
+@rule(rf"it is ((?:{E}(?:, | and |, and ))+{E}) type")
+def _types(symbols: str, *_: str) -> Passive:
+    return Passive("types", types=tuple(energy(sym) for sym in re.findall(E, symbols)))
 
 
 @rule(r"When this Pokémon uses an attack, that attack costs (\d+) Energy less")
@@ -596,10 +636,40 @@ def _coin_prevent_energy(symbol: str) -> Passive:
 # compilação
 
 
+def _lock_pokemon(what: str) -> list[Passive] | None:
+    """ "Pokémon that has an Ability, except for Team Rocket's Pokémon" → trava
+    de jogar esses Pokémon da mão (o filtro recebe a carta)."""
+    match = re.fullmatch(r"Pokémon that ha(?:s|ve) an Ability(?:, except for (.+?)Pokémon)?", what)
+    if match is None:
+        return None
+    group = (match.group(1) or "").strip()
+    if group and not group.endswith("'s"):
+        return None
+    return [
+        Passive(
+            "lock_pokemon",
+            scope="opp",
+            target=lambda card: bool(card.abilities)
+            and not (group and card.name.startswith(group)),
+        )
+    ]
+
+
 def _parse_sentence(sentence: str) -> list[Passive] | None:
     sentence = sentence.strip()
     if re.fullmatch(r"The effect of .+ doesn't stack", sentence):
         return []
+    in_play = re.fullmatch(r"As long as this Pokémon is in play, (.+)", sentence)
+    if in_play:
+        return _parse_sentence(in_play.group(1))
+    holding = re.fullmatch(r"As long as this Pokémon has an? (.+?) attached, (.+)", sentence)
+    if holding:
+        name = holding.group(1)
+        inner = _parse_sentence(holding.group(2))
+        has = lambda s, o, h: (h.tool is not None and h.tool.name == name) or any(  # noqa: E731
+            c.name == name for c in h.special_energy_cards
+        )
+        return None if inner is None else _with_when(inner, has)
     head = re.match(
         r"As long as this Pokémon is (in the Active Spot|on your Bench), (.+)", sentence
     )
@@ -608,14 +678,18 @@ def _parse_sentence(sentence: str) -> list[Passive] | None:
         if inner is None:
             inner = _parse_sentence(head.group(2))
         return None if inner is None else _with_holder(inner, _HOLDER_AT[head.group(1)])
-    lock = re.fullmatch(r"[Yy]our opponent can't play any (.+?) from their hand", sentence)
+    lock = re.fullmatch(
+        r"[Yy]our opponent can't play any (.+?) from their hand(, except for .+)?", sentence
+    )
     if lock:
         kinds = {
             "Item cards": ["lock_items"],
             "Item cards or Pokémon Tool cards": ["lock_items", "lock_tools"],
             "Stadium cards": ["lock_stadiums"],
         }.get(lock.group(1))
-        return None if kinds is None else [Passive(k, scope="opp") for k in kinds]
+        if kinds is not None and lock.group(2) is None:
+            return [Passive(k, scope="opp") for k in kinds]
+        return _lock_pokemon(lock.group(1) + (lock.group(2) or ""))
     compound = re.fullmatch(r"If (.+?), (it gets .+?), and (the attacks it uses .+)", sentence)
     if compound:
         when = _self_condition(compound.group(1))

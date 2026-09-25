@@ -101,7 +101,10 @@ def choose_promotion(
 
     def ready(mon: PokemonInPlay) -> bool:
         if state is not None and owner is not None:
-            return any(passives.can_pay(state, owner, mon, a) for a in mon.card.attacks)
+            return any(
+                passives.can_pay(state, owner, mon, a)
+                for a in passives.available_attacks(state, owner, mon)
+            )
         return any(energy_satisfies_cost(mon.attached_energies, a.cost) for a in mon.card.attacks)
 
     def score(mon: PokemonInPlay) -> tuple[bool, int, int]:
@@ -250,7 +253,7 @@ def _attack_actions(state: GameState, pid: PlayerId) -> list[Action]:
     if player.attacks_this_turn >= _attacks_allowed(state, pid):
         return []
     actions: list[Action] = []
-    for index, attack in enumerate(active.card.attacks):
+    for index, attack in enumerate(passives.available_attacks(state, pid, active)):
         if not passives.attack_allowed(state, pid, active, attack):
             continue
         if not passives.can_pay(state, pid, active, attack):
@@ -319,7 +322,9 @@ def legal_actions(state: GameState) -> list[Action]:
         if card.is_basic and first("basic", card):
             if player.active is None:
                 actions.append(PlayBasicToActive(hand_index=i))
-            elif core.bench_space(state, player) > 0:
+            elif core.bench_space(state, player) > 0 and not passives.pokemon_locked(
+                state, pid, card
+            ):
                 actions.append(PlayBasicToBench(hand_index=i))
 
     # Regras de 1º turno: turno 1 é o primeiro de quem começa, turno 2 o do
@@ -327,6 +332,8 @@ def legal_actions(state: GameState) -> list[Action]:
     if player.evolution_blocked_turn != state.turn_number:
         for i, card in enumerate(player.hand):
             if not (card.is_pokemon and card.evolves_from) or not first("evolve", card):
+                continue
+            if passives.pokemon_locked(state, pid, card):
                 continue
             if player.active and _can_evolve_onto(state, pid, card, player.active):
                 actions.append(Evolve(hand_index=i, target_is_active=True))
@@ -567,6 +574,11 @@ def _end_of_turn_effects(state: GameState, messages: list[str]) -> None:
         player.discard.extend(player.hand)
         player.hand.clear()
         messages.append(f"{pid.value} descartou a mão no fim do turno.")
+    for _, mon in passives.compiled(state, pid, "tool_expires"):
+        if mon.tool is not None:
+            messages.append(f"{mon.tool.name} de {mon.card.name} foi descartada.")
+            player.discard.append(mon.tool)
+            mon.tool = None
     active = player.active
     if active is not None and passives.tool_active(state, active, "Powerglass"):
         ctx = Ctx(state, pid, active, messages=messages)
@@ -807,7 +819,7 @@ def _apply_attack(state: GameState, pid: PlayerId, action: UseAttack) -> list[st
     player = state.state_of(pid)
     attacker = player.active
     assert attacker is not None
-    attack = attacker.card.attacks[action.attack_index]
+    attack = passives.available_attacks(state, pid, attacker)[action.attack_index]
     messages: list[str] = []
     player.attacks_this_turn += 1
     can_proceed, confusion_messages = check_confusion_self_damage(attacker)
@@ -921,7 +933,8 @@ def describe_target(state: GameState, pid: PlayerId, action: Action) -> str:
         return f"{mon.card.name if mon else '?'} → {target[1]}"
     if kind == "mode":
         if isinstance(action, UseAttack) and player.active is not None:
-            spec = attacks.spec_for(player.active.card.attacks[action.attack_index])
+            active_attacks = passives.available_attacks(state, pid, player.active)
+            spec = attacks.spec_for(active_attacks[action.attack_index])
             if spec is not None and spec.mode_label is not None:
                 return spec.mode_label(int(target[1]))  # type: ignore[call-overload]
         if isinstance(action, PlayTrainer) and player.hand[action.hand_index].name == "Kieran":

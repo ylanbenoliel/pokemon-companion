@@ -51,6 +51,7 @@ from PyQt6.QtWidgets import (
 )
 
 from pokemon_companion.cards_db.models import Card, Supertype
+from pokemon_companion.engine.effects import passives
 from pokemon_companion.engine.game_state import GameState, PlayerId, PlayerState, PokemonInPlay
 from pokemon_companion.ui.anim import Animator, par, pause, prop, seq
 from pokemon_companion.ui.art import ArtProvider, paint_card_back
@@ -972,7 +973,9 @@ class BattleScene(QGraphicsScene):
         self.end_turn_button.set_mode(end_turn_mode)
 
         active = state.player.active
-        attacks = active.card.attacks if active is not None else []
+        attacks = (
+            passives.available_attacks(state, PlayerId.PLAYER, active) if active is not None else []
+        )
         while len(self.attack_buttons) < len(attacks):
             button = AttackButton(len(self.attack_buttons))
             button.setZValue(300)

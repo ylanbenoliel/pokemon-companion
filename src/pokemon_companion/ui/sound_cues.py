@@ -30,6 +30,7 @@ from pokemon_companion.engine.actions import (
     UseAttack,
     UseStadium,
 )
+from pokemon_companion.engine.effects import passives
 from pokemon_companion.engine.effects.cardinfo import (
     TYPED_SPECIAL_ENERGIES,
     is_basic_energy,
@@ -142,8 +143,9 @@ def snapshot(state: GameState, actor: PlayerId, action: Action) -> Snapshot:
     attacker_type, damage = "Colorless", 0
     if me.active is not None:
         attacker_type = pokemon_type(me.active.card)
-        if isinstance(action, UseAttack) and action.attack_index < len(me.active.card.attacks):
-            damage = me.active.card.attacks[action.attack_index].base_damage
+        usable = passives.available_attacks(state, actor, me.active)
+        if isinstance(action, UseAttack) and action.attack_index < len(usable):
+            damage = usable[action.attack_index].base_damage
     return Snapshot(
         sides={pid: _side(state, pid) for pid in PlayerId},
         played=played,

@@ -18,6 +18,7 @@ from pokemon_companion.engine.actions import (
     UseAttack,
     UseStadium,
 )
+from pokemon_companion.engine.effects import passives
 from pokemon_companion.engine.game_state import GameState
 from pokemon_companion.engine.rules import decision_player, describe_target
 
@@ -39,7 +40,7 @@ def describe_action(state: GameState, action: Action) -> str:
         return f"Anexar {player.hand[action.hand_index].name} no {target}"
     if isinstance(action, UseAttack):
         assert player.active is not None
-        attack = player.active.card.attacks[action.attack_index]
+        attack = passives.available_attacks(state, actor, player.active)[action.attack_index]
         return f"Atacar com {attack.name} ({attack.damage or '-'} dano){suffix}"
     if isinstance(action, Retreat):
         return f"Recuar para {player.bench[action.bench_index].card.name}"

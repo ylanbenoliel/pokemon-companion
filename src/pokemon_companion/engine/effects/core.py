@@ -558,7 +558,7 @@ def deal_damage(
         if bonus and bonus[2] == state.turn_number and bonus[0] in ("*", ctx.attack_name):
             amount += bonus[1]
     if attacker is not None and is_active and amount > 0:
-        attacker_types = set(attacker.card.types)
+        attacker_types = passives.types_of(state, ctx.player_id, attacker)
         if apply_weakness and attacker_types & passives.weakness_types(state, owner, defender):
             amount *= 2
         resistances = {r.energy_type for r in defender.card.resistances}

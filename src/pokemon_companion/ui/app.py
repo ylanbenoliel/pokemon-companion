@@ -45,7 +45,7 @@ from PyQt6.QtWidgets import (
 
 from pokemon_companion.ai.opponent import AIPlayer, build_ai
 from pokemon_companion.cards_db import updates
-from pokemon_companion.cards_db.models import Card
+from pokemon_companion.cards_db.models import Attack, Card
 from pokemon_companion.deck_loading import DeckLoadError, load_decks
 from pokemon_companion.engine import rules, turn_manager
 from pokemon_companion.engine.actions import (
@@ -63,7 +63,7 @@ from pokemon_companion.engine.actions import (
     UseAttack,
     UseStadium,
 )
-from pokemon_companion.engine.effects import core
+from pokemon_companion.engine.effects import core, passives
 from pokemon_companion.engine.effects.cardinfo import pokemon_type
 from pokemon_companion.engine.game_state import GameState, PlayerId, PokemonInPlay
 from pokemon_companion.engine.history import MatchRecorder
@@ -415,12 +415,18 @@ class BattleController(QObject):
             [a for a in self.legal_actions() if getattr(a, "hand_index", None) == hand_index]
         )
 
+    def _attacks(self) -> list[Attack]:
+        active = self.state.player.active
+        if active is None:
+            return []
+        return passives.available_attacks(self.state, PlayerId.PLAYER, active)
+
     def _label(self, action: Action) -> str:
         if isinstance(action, UseAbility):
             detail = rules.describe_target(self.state, PlayerId.PLAYER, action)
             return f"{action.ability_name}" + (f" → {detail}" if detail else "")
         if isinstance(action, UseAttack) and self.state.player.active is not None:
-            name = self.state.player.active.card.attacks[action.attack_index].name
+            name = self._attacks()[action.attack_index].name
             detail = rules.describe_target(self.state, PlayerId.PLAYER, action)
             return f"{name}" + (f": {detail}" if detail else "")
         detail = rules.describe_target(self.state, PlayerId.PLAYER, action)
@@ -561,11 +567,7 @@ class BattleController(QObject):
             for a in self.legal_actions()
             if isinstance(a, UseAttack) and a.attack_index == attack_index
         ]
-        name = (
-            self.state.player.active.card.attacks[attack_index].name
-            if self.state.player.active
-            else ""
-        )
+        name = self._attacks()[attack_index].name if self.state.player.active else ""
         self._offer(actions, f"{name}: escolha", f"{name}: escolha o alvo")
 
     def _on_end_turn_clicked(self) -> None:

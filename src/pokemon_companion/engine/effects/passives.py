@@ -194,6 +194,9 @@ def _cost_from_text(mon: PokemonInPlay, attack: Attack) -> list[str] | None:
 def attack_cost(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack: Attack) -> list[str]:
     alternative = _cost_from_text(mon, attack)
     cost = list(attack.cost) if alternative is None else alternative
+    for passive, holder in compiled(state, owner, "attack_cost"):
+        if holder is mon and passive.event(attack.name):  # type: ignore[attr-defined]
+            cost = list(passive.cost)  # type: ignore[attr-defined]
     if mon.taxed_turn == state.turn_number:
         cost.append("Colorless")
     if stadium_is(state, "Nighttime Mine") and is_tera(mon.card):
@@ -260,6 +263,28 @@ def attack_allowed(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack
 
 # ---------------------------------------------------------------------------
 # fraqueza, dano e prevenções
+
+
+def available_attacks(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> list[Attack]:
+    """Ataques que o Pokémon pode usar: os da carta, os das evoluções
+    anteriores (Memory Dive) e o impresso na Ferramenta (Core Memory, TMs).
+    `UseAttack.attack_index` indexa esta lista."""
+    found = list(mon.card.attacks)
+    if any(_applies(p, h, mon) for p, h in compiled(state, owner, "prior_attacks")):
+        for prior in mon.prior_cards:
+            found += [a for a in prior.attacks if a not in found]
+    if mon.tool is not None and any(h is mon for _, h in compiled(state, owner, "tool_attack")):
+        found += mon.tool.attacks
+    return found
+
+
+def types_of(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> set[str]:
+    """Tipos do Pokémon, contando Habilidades como "it is {F} and {P} type"."""
+    types = set(mon.card.types)
+    for passive, holder in compiled(state, owner, "types"):
+        if holder is mon:
+            types = set(passive.types)  # type: ignore[attr-defined]
+    return types
 
 
 def weakness_types(state: GameState, defender_owner: PlayerId, defender: PokemonInPlay) -> set[str]:
@@ -596,6 +621,14 @@ def trainer_locked(state: GameState, player_id: PlayerId, kind: str) -> bool:
     """Item/Ferramenta/Estádio travados por Habilidade do oponente."""
     lock = {"Item": "lock_items", "Tool": "lock_tools", "Stadium": "lock_stadiums"}.get(kind)
     return lock is not None and bool(compiled(state, player_id.other, lock))
+
+
+def pokemon_locked(state: GameState, player_id: PlayerId, card: object) -> bool:
+    """Pokémon que o oponente trava de jogar da mão ("can't play any Pokémon that…")."""
+    return any(
+        p.target(card)  # type: ignore[attr-defined]
+        for p, _ in compiled(state, player_id.other, "lock_pokemon")
+    )
 
 
 def ability_suppressed(state: GameState, mon: PokemonInPlay, name: str) -> bool:
