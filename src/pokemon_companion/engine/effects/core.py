@@ -84,6 +84,17 @@ class Ctx:
     def log(self, text: str) -> None:
         self.messages.append(text)
 
+    @property
+    def exposed_defender(self) -> PokemonInPlay | None:
+        """O Ativo do oponente, ou None se ele está protegido de efeitos de
+        ataque. Todo efeito de ataque sobre o Defensor passa por aqui."""
+        defender = self.opp.active
+        if defender is None or passives.prevents_attack_effects(
+            self.state, self.opp_id, defender, True
+        ):
+            return None
+        return defender
+
     def who(self, pid: PlayerId | None = None) -> str:
         return (pid or self.player_id).value
 

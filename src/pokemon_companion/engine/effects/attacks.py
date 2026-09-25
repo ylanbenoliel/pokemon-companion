@@ -236,10 +236,8 @@ def cant_use_next_turn(ctx: Ctx, attack_: Attack) -> None:
 
 
 def defending_cant_retreat(ctx: Ctx) -> None:
-    defender = ctx.opp.active
-    if defender is not None and not passives.prevents_attack_effects(
-        ctx.state, ctx.opp_id, defender, True
-    ):
+    defender = ctx.exposed_defender
+    if defender is not None:
         defender.cannot_retreat_turn = ctx.turn + 1
 
 
@@ -986,8 +984,8 @@ def _hide(ctx: Ctx, a: Attack) -> None:
 
 @attack("Growl")
 def _growl(ctx: Ctx, a: Attack) -> None:
-    defender = ctx.opp.active
-    if defender and not passives.prevents_attack_effects(ctx.state, ctx.opp_id, defender, True):
+    defender = ctx.exposed_defender
+    if defender:
         defender.attack_debuff = (20, ctx.turn + 1)
 
 
@@ -1006,10 +1004,8 @@ def _evolution_jammer(ctx: Ctx, a: Attack) -> None:
 @attack("Torment")
 def _torment(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
-    defender = ctx.opp.active
+    defender = ctx.exposed_defender
     if defender and defender.card.attacks:
-        if passives.prevents_attack_effects(ctx.state, ctx.opp_id, defender, True):
-            return
         strongest = max(defender.card.attacks, key=lambda x: x.base_damage)
         defender.blocked_attack = (strongest.name, ctx.turn + 1)
 
@@ -1085,8 +1081,8 @@ def _gust_then_hit(ctx: Ctx, a: Attack) -> None:
 @attack("Bounce Back", "Push Down")
 def _push_out(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
-    defender = ctx.opp.active
-    if defender and not passives.prevents_attack_effects(ctx.state, ctx.opp_id, defender, True):
+    defender = ctx.exposed_defender
+    if defender:
         core.opponent_switches_out(ctx.state, ctx.opp_id)
 
 
@@ -1259,12 +1255,11 @@ def _icicle_loop(ctx: Ctx, a: Attack) -> None:
 @attack("Whirlpool")
 def _whirlpool(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
-    defender = ctx.opp.active
+    defender = ctx.exposed_defender
     if (
         defender
         and defender.attached_energies
         and core.coin()
-        and not passives.prevents_attack_effects(ctx.state, ctx.opp_id, defender, True)
     ):
         core.discard_energy(ctx.opp, defender, defender.attached_energies[0])
         ctx.log(f"Uma energia de {defender.card.name} foi descartada.")
@@ -1537,12 +1532,11 @@ def _charge_from_discard(ctx: Ctx, a: Attack) -> None:
 @attack("Crunch")
 def _discard_defender_energy(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
-    defender = ctx.opp.active
+    defender = ctx.exposed_defender
     if (
         defender is not None
         and defender.attached_energies
         and effect_happens(a, "discard an Energy from your opponent's Active")
-        and not passives.prevents_attack_effects(ctx.state, ctx.opp_id, defender, True)
     ):
         card = core.discard_energy(ctx.opp, defender, defender.attached_energies[0])
         if card is not None:

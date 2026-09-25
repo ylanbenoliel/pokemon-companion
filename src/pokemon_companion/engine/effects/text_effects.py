@@ -106,6 +106,10 @@ class Run:
     def defender(self) -> PokemonInPlay | None:
         return self.ctx.opp.active
 
+    @property
+    def exposed_defender(self) -> PokemonInPlay | None:
+        return self.ctx.exposed_defender
+
     def coin(self) -> bool:
         return core.coin()
 
@@ -776,10 +780,8 @@ def _no_retreat() -> Step:
 
 def _defender_mark(mark: Callable[[PokemonInPlay, int], None]) -> Act:
     def act(run: Run) -> None:
-        defender = run.defender
-        if defender is not None and not passives.prevents_attack_effects(
-            run.ctx.state, run.ctx.opp_id, defender, True
-        ):
+        defender = run.exposed_defender
+        if defender is not None:
             mark(defender, run.ctx.turn + 1)
 
     return act
@@ -955,10 +957,8 @@ def _discard_all_own(symbol: str | None = None) -> Step:
 
 def _discard_from_defender(amount: int, special_only: bool) -> Act:
     def act(run: Run) -> None:
-        defender = run.defender
-        if defender is None or passives.prevents_attack_effects(
-            run.ctx.state, run.ctx.opp_id, defender, True
-        ):
+        defender = run.exposed_defender
+        if defender is None:
             return
         for _ in range(amount):
             pool = (
@@ -1254,10 +1254,8 @@ def _gust(_n: str) -> Step:
 )
 def _push_out(*_: str) -> Step:
     def act(run: Run) -> None:
-        defender = run.defender
-        if defender is not None and not passives.prevents_attack_effects(
-            run.ctx.state, run.ctx.opp_id, defender, True
-        ):
+        defender = run.exposed_defender
+        if defender is not None:
             core.opponent_switches_out(run.ctx.state, run.ctx.opp_id)
 
     return after(act)
@@ -1868,10 +1866,8 @@ def _nocaute(run: Run, mon: PokemonInPlay | None) -> None:
 
 def _defender_mark_now(mark: Callable[[PokemonInPlay], None]) -> Act:
     def act(run: Run) -> None:
-        defender = run.defender
-        if defender is not None and not passives.prevents_attack_effects(
-            run.ctx.state, run.ctx.opp_id, defender, True
-        ):
+        defender = run.exposed_defender
+        if defender is not None:
             mark(defender)
 
     return act
@@ -1957,10 +1953,8 @@ def _strong_poison(n: str, _base: str) -> Step:
 
 def _doom(kind_: str) -> Act:
     def act(run: Run) -> None:
-        defender = run.defender
-        if defender is not None and not passives.prevents_attack_effects(
-            run.ctx.state, run.ctx.opp_id, defender, True
-        ):
+        defender = run.exposed_defender
+        if defender is not None:
             defender.doom = (kind_, run.ctx.turn + 1)
 
     return act
@@ -2063,10 +2057,8 @@ def _discard_defender() -> Step:
 )
 def _shuffle_defender() -> Step:
     def act(run: Run) -> None:
-        defender = run.defender
-        if defender is not None and not passives.prevents_attack_effects(
-            run.ctx.state, run.ctx.opp_id, defender, True
-        ):
+        defender = run.exposed_defender
+        if defender is not None:
             run.ctx.log(f"{defender.card.name} voltou para o deck.")
             _remove_from_play(run.opp, defender, to_deck=True)
 
@@ -3970,10 +3962,8 @@ def _discard_opp_typed(symbol: str) -> Step:
     kind_ = energy(symbol)
 
     def act(run: Run) -> None:
-        defender = run.defender
-        if defender is None or kind_ not in defender.attached_energies:
-            return
-        if not passives.prevents_attack_effects(run.ctx.state, run.ctx.opp_id, defender, True):
+        defender = run.exposed_defender
+        if defender is not None and kind_ in defender.attached_energies:
             core.discard_energy(run.opp, defender, kind_)
 
     return after(act)
@@ -4310,10 +4300,8 @@ def _bench_counters_until(n: str) -> Step:
 )
 def _smokescreen() -> Step:
     def act(run: Run) -> None:
-        defender = run.defender
-        if defender is not None and not passives.prevents_attack_effects(
-            run.ctx.state, run.ctx.opp_id, defender, True
-        ):
+        defender = run.exposed_defender
+        if defender is not None:
             defender.attack_coin_turn = run.ctx.turn + 1
 
     return after(act)
@@ -4620,10 +4608,8 @@ def _energy_each_bench_discard(symbol: str) -> Step:
 @phrase("Move an Energy from your opponent's Active Pokémon to {N} of their Benched Pokémon")
 def _move_opp_energy(_n: str) -> Step:
     def act(run: Run) -> None:
-        defender = run.defender
+        defender = run.exposed_defender
         if defender is None or not defender.attached_energies or not run.opp.bench:
-            return
-        if passives.prevents_attack_effects(run.ctx.state, run.ctx.opp_id, defender, True):
             return
         receiver = min(
             run.opp.bench, key=lambda m: max((a.base_damage for a in m.card.attacks), default=0)
@@ -4637,10 +4623,8 @@ def _move_opp_energy(_n: str) -> Step:
 @phrase("During your next turn, the Defending Pokémon takes {N} more damage from attacks")
 def _defender_vulnerable(n: str) -> Step:
     def act(run: Run) -> None:
-        defender = run.defender
-        if defender is not None and not passives.prevents_attack_effects(
-            run.ctx.state, run.ctx.opp_id, defender, True
-        ):
+        defender = run.exposed_defender
+        if defender is not None:
             defender.damage_reduction = (-num(n), run.ctx.turn + 2)
 
     return after(act)
@@ -5099,10 +5083,8 @@ def _fill_opp_bench(n: str) -> Step:
 )
 def _tax(*_: str) -> Step:
     def act(run: Run) -> None:
-        defender = run.defender
-        if defender is not None and not passives.prevents_attack_effects(
-            run.ctx.state, run.ctx.opp_id, defender, True
-        ):
+        defender = run.exposed_defender
+        if defender is not None:
             defender.taxed_turn = run.ctx.turn + 1
 
     return after(act)
@@ -6359,10 +6341,8 @@ def _hit_chosen_per_heads(n: str) -> list[Step]:
 
 def _attach_trap(kind_: str) -> Act:
     def act(run: Run) -> None:
-        defender = run.defender
-        if defender is not None and not passives.prevents_attack_effects(
-            run.ctx.state, run.ctx.opp_id, defender, True
-        ):
+        defender = run.exposed_defender
+        if defender is not None:
             defender.attach_trap = (kind_, run.ctx.turn + 1)
 
     return act
@@ -6400,10 +6380,8 @@ def _attach_counters(n: str) -> Step:
 )
 def _smokescreen_n(n: str) -> Step:
     def act(run: Run) -> None:
-        defender = run.defender
-        if defender is not None and not passives.prevents_attack_effects(
-            run.ctx.state, run.ctx.opp_id, defender, True
-        ):
+        defender = run.exposed_defender
+        if defender is not None:
             defender.attack_coin_turn = run.ctx.turn + 1
             defender.attack_coins = num(n)
 
@@ -6832,10 +6810,8 @@ def _search_counted() -> Step:
 )
 def _stomp() -> Step:
     def act(run: Run) -> None:
-        defender = run.defender
-        if defender is None or stage_of(defender.card) != "Basic":
-            return
-        if not passives.prevents_attack_effects(run.ctx.state, run.ctx.opp_id, defender, True):
+        defender = run.exposed_defender
+        if defender is not None and stage_of(defender.card) == "Basic":
             defender.cannot_attack_turn = run.ctx.turn + 1
 
     return after(act)

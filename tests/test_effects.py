@@ -25,6 +25,7 @@ from pokemon_companion.engine.actions import (
     UseStadium,
 )
 from pokemon_companion.engine.effects import passives
+from pokemon_companion.engine.effects.core import Ctx
 from pokemon_companion.engine.game_state import PlayerId, PokemonInPlay
 
 from .conftest import make_basic_pokemon, make_energy, make_evolution
@@ -773,3 +774,10 @@ def test_crunch_without_coin_always_discards(state):
     rules.apply_action(state, UseAttack(attack_index=0))
 
     assert state.opponent.active.attached_energies == []
+
+
+def test_exposed_defender_hides_a_protected_active(state):
+    ctx = Ctx(state, PlayerId.PLAYER)
+    assert ctx.exposed_defender is state.opponent.active
+    state.opponent.active.protected_turn = state.turn_number
+    assert ctx.exposed_defender is None
