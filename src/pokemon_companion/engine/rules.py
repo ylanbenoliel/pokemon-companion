@@ -391,15 +391,6 @@ def _process_knockouts(
         owner = state.state_of(owner_id)
         taker = state.state_of(owner_id.other)
         for mon in [m for m in owner.all_pokemon_in_play() if m.is_knocked_out]:
-            if (
-                attacker is not None
-                and owner_id is attacker.other
-                and passives.ability_active(state, mon, "Durable Body")
-                and core.coin()
-            ):
-                mon.damage_counters = mon.max_hp - 10
-                messages.append(f"{mon.card.name} resistiu com 10 de HP (Durable Body).")
-                continue
             was_active = owner.active is mon
             prizes = prize_count_for(mon.card)
             if attacker is not None and owner_id is attacker.other:

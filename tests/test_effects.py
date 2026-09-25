@@ -41,8 +41,8 @@ def mon(name: str = "Mon", hp: int = 100, **kwargs: object) -> Card:
     return make_basic_pokemon(name, hp, "Colorless", **kwargs)  # type: ignore[arg-type]
 
 
-def with_ability(card: Card, name: str) -> Card:
-    return dataclasses.replace(card, abilities=[Ability(name=name)])
+def with_ability(card: Card, name: str, text: str = "") -> Card:
+    return dataclasses.replace(card, abilities=[Ability(name=name, text=text)])
 
 
 def with_attack(card: Card, name: str, cost: list[str], damage: str) -> Card:
@@ -178,7 +178,11 @@ def test_cursed_blast_knocks_out_user_and_gives_prize(state):
 
 
 def test_mysterious_rock_inn_blocks_damage_from_ex(state):
-    crustle = with_ability(mon("Crustle", hp=150), "Mysterious Rock Inn")
+    crustle = with_ability(
+        mon("Crustle", hp=150),
+        "Mysterious Rock Inn",
+        "Prevent all damage done to this Pokémon by attacks from your opponent's Pokémon ex.",
+    )
     ex_card = dataclasses.replace(mon("Big ex"), subtypes=["Basic", "ex"])
     state.player.active = PokemonInPlay(card=ex_card, attached_energies=["Colorless"])
     state.opponent.active = PokemonInPlay(card=crustle)
@@ -441,10 +445,12 @@ def test_tera_pokemon_takes_no_attack_damage_on_bench(state):
 # decks 21–25 do meta: mecanismos novos
 
 
-def _attacker(state, name: str, damage: str, ability: str | None = None) -> None:
+def _attacker(
+    state, name: str, damage: str, ability: str | None = None, ability_text: str = ""
+) -> None:
     card = with_attack(mon("Attacker", hp=300), name, ["Colorless"], damage)
     if ability:
-        card = with_ability(card, ability)
+        card = with_ability(card, ability, ability_text)
     state.player.active = PokemonInPlay(card=card, attached_energies=["Colorless"])
 
 
@@ -474,7 +480,13 @@ def test_curly_wall_needs_another_bouffalant(state):
 
 
 def test_binding_flame_raises_retreat_and_phantom_maze_scales_with_it(state):
-    _attacker(state, "Phantom Maze", "130+", ability="Binding Flame")
+    _attacker(
+        state,
+        "Phantom Maze",
+        "130+",
+        ability="Binding Flame",
+        ability_text="Your opponent's Active Pokémon's Retreat Cost is {C} more.",
+    )
     state.opponent.active = PokemonInPlay(card=mon("Defender", hp=400))
     assert passives.retreat_cost(state, PlayerId.OPPONENT, state.opponent.active) == 2
 

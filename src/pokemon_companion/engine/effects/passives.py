@@ -99,10 +99,6 @@ def retreat_cost(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> int:
         cost -= 2
     if stage_of(mon.card) == "Basic" and any_ability_in_play(state, owner, "Skyliner"):
         cost = 0
-    if mon is state.state_of(owner).active and any_ability_in_play(
-        state, owner.other, "Binding Flame"
-    ):
-        cost += 1
     if any(_applies(p, h, mon) for p, h in compiled(state, owner, "no_retreat")):
         return 0
     if stadium_is(state, "N's Castle") and in_group(mon.card, "N's"):
@@ -301,12 +297,6 @@ def attacker_bonus(
         and is_ex(defender.card)
     ):
         bonus += 30
-    if in_group(attacker.card, "Cynthia's"):
-        bonus += 30 * sum(
-            1
-            for mon in player.all_pokemon_in_play()
-            if ability_active(state, mon, "Cheer On to Glory")
-        )
     if is_future(attacker.card) and attacker.card.name != "Iron Crown ex":
         bonus += 20 * sum(
             1
@@ -358,8 +348,6 @@ def damage_prevented(
     is_active: bool,
 ) -> bool:
     if defender.protected_turn == state.turn_number:
-        return True
-    if ability_active(state, defender, "Mysterious Rock Inn") and is_ex(attacker.card):
         return True
     if compiled_prevents(state, defender_owner, defender, attacker):
         return True
