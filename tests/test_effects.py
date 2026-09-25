@@ -425,7 +425,11 @@ def test_tera_pokemon_takes_no_attack_damage_on_bench(state):
     """Regra Tera: no Banco, dano de ataque não atinge (contadores sim)."""
     from pokemon_companion.engine.effects import cardinfo
 
-    tera = dataclasses.replace(mon("Dragapult ex", hp=320), subtypes=["Basic", "ex"])
+    tera = dataclasses.replace(
+        mon("Dragapult ex", hp=320),
+        subtypes=["Basic", "ex"],
+        attacks=[Attack(name="Jet Headbutt"), Attack(name="Phantom Dive")],
+    )
     assert cardinfo.is_tera(tera)
     state.opponent.bench = [PokemonInPlay(card=tera)]
     sniper = with_attack(mon("Sniper"), "Cruel Arrow", ["Colorless"], "")

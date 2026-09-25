@@ -12,7 +12,13 @@ import time
 
 import requests
 
-from pokemon_companion.cards_db.models import Attack, Card, Supertype, WeaknessResistance
+from pokemon_companion.cards_db.models import (
+    Attack,
+    Card,
+    Supertype,
+    WeaknessResistance,
+    signature,
+)
 
 BASE_URL = "https://api.pokemontcg.io/v2"
 
@@ -70,7 +76,9 @@ class PokemonTcgApiClient:
         session: requests.Session | None = None,
         max_retries: int = 3,
         backoff_seconds: float = 1.0,
+        timeout: float = 10,
     ) -> None:
+        self._timeout = timeout
         self._api_key = api_key or os.environ.get("POKEMONTCG_API_KEY")
         self._session = session or requests.Session()
         self._max_retries = max_retries
@@ -83,7 +91,9 @@ class PokemonTcgApiClient:
         url = f"{BASE_URL}{path}"
         delay = self._backoff_seconds
         for attempt in range(self._max_retries):
-            response = self._session.get(url, params=params, headers=self._headers(), timeout=10)
+            response = self._session.get(
+                url, params=params, headers=self._headers(), timeout=self._timeout
+            )
             retryable = response.status_code == 429 or response.status_code >= 500
             if retryable and attempt < self._max_retries - 1:
                 time.sleep(delay)
@@ -98,3 +108,18 @@ class PokemonTcgApiClient:
         data = self._get("/cards", params={"q": query})
         results = data.get("data", [])
         return api_card_to_card(results[0]) if results else None
+
+    def signatures_with_subtype(self, subtype: str) -> set[str]:
+        """Assinaturas (`models.signature`) das cartas com a marca ("Tera",
+        "Ancient", "Future") — a TCGdex não traz essas marcas."""
+        found: set[str] = set()
+        page = 1
+        while True:
+            data = self._get(
+                "/cards",
+                params={"q": f"subtypes:{subtype}", "page": str(page), "pageSize": "250"},
+            )
+            found |= {signature(api_card_to_card(item)) for item in data.get("data", [])}
+            if page * 250 >= int(data.get("totalCount", 0)):
+                return found
+            page += 1

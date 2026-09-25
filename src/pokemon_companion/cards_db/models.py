@@ -75,3 +75,10 @@ class Card:
     @property
     def is_pokemon(self) -> bool:
         return self.supertype == Supertype.POKEMON
+
+
+def signature(card: Card) -> str:
+    """Identidade da carta para o jogo: nome + ataques + Habilidades (Pokémon)."""
+    if card.supertype != Supertype.POKEMON:
+        return card.name
+    return "|".join([card.name, *(a.name for a in card.attacks), *(a.name for a in card.abilities)])

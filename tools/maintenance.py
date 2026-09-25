@@ -17,17 +17,21 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
 import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
 
+import requests
 from effect_coverage import missing_effects
 
 from pokemon_companion.cards_db import catalog, standard
+from pokemon_companion.cards_db.api_client import PokemonTcgApiClient
 from pokemon_companion.cards_db.cache import CardCache
 from pokemon_companion.cards_db.decklist_parser import load_deck
-from pokemon_companion.cards_db.models import Card
+from pokemon_companion.cards_db.models import Card, signature
+from pokemon_companion.cards_db.updates import BUNDLED
 from pokemon_companion.deck_loading import make_lookup
 from pokemon_companion.paths import BUNDLED_DECKS
 
@@ -45,11 +49,34 @@ def refresh() -> None:
     entries = catalog.build_catalog(cards, catalog.fetch_set_codes(set_ids))
     catalog.save_catalog(entries)
     print(f"  catálogo do construtor de deck: {len(entries)} cartas distintas")
+    print("Atualizando os grupos Tera/Ancient/Future (pokemontcg.io)…")
+    update_groups({signature(card) for card in cards})
     print("Atualizando os decks do meta (Limitless)…")
     subprocess.run(
         [sys.executable, str(TOOLS / "fetch_top_decks.py"), "--top", "100", "--clean"],
         check=True,
     )
+
+
+def update_groups(pool: set[str]) -> None:
+    """Acrescenta ao `effects.json` as cartas do pool com cada marca. Só
+    acrescenta: a API costuma atrasar nos sets novos, então nada sai daqui
+    sem alguém tirar à mão."""
+    effects_file = BUNDLED["effects.json"]
+    data = json.loads(effects_file.read_text(encoding="utf-8"))
+    client = PokemonTcgApiClient(timeout=120, max_retries=5)
+    for subtype in ("Tera", "Ancient", "Future"):
+        try:
+            marked = client.signatures_with_subtype(subtype)
+        except (requests.RequestException, RuntimeError) as exc:
+            print(f"  {subtype}: API indisponível ({exc}); grupo mantido")
+            continue
+        old = set(data.setdefault("groups", {}).get(subtype, []))
+        data["groups"][subtype] = sorted(old | (marked & pool))
+        print(
+            f"  {subtype}: {len(data['groups'][subtype])} cartas (+{len(data['groups'][subtype]) - len(old)})"
+        )
+    effects_file.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
 
 def meta_decks() -> dict[str, list[Card]]:

@@ -1,11 +1,11 @@
 """Classificação de cartas usada pelos efeitos ("Regra de Prêmio", Tera,
 Antigo/Futuro, Pokémon de treinador como "Team Rocket's", estágio...).
 
-A API não expõe Tera/Antigo/Futuro (nem a pokemontcg.io nem a TCGdex trazem
-essa marca), então esses grupos são listas por nome, cobrindo as cartas dos
-decks do meta — ampliar ao adicionar decks novos. Isso importa: Pokémon Tera
-no Banco não recebem dano de ataques (`passives.damage_prevented`) e liberam
-banco de 8 com Area Zero Underdepths.
+A TCGdex não marca Tera/Antigo/Futuro, então esses grupos vêm do pacote de
+dados (`effects.json`, chave "groups", por assinatura da carta), que chega
+atualizado pelo endpoint. Isso importa: Pokémon Tera no Banco não recebem
+dano de ataques (`passives.damage_prevented`) e liberam banco de 8 com Area
+Zero Underdepths.
 """
 
 from __future__ import annotations
@@ -13,35 +13,9 @@ from __future__ import annotations
 import dataclasses
 import re
 
-from pokemon_companion.cards_db.models import Card, Supertype
+from pokemon_companion.cards_db.models import Card, Supertype, signature
+from pokemon_companion.engine.effects import pack
 
-TERA_NAMES = {
-    "Teal Mask Ogerpon ex",
-    "Wellspring Mask Ogerpon ex",
-    "Hearthflame Mask Ogerpon ex",
-    "Cornerstone Mask Ogerpon ex",
-    "Hydrapple ex",
-    "Terapagos ex",
-    "Lapras ex",
-    "Pikachu ex",
-    "Dragapult ex",
-    "Noctowl",
-}
-ANCIENT_NAMES = {
-    "Raging Bolt ex",
-    "Roaring Moon",
-    "Roaring Moon ex",
-    "Great Tusk",
-    "Brute Bonnet",
-    "Walking Wake ex",
-    "Scream Tail",
-    "Flutter Mane",
-    "Slither Wing",
-    "Sandy Shocks",
-    "Gouging Fire ex",
-    "Koraidon",
-    "Koraidon ex",
-}
 BASIC_TYPES = (
     "Grass",
     "Fire",
@@ -70,15 +44,15 @@ def is_mega(card: Card) -> bool:
 
 
 def is_tera(card: Card) -> bool:
-    return card.name in TERA_NAMES
+    return signature(card) in pack.group("Tera")
 
 
 def is_ancient(card: Card) -> bool:
-    return card.name in ANCIENT_NAMES
+    return signature(card) in pack.group("Ancient")
 
 
 def is_future(card: Card) -> bool:
-    return card.name.startswith("Iron ") or card.name.startswith("Miraidon")
+    return signature(card) in pack.group("Future")
 
 
 def in_group(card: Card, prefix: str) -> bool:

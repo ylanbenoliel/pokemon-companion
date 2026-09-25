@@ -23,19 +23,13 @@ import requests
 
 from pokemon_companion.cards_db import updates
 from pokemon_companion.cards_db.cache import card_from_json, card_to_json
-from pokemon_companion.cards_db.models import Card, Supertype
+from pokemon_companion.cards_db.models import Card, signature
 from pokemon_companion.cards_db.tcgdex_client import BASE_URL, tcgdex_card_to_card
 from pokemon_companion.engine.effects.cardinfo import is_basic_energy
 
 LEGAL_FILE = Path(__file__).with_name("standard_legal.json")
 POOL_FILE = Path("data/standard_pool.json")
 TIMEOUT = 60
-
-
-def signature(card: Card) -> str:
-    if card.supertype != Supertype.POKEMON:
-        return card.name
-    return "|".join([card.name, *(a.name for a in card.attacks), *(a.name for a in card.abilities)])
 
 
 def _get(url: str, params: dict[str, str] | None = None) -> object:
