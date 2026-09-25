@@ -2124,6 +2124,28 @@ def _swap_from_discard(
     return after(act)
 
 
+@phrase(
+    "Move up to {N} Basic Energy cards from that Pokémon to your Benched Pokémon in any way you "
+    "like"
+)
+def _energy_from_fallen(n: str) -> Step:
+    """A favor do dono de um Pokémon nocauteado (Ferramenta ou Habilidade)."""
+
+    def act(run: Run) -> None:
+        mon = run.source
+        if mon is None or not run.me.bench:
+            return
+        basics = [e for e in mon.attached_energies if e in core.BASIC_ENERGIES][: num(n)]
+        for name in basics:
+            target = core.best_energy_target(
+                run.ctx.state, run.ctx.player_id, name, lambda m: any(m is b for b in run.me.bench)
+            )
+            if target is not None:
+                core.attach_energy_card(target, core.detach_energy(mon, name))
+
+    return after(act)
+
+
 @phrase("Discard the bottom card of your deck")
 def _mill_bottom() -> Step:
     def act(run: Run) -> None:

@@ -594,7 +594,7 @@ def deal_damage(
                 f"{defender.card.name} revidou: {retaliation[0]} contador(es) em {attacker.card.name}."
             )
         if attacker is not None:
-            _counterattack(ctx, owner, defender, attacker)
+            _counterattack(ctx, owner, defender, attacker, amount)
             _owner_triggers(ctx, owner, defender)
     return amount
 
@@ -654,12 +654,12 @@ def _survival(ctx: Ctx, owner: PlayerId, defender: PokemonInPlay, amount: int) -
 
 
 def _counterattack(
-    ctx: Ctx, owner: PlayerId, defender: PokemonInPlay, attacker: PokemonInPlay
+    ctx: Ctx, owner: PlayerId, defender: PokemonInPlay, attacker: PokemonInPlay, amount: int = 0
 ) -> None:
     """Contra-ataques de Habilidades passivas do Pokémon atingido."""
     state = ctx.state
     for passive, holder in passives.damage_reactions(
-        state, owner, defender, defender.is_knocked_out
+        state, owner, defender, defender.is_knocked_out, attacker, amount
     ):
         counters = passive.counters * (  # type: ignore[attr-defined]
             passive.per(state, owner, holder) if passive.per else 1  # type: ignore[attr-defined]

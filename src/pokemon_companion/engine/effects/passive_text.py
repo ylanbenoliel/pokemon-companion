@@ -24,6 +24,7 @@ from pokemon_companion.engine.effects.cardinfo import (
     is_evolution,
     is_ex,
     is_future,
+    is_mega,
     is_tera,
     pokemon_type,
     stage_of,
@@ -166,6 +167,7 @@ def _attacker_filter(text: str) -> MonTest | None:
         "Pokémon that have any Special Energy attached": lambda m: bool(m.special_energy_cards),
         "Pokémon ex and Pokémon V": lambda m: is_ex(m.card) or "V" in m.card.subtypes,
         "Pokémon with a Rule Box": lambda m: has_rule_box(m.card),
+        "Mega Evolution Pokémon ex": lambda m: is_mega(m.card) and is_ex(m.card),
     }
     if text in table:
         return table[text]
@@ -567,6 +569,60 @@ def _when_hit_active(action: str) -> Passive | None:
 def _reduce_from_kind(who: str, n: str) -> Passive | None:
     attacker = _attacker_filter(who)
     return None if attacker is None else Passive("reduce", int(n), attacker=attacker)
+
+
+def _holder_condition(text: str) -> HolderTest | None:
+    """Condições sobre o próprio Pokémon numa lista "has …, is …, and …"."""
+    exact = re.fullmatch(rf"has a Retreat Cost of exactly {N}", text)
+    if exact:
+        size = int(exact.group(1))
+        return lambda s, o, h: len(h.card.retreat_cost) == size
+    if text == "has Weakness to your opponent's Active Pokémon's type":
+        return lambda s, o, h: bool(
+            (opp := s.state_of(o.other).active) is not None
+            and {w.energy_type for w in h.card.weaknesses} & set(opp.card.types)
+        )
+    if text == "isn't a Mega Evolution Pokémon ex":
+        return lambda s, o, h: not (is_mega(h.card) and is_ex(h.card))
+    return None
+
+
+@rule(
+    rf"If this Pokémon ((?:[^,]+, )+)and (is damaged by|is Knocked Out by damage from|takes {N} or "
+    r"more damage from) an attack from your opponent's (.+?), (.+)"
+)
+def _conditional_reaction(
+    conditions: str, event: str, minimum: str | None, who: str, action: str
+) -> Passive | None:
+    """ "If this Pokémon has …, is in the Active Spot, and is damaged by an
+    attack from your opponent's Pokémon, draw 3 cards" (e parecidos)."""
+    holder_at, tests = "any", []
+    for text in conditions.rstrip(", ").split(", "):
+        if text == "is in the Active Spot":
+            holder_at = "active"
+            continue
+        test = _holder_condition(text)
+        if test is None:
+            return None
+        tests.append(test)
+    attacker = _attacker_filter(who)
+    if attacker is None:
+        return None
+    knocked_out = event.startswith("is Knocked Out")
+    passive = (
+        _owner_effect("on_knocked_out", action) if knocked_out else _counter_attack(action)
+    )
+    if passive is None:
+        return None
+    least = int(minimum or 0)
+    return Passive(
+        **{
+            **passive.__dict__,
+            "holder_at": holder_at,
+            "when": lambda s, o, h: all(test(s, o, h) for test in tests),
+            "event": lambda mon, amount: attacker(mon) and amount >= least,
+        }
+    )
 
 
 @rule(r"If this Pokémon is damaged by an attack from your opponent's Pokémon, (.+)")

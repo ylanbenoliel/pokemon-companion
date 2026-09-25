@@ -587,19 +587,31 @@ def pierces(state: GameState, owner: PlayerId, attacker: PokemonInPlay) -> bool:
 
 
 def damage_reactions(
-    state: GameState, owner: PlayerId, defender: PokemonInPlay, knocked_out: bool
+    state: GameState,
+    owner: PlayerId,
+    defender: PokemonInPlay,
+    knocked_out: bool,
+    attacker: PokemonInPlay | None = None,
+    amount: int = 0,
 ) -> list[tuple[object, PokemonInPlay]]:
-    """Contra-ataques de quem foi atingido (e, se nocauteado, os de nocaute)."""
+    """Contra-ataques de quem foi atingido (e, se nocauteado, os de nocaute).
+    `event(atacante, dano)` filtra as reações com condição sobre o golpe."""
     found = []
     is_active = state.state_of(owner).active is defender
     for passive, holder in compiled(state, owner, "on_damaged"):
+        if not passive.event(attacker, amount):  # type: ignore[attr-defined]
+            continue
         if passive.scope == "team":  # type: ignore[attr-defined]
             if is_active and passive.target(defender):  # type: ignore[attr-defined]
                 found.append((passive, holder))
         elif holder is defender:
             found.append((passive, holder))
     if knocked_out:
-        found += [(p, h) for p, h in compiled(state, owner, "on_knocked_out") if h is defender]
+        found += [
+            (p, h)
+            for p, h in compiled(state, owner, "on_knocked_out")
+            if h is defender and p.event(attacker, amount)  # type: ignore[attr-defined]
+        ]
     return found
 
 
