@@ -413,6 +413,23 @@ def _attack_free(name: str) -> Passive:
     return Passive("attack_cost", event=lambda attack: attack == name)
 
 
+@rule(
+    r"Once during your turn, after you flip any coins for an attack of this Pokémon, you may "
+    r"ignore all results of those coin flips and begin flipping those coins again"
+)
+def _reflip() -> Passive:
+    return Passive("reflip")
+
+
+@rule(
+    r"During your opponent's turn, if this Pokémon is discarded from your deck by an effect of an "
+    r"attack or Ability from your opponent's Pokémon, or by an effect of your opponent's Item or "
+    r"Supporter cards, (.+)"
+)
+def _on_milled(action: str) -> Passive | None:
+    return _owner_effect("on_milled", action)
+
+
 @rule(r"This Pokémon can use the attack on this card")
 def _tool_attack() -> Passive:
     return Passive("tool_attack")

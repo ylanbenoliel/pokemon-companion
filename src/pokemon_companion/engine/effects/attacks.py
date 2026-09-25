@@ -1344,8 +1344,7 @@ COPY_ATTACKS = {"Night Joker", "Gemstone Mimicry", "Seek Inspiration"}
 @attack("Undermine")
 def _undermine(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
-    for _ in range(min(2, len(ctx.opp.deck))):
-        ctx.opp.discard.append(ctx.opp.deck.pop(0))
+    core.mill(ctx, ctx.opp_id, 2)
 
 
 @attack("Hacking")

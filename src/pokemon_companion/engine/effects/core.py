@@ -183,6 +183,25 @@ def draw(player: PlayerState, count: int) -> int:
     return drawn
 
 
+def mill(ctx: Ctx, owner: PlayerId, amount: int) -> list[Card]:
+    """Descarta as `amount` cartas do topo do deck de `owner`. Se foi efeito do
+    oponente, cartas com "if this Pokémon is discarded from your deck by an
+    effect … from your opponent" reagem a favor do dono."""
+    player = ctx.state.state_of(owner)
+    milled = player.deck[:amount]
+    del player.deck[:amount]
+    player.discard.extend(milled)
+    if owner != ctx.player_id:
+        from pokemon_companion.engine.effects.passive_text import card_passives
+
+        for card in milled:
+            for passive in card_passives(card):
+                if passive.kind == "on_milled":
+                    ctx.log(f"{card.name} foi descartado do deck e reagiu.")
+                    _owner_effect(ctx, owner, None, passive.effect)
+    return milled
+
+
 def shuffle_deck(player: PlayerState) -> None:
     random.shuffle(player.deck)
 
@@ -678,7 +697,7 @@ def _counterattack(
             _discard_tool(ctx, owner, holder)
 
 
-def _owner_effect(ctx: Ctx, owner: PlayerId, holder: PokemonInPlay, text: str) -> None:
+def _owner_effect(ctx: Ctx, owner: PlayerId, holder: PokemonInPlay | None, text: str) -> None:
     """Efeito escrito como Treinador ("draw 3 cards") a favor do dono do Pokémon."""
     from pokemon_companion.engine.effects.text_effects import compiled_trainer
 

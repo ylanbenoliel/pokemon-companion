@@ -508,6 +508,19 @@ def after(act: Act, option: str | None = None) -> Step:
     return Step("after", act, option)
 
 
+def _may_reflip(run: Run, bad: bool) -> bool:
+    """Ferramenta "ignore all results of those coin flips and begin flipping
+    those coins again" (uma vez por turno): usada quando o resultado foi ruim."""
+    mon = run.source
+    if not bad or mon is None or mon.tool is None or mon.tool.name in mon.abilities_used:
+        return False
+    if not any(h is mon for _, h in passives.compiled(run.ctx.state, run.ctx.player_id, "reflip")):
+        return False
+    mon.abilities_used.add(mon.tool.name)
+    run.ctx.log(f"{mon.tool.name}: moedas jogadas de novo.")
+    return True
+
+
 def _flip(n: Callable[[Run], int]) -> Act:
     def act(run: Run) -> None:
         total = n(run)
@@ -515,6 +528,8 @@ def _flip(n: Callable[[Run], int]) -> Act:
             run.heads, run.tails = total // 2 + total % 2, total // 2
             return
         run.heads = sum(run.coin() for _ in range(total))
+        if _may_reflip(run, run.heads * 2 < total):
+            run.heads = sum(run.coin() for _ in range(total))
         run.tails = total - run.heads
         run.ctx.log(f"{run.heads} cara(s) em {total} moeda(s).")
 
@@ -546,6 +561,9 @@ def _flip_until() -> Step:
         run.heads = 0
         while run.coin():
             run.heads += 1
+        if _may_reflip(run, run.heads == 0):
+            while run.coin():
+                run.heads += 1
         run.tails = 1
         run.ctx.log(f"{run.heads} cara(s) antes da coroa.")
 
@@ -1147,8 +1165,7 @@ def _mill(player: Callable[[Run], PlayerState], amount: int) -> Act:
     def act(run: Run) -> None:
         target = player(run)
         run.milled = "me" if target is run.me else "opp"
-        for _ in range(min(amount, len(target.deck))):
-            target.discard.append(target.deck.pop(0))
+        core.mill(run.ctx, run.ctx.player_id if target is run.me else run.ctx.opp_id, amount)
 
     return act
 
