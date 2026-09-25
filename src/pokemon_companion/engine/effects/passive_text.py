@@ -437,6 +437,22 @@ def _no_return_to_hand() -> Passive:
     return Passive("no_return_to_hand")
 
 
+@rule(
+    rf"Each of your Pokémon that has \"(.+?)\" in its name may have up to {N} Pokémon Tool "
+    r"cards attached"
+)
+def _tool_slots(part: str, n: str) -> Passive:
+    return Passive("tool_slots", int(n), scope="team", target=lambda m: part in m.card.name)
+
+
+@rule(
+    r"If this Ability goes away, discard Pokémon Tools from those Pokémon until only 1 remains on "
+    r"each"
+)
+def _tool_slots_note() -> list[Passive]:
+    return []  # o limite volta a 1 sozinho: ver `rules._enforce_board`
+
+
 @rule(r"This Pokémon can use the attack on this card")
 def _tool_attack() -> Passive:
     return Passive("tool_attack")
@@ -1057,11 +1073,13 @@ def _tool_entries(
 ) -> tuple[tuple[Passive, str], ...]:
     from pokemon_companion.engine.effects.passives import tool_active
 
-    tool = mon.tool
-    assert tool is not None
-    if not tool_active(state, mon, tool.name):
-        return ()
-    return tuple((p, tool.name) for p in tool_passives(tool) if p.kind == kind)
+    return tuple(
+        (p, tool.name)
+        for tool in mon.tools
+        if tool_active(state, mon, tool.name)
+        for p in tool_passives(tool)
+        if p.kind == kind
+    )
 
 
 def rules_in_play(
@@ -1083,7 +1101,7 @@ def rules_in_play(
                 continue
             if passive.holder_at == "bench" and not any(mon is b for b in player.bench):
                 continue
-            from_tool = mon.tool is not None and name == mon.tool.name
+            from_tool = any(t.name == name for t in mon.tools)
             if not from_tool and not active_test(state, mon, name):
                 continue
             if not passive.when(state, owner, mon):

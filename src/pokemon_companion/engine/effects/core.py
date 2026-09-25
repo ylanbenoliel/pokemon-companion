@@ -721,10 +721,11 @@ def _spend_tool(
 
 
 def _discard_tool(ctx: Ctx, owner: PlayerId, mon: PokemonInPlay) -> None:
+    # ponytail: descarta a 1ª Ferramenta; com Multi Adapter a de uso único pode ser a 2ª
     if mon.tool is not None:
         ctx.state.state_of(owner).discard.append(mon.tool)
         ctx.log(f"{mon.tool.name} de {mon.card.name} foi descartada.")
-        mon.tool = None
+        mon.tool = mon.extra_tools.pop(0) if mon.extra_tools else None
 
 
 def damage_counters_on(mon: PokemonInPlay) -> int:

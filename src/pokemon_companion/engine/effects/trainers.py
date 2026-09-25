@@ -970,4 +970,9 @@ def ace_spec_blocked(state: GameState, player_id: PlayerId) -> bool:
 
 
 def tool_targets(ctx: Ctx) -> list[Target | None]:
-    return [("own", p) for p in core.positions(ctx.me) if core.mon_at(ctx.me, p).tool is None]  # type: ignore[union-attr]
+    return [
+        ("own", p)
+        for p in core.positions(ctx.me)
+        if (mon := core.mon_at(ctx.me, p)) is not None
+        and len(mon.tools) < passives.tool_slots(ctx.state, ctx.player_id, mon)
+    ]

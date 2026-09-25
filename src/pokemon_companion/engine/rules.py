@@ -497,6 +497,10 @@ def _enforce_board(state: GameState, messages: list[str]) -> None:
         for mon in player.all_pokemon_in_play():
             if passives.stadium_is(state, "Festival Grounds") and mon.attached_energies:
                 mon.status = StatusCondition.NONE
+            while mon.extra_tools and len(mon.tools) > passives.tool_slots(state, pid, mon):
+                extra = mon.extra_tools.pop()
+                player.discard.append(extra)
+                messages.append(f"{extra.name} de {mon.card.name} foi descartada.")
             while "Team Rocket's Energy" in mon.attached_energies and not in_group(
                 mon.card, "Team Rocket's"
             ):
@@ -795,7 +799,10 @@ def _play_trainer(state: GameState, pid: PlayerId, action: PlayTrainer) -> list[
         assert action.target is not None
         mon = core.mon_at(player, int(action.target[1]))  # type: ignore[call-overload]
         assert mon is not None
-        mon.tool = card
+        if mon.tool is None:
+            mon.tool = card
+        else:
+            mon.extra_tools.append(card)
         messages.append(f"{card.name} foi anexada em {mon.card.name}.")
         _after_action(state, messages)
         return messages

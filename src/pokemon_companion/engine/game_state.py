@@ -97,6 +97,8 @@ class PokemonInPlay:
     weakness_to: tuple[str, int] | None = None
     #: turno em que ataques e recuo deste Pokémon custam {C} a mais
     taxed_turn: int | None = None
+    #: Ferramentas além da primeira (Habilidades como Multi Adapter)
+    extra_tools: list[Card] = field(default_factory=list)
 
     @property
     def max_hp(self) -> int:
@@ -110,9 +112,12 @@ class PokemonInPlay:
     def is_knocked_out(self) -> bool:
         return self.current_hp <= 0
 
+    @property
+    def tools(self) -> list[Card]:
+        return ([self.tool] if self.tool is not None else []) + self.extra_tools
+
     def all_cards(self) -> list[Card]:
-        cards = [self.card, *self.prior_cards, *self.special_energy_cards]
-        return cards + ([self.tool] if self.tool is not None else [])
+        return [self.card, *self.prior_cards, *self.special_energy_cards, *self.tools]
 
     def clone(self) -> PokemonInPlay:
         twin = copy.copy(self)
@@ -120,6 +125,7 @@ class PokemonInPlay:
         twin.prior_cards = list(self.prior_cards)
         twin.special_energy_cards = list(self.special_energy_cards)
         twin.abilities_used = set(self.abilities_used)
+        twin.extra_tools = list(self.extra_tools)
         return twin
 
 

@@ -50,7 +50,14 @@ def any_ability_in_play(state: GameState, owner: PlayerId | None, name: str) -> 
 
 
 def tool_active(state: GameState, mon: PokemonInPlay, name: str) -> bool:
-    return mon.tool is not None and mon.tool.name == name and not stadium_is(state, "Jamming Tower")
+    return any(t.name == name for t in mon.tools) and not stadium_is(state, "Jamming Tower")
+
+
+def tool_slots(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> int:
+    """Quantas Ferramentas o Pokémon pode ter (1, ou mais com Multi Adapter)."""
+    return max(
+        [1] + [p.amount for p, h in compiled(state, owner, "tool_slots") if _applies(p, h, mon)]  # type: ignore[attr-defined]
+    )
 
 
 def owner_of(state: GameState, mon: PokemonInPlay) -> PlayerId:
