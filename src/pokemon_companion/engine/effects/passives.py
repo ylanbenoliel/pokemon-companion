@@ -108,8 +108,9 @@ def retreat_cost(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> int:
     if stadium_is(state, "Paradise Resort") and mon.card.name == "Psyduck":
         cost -= 1
     is_active = mon is state.state_of(owner).active
-    for passive, _holder in compiled(state, owner, "retreat"):
-        if passive.scope == "own_active" and is_active:  # type: ignore[attr-defined]
+    for passive, holder in compiled(state, owner, "retreat"):
+        own = passive.scope == "self" and holder is mon  # type: ignore[attr-defined]
+        if own or (passive.scope == "own_active" and is_active):  # type: ignore[attr-defined]
             cost += passive.amount  # type: ignore[attr-defined]
     for passive, _holder in compiled(state, owner.other, "retreat"):
         if passive.scope == "opp_active" and is_active and passive.target(mon):  # type: ignore[attr-defined]
@@ -679,6 +680,10 @@ def compiled_cost(
                 if "Colorless" not in cost:
                     break
                 cost.remove("Colorless")
+    for passive, holder in compiled(state, owner, "cost_minus_any"):
+        for _ in range(passive.value(state, owner, holder) if holder is mon else 0):  # type: ignore[attr-defined]
+            if cost:
+                cost.remove("Colorless" if "Colorless" in cost else cost[-1])
     for passive, _holder in compiled(state, owner.other, "tax_opponent"):
         if state.state_of(owner).active is mon and passive.target(mon):  # type: ignore[attr-defined]
             cost = cost + ["Colorless"] * passive.amount  # type: ignore[attr-defined]

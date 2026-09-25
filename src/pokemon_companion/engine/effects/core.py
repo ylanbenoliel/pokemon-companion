@@ -574,7 +574,10 @@ def deal_damage(
         if defender.damage_reduction and defender.damage_reduction[1] == state.turn_number:
             amount -= defender.damage_reduction[0]
         amount -= passives.static_damage_reduction(state, owner, defender)
-        amount -= passives.compiled_reduction(state, owner, defender, attacker)
+        reduction = passives.compiled_reduction(state, owner, defender, attacker)
+        if reduction and amount > 0:
+            _spend_tool(ctx, owner, defender, "reduce", lambda p: p.attacker(attacker))
+        amount -= reduction
         amount -= passives.shield_reduction(state, defender, attacker)
     amount = max(amount, 0)
     if amount and attacker is not None:
@@ -629,6 +632,8 @@ def _survival(ctx: Ctx, owner: PlayerId, defender: PokemonInPlay, amount: int) -
         full = defender.damage_counters == 0 and "survive_full" in kinds
         if full or ("survive_coin" in kinds and coin()):
             ctx.log(f"{defender.card.name} resistiu com 10 de HP.")
+            if full:
+                _spend_tool(ctx, owner, defender, "survive_full")
             return max(defender.current_hp - 10, 0)
     return amount
 
@@ -652,6 +657,40 @@ def _counterattack(
             attacker.status = status
         if passive.discard_energy and attacker.attached_energies:  # type: ignore[attr-defined]
             discard_energy(ctx.state.state_of(ctx.player_id), attacker)
+        if passive.effect:  # type: ignore[attr-defined]
+            _owner_effect(ctx, owner, holder, passive.effect)  # type: ignore[attr-defined]
+        if passive.discard_tool:  # type: ignore[attr-defined]
+            _discard_tool(ctx, owner, holder)
+
+
+def _owner_effect(ctx: Ctx, owner: PlayerId, holder: PokemonInPlay, text: str) -> None:
+    """Efeito escrito como Treinador ("draw 3 cards") a favor do dono do Pokémon."""
+    from pokemon_companion.engine.effects.text_effects import compiled_trainer
+
+    spec = compiled_trainer(text)
+    if spec is not None:
+        spec.fn(Ctx(ctx.state, owner, holder, messages=ctx.messages))
+
+
+def _spend_tool(
+    ctx: Ctx,
+    owner: PlayerId,
+    defender: PokemonInPlay,
+    kind: str,
+    fired: Callable[..., bool] = lambda p: True,
+) -> None:
+    """Ferramenta de uso único ("discard this card") que acabou de agir."""
+    for passive, holder in passives.compiled(ctx.state, owner, kind):
+        if holder is defender and passive.discard_tool and fired(passive):  # type: ignore[attr-defined]
+            _discard_tool(ctx, owner, defender)
+            return
+
+
+def _discard_tool(ctx: Ctx, owner: PlayerId, mon: PokemonInPlay) -> None:
+    if mon.tool is not None:
+        ctx.state.state_of(owner).discard.append(mon.tool)
+        ctx.log(f"{mon.tool.name} de {mon.card.name} foi descartada.")
+        mon.tool = None
 
 
 def damage_counters_on(mon: PokemonInPlay) -> int:

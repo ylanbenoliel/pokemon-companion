@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from pokemon_companion.cards_db.models import Card, Supertype
 from pokemon_companion.engine.effects import abilities, attacks, passive_text, trainers
+from pokemon_companion.engine.effects.cardinfo import trainer_kind
 from pokemon_companion.engine.effects.passive_text import HAND_WRITTEN
 
 
@@ -27,6 +28,13 @@ def unimplemented(card: Card) -> list[str]:
     elif card.supertype == Supertype.TRAINER:
         if not trainers.is_implemented(card):
             missing.append("efeito do Treinador")
+        elif (
+            trainer_kind(card) == "Tool"
+            and trainers.spec_for(card) is None
+            and card.name not in HAND_WRITTEN
+            and not passive_text.tool_passives(card)
+        ):
+            missing.append("efeito da Ferramenta")
         elif (
             "Stadium" in card.subtypes
             and trainers.stadium_spec_for(card) is None
