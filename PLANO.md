@@ -304,10 +304,9 @@ Standard (1961 cartas distintas): **0 efeitos faltando** (eram 53, contando
 
 - *Publicar o primeiro pacote*: `tools/publish_data.py` ainda não foi rodado
   (o release `data` não existe); até lá o app só usa os dados embutidos.
-- *Simulação IA×IA lenta*: depois deste lote uma partida do torneio (Slowking
-  × Basic Box, semente 1) passou de 20 s no nível difícil; conferir se é só
-  lentidão ou laço (`scratchpad` não fica no repo: repetir com
-  `tools/tournament.py`).
+- *IA difícil mais lenta*: 60 partidas IA×IA terminaram sem erro e sem laço
+  (nenhuma acima de 120 s; as medidas levaram 5–19 s cada, ~10 min no total).
+  Se incomodar, medir onde a busca da IA gasta tempo.
 - *Aproximações marcadas com `ponytail:`*: prêmio virado por Bother-Bot não
   fica marcado na UI; com Multi Adapter a Ferramenta de uso único descartada
   é sempre a 1ª; tipo duplo só vale para Fraqueza/Resistência; Tyme usa o HP
