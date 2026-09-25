@@ -42,6 +42,9 @@ class AbilitySpec:
     shared_limit: str | None = None
     #: "As often as you like during your turn" (com teto por turno)
     repeatable: bool = False
+    #: "You may also use this Ability if this Pokémon is in the Active Spot and
+    #: is Knocked Out by damage from an attack…": roda sozinha no nocaute
+    on_knocked_out: bool = False
 
 
 #: teto de usos por turno de uma Habilidade repetível (evita laço na IA)

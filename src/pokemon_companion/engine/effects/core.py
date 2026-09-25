@@ -610,6 +610,8 @@ def _owner_triggers(ctx: Ctx, owner: PlayerId, defender: PokemonInPlay) -> None:
         search_deck(own, lambda c: c.is_basic and "Koffing" in c.name, 2, destination="bench")
     if not defender.is_knocked_out:
         return
+    if active:
+        _knockout_abilities(own, defender)
     if passives.ability_active(state, defender, "Final Chain"):
         search_deck(own, lambda c: True, 1)
     if active and passives.ability_active(state, defender, "Photon Cord") and side.bench:
@@ -618,6 +620,19 @@ def _owner_triggers(ctx: Ctx, owner: PlayerId, defender: PokemonInPlay) -> None:
             if "Lightning" not in defender.attached_energies:
                 break
             attach_energy_card(receiver, detach_energy(defender, "Lightning"))
+
+
+def _knockout_abilities(own: Ctx, defender: PokemonInPlay) -> None:
+    """Habilidades que o dono também pode usar quando o Pokémon é nocauteado no Ativo."""
+    from pokemon_companion.engine.effects import abilities
+
+    for ability in defender.card.abilities:
+        spec = abilities.spec_for(ability)
+        if spec is not None and spec.on_knocked_out and passives.ability_active(
+            own.state, defender, ability.name
+        ):
+            own.log(f"{defender.card.name} usou {ability.name} ao ser nocauteado.")
+            spec.fn(own)
 
 
 def _survival(ctx: Ctx, owner: PlayerId, defender: PokemonInPlay, amount: int) -> int:

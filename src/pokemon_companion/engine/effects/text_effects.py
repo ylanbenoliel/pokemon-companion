@@ -2052,6 +2052,157 @@ def _remove_from_play(player: PlayerState, mon: PokemonInPlay, to_deck: bool) ->
         player.discard.extend(cards)
 
 
+def _swap_card(run: Run, mon: PokemonInPlay, card: Card) -> Card:
+    """Troca a carta do Pokémon em jogo mantendo energias, Ferramenta, dano,
+    condições e marcas ("any other effects remain on the new Pokémon")."""
+    old = mon.card
+    mon.card = card
+    mon.hp_bonus = passives.hp_bonus(run.ctx.state, mon)
+    run.ctx.log(f"{old.name} foi trocado por {card.name}.")
+    return old
+
+
+@phrase(
+    "Any attached cards, damage counters, Special Conditions, turns in play, and any other "
+    "effects remain on the new Pokémon"
+)
+def _swap_note() -> Step:
+    return after(lambda run: None)
+
+
+@phrase("Search your deck for {X} and switch it with this Pokémon")
+def _swap_from_deck(what: str) -> Step | None:
+    card_filter = parse_kind(re.sub(r"^(?:an?|any) ", "", what.strip()))
+    if card_filter is None:
+        return None
+
+    def act(run: Run) -> None:
+        mon = run.source
+        card = next((c for c in run.me.deck if card_filter(c)), None)
+        run.did = mon is not None and card is not None
+        if mon is None or card is None:
+            return
+        run.me.deck.remove(card)
+        run.chosen_card = _swap_card(run, mon, card)
+
+    return after(act)
+
+
+@phrase("If you switched a Pokémon in this way, put this card into your deck")
+def _swapped_card_to_deck() -> Step:
+    def act(run: Run) -> None:
+        if run.did and run.chosen_card is not None:
+            run.me.deck.append(run.chosen_card)
+
+    return after(act)
+
+
+@phrase(
+    "Choose {X} in your discard pile( that [^,]+)?,? and switch it with 1 of your {X} in play"
+    "( that .+)?"
+)
+def _swap_from_discard(
+    what: str, what_suffix: str | None, where: str, where_suffix: str | None
+) -> Step | None:
+    what = re.sub(r"^(?:an?|any) ", "", what.strip()) + (what_suffix or "")
+    card_filter = parse_kind(what)
+    mon_filter = parse_kind(where.strip() + (where_suffix or ""))
+    if card_filter is None or mon_filter is None:
+        return None
+
+    def act(run: Run) -> None:
+        mons = [m for m in run.me.all_pokemon_in_play() if mon_filter(m.card)]
+        cards = [c for c in run.me.discard if card_filter(c)]
+        if not mons or not cards:
+            return
+        # o mais machucado vira a melhor carta do descarte (o dano fica)
+        mon = max(mons, key=lambda m: (m.damage_counters, m is run.me.active))
+        card = core.choose_cards(run.ctx.state, run.ctx.player_id, cards, 1)[0]
+        run.me.discard.remove(card)
+        run.me.discard.append(_swap_card(run, mon, card))
+
+    return after(act)
+
+
+@phrase("Discard the bottom card of your deck")
+def _mill_bottom() -> Step:
+    def act(run: Run) -> None:
+        run.did = bool(run.me.deck)
+        if run.did:
+            run.me.discard.append(run.me.deck.pop())
+
+    return after(act)
+
+
+@phrase("discard all cards from this Pokémon and put this Pokémon on top of your deck")
+def _self_to_deck_top() -> Step:
+    def act(run: Run) -> None:
+        mon = run.source
+        if mon is None or mon not in run.me.all_pokemon_in_play():
+            return
+        _remove_from_play(run.me, mon, to_deck=False)
+        run.me.discard.remove(mon.card)
+        run.me.deck.insert(0, mon.card)
+        run.ctx.log(f"{mon.card.name} voltou para o topo do deck.")
+
+    return after(act)
+
+
+@phrase(
+    "Move {N} damage counter from 1 of your {X} to another of your Pokémon",
+    "Move {N} damage counters from 1 of your {X} to another of your Pokémon",
+)
+def _shift_own_counters(n: str, what: str) -> Step | None:
+    """Tira contadores do mais machucado do grupo e põe em quem aguenta mais."""
+    donors_filter = parse_kind(what)
+    if donors_filter is None:
+        return None
+    amount = 10 * num(n)
+
+    def act(run: Run) -> None:
+        mons = run.me.all_pokemon_in_play()
+        donors = [m for m in mons if donors_filter(m.card) and m.damage_counters >= amount]
+        if not donors:
+            return
+        donor = max(donors, key=lambda m: (m is run.me.active, m.damage_counters))
+        receivers = [m for m in mons if m is not donor and m.current_hp > amount]
+        if not receivers:
+            return
+        receiver = max(receivers, key=lambda m: m.current_hp)
+        donor.damage_counters -= amount
+        receiver.damage_counters += amount
+
+    return after(act)
+
+
+@phrase(
+    "Choose a card in your hand that evolves from this Pokémon and put it onto this Pokémon to "
+    "evolve it"
+)
+def _evolve_self_from_hand() -> Step:
+    def act(run: Run) -> None:
+        mon = run.source
+        card = mon and next((c for c in run.me.hand if c.evolves_from == mon.card.name), None)
+        run.did = card is not None
+        if mon is None or card is None:
+            return
+        run.me.hand.remove(card)
+        evolved = core.evolve_into(run.ctx.state, run.me, mon, card)
+        run.ctx.source = run.last_target = evolved
+        run.ctx.log(f"{mon.card.name} evoluiu para {card.name}.")
+
+    return after(act)
+
+
+@phrase("place {N} damage counters on the Pokémon you evolved in this way")
+def _counters_on_evolved(n: str) -> Step:
+    def act(run: Run) -> None:
+        if run.last_target is not None:
+            run.last_target.damage_counters += 10 * num(n)
+
+    return after(act)
+
+
 @phrase("Discard your opponent's Active Pokémon and all attached cards")
 def _discard_defender() -> Step:
     def act(run: Run) -> None:
@@ -2916,6 +3067,17 @@ Requirement = tuple[Callable[[Ctx], bool], Act | None]
 
 def _requirement(sentence: str) -> Requirement | None:
     text = sentence.strip()
+    together = re.fullmatch(r"You must play (\d+) (.+?) cards at once", text)
+    if together:
+        copies, name = int(together.group(1)), together.group(2)
+
+        def pay_copies(run: Run) -> None:
+            for _ in range(copies - 1):
+                card = next(c for c in run.me.hand if c.name == name)
+                run.me.hand.remove(card)
+                run.me.discard.append(card)
+
+        return (lambda ctx: sum(c.name == name for c in ctx.me.hand) >= copies), pay_copies
     match = re.fullmatch(
         expand(r"You can use this card only if you discard {N} other cards? from your hand"),
         text,
@@ -2934,7 +3096,7 @@ def _requirement(sentence: str) -> Requirement | None:
         r"You can use this card only when it is the last card in your hand", text, re.I
     ):
         return (lambda ctx: len(ctx.me.hand) == 1), None
-    if re.fullmatch(r"You can't use this card during your first turn", text, re.I):
+    if re.fullmatch(r"You can't use this (?:card|Ability) during your first turn", text, re.I):
         return (lambda ctx: ctx.turn > 2), None
     if re.fullmatch(
         r"You can use this card only if you go second, and only during your first turn", text, re.I
@@ -3088,11 +3250,16 @@ def _heal_and_cure(n: str) -> Step:
     return after(act)
 
 
-@phrase("Move up to {N} Energy from your Benched Pokémon to your Active Pokémon")
+@phrase(
+    "Move up to {N} Energy from your Benched Pokémon to your Active Pokémon",
+    "Move (any amount of) Energy from your Benched Pokémon to your Active Pokémon",
+)
 def _energy_to_active(n: str) -> Step:
+    limit = 99 if n == "any amount of" else num(n)
+
     def act(run: Run) -> None:
         active = run.me.active
-        for _ in range(num(n)):
+        for _ in range(limit):
             donors = [m for m in run.me.bench if m.attached_energies]
             if active is None or not donors:
                 return
@@ -3257,7 +3424,7 @@ def _k_rocket_stage(stage: str) -> CardFilter | None:
     return lambda card: card.is_pokemon and test(card) and card.name.startswith("Team Rocket's")
 
 
-@kind(r"([A-Z][\w.']+(?:'s)) Pokémon")
+@kind(r"((?:[A-Z][\w.']+ )*[A-Z][\w.']+'s) Pokémon")
 def _k_owner_group(owner: str) -> CardFilter | None:
     if not owner.endswith("'s"):
         return None
@@ -3306,6 +3473,7 @@ class AbilityParts(NamedTuple):
     cost: Act | None
     repeatable: bool
     shared_limit: str | None
+    on_knocked_out: bool = False
 
 
 def _cost_before_head(text: str) -> tuple[Act, Callable[[Ctx], bool], str] | None:
@@ -3370,6 +3538,13 @@ def _ability_parts(text: str) -> AbilityParts | None:
     if limit:
         shared, text = limit.group(1), text[: limit.start()]
     trigger, repeatable = "turn", False
+    also_ko = re.search(
+        r"\s*You may also use this Ability if this Pokémon is in the Active Spot and is Knocked "
+        r"Out by damage from an attack from your opponent's Pokémon\.",
+        text,
+    )
+    if also_ko:
+        text = text[: also_ko.start()] + text[also_ko.end() :]
     head = re.match(
         r"(Once during your turn, |Once during your first turn, |As often as you like during "
         r"your turn, |(?=When you play this Pokémon))",
@@ -3395,6 +3570,15 @@ def _ability_parts(text: str) -> AbilityParts | None:
                 trigger = new_trigger or trigger
                 if check is not None:
                     checks.append(check)
+        promoted = re.match(r"when your (.+?) moves from your Bench to the Active Spot,? ", rest)
+        if promoted:
+            name = promoted.group(1)
+            checks.append(
+                lambda ctx, name=name: ctx.me.active is not None
+                and ctx.me.active.card.name == name
+                and ctx.me.active.moved_to_active_turn == ctx.turn
+            )
+            rest, changed = rest[promoted.end() :], True
         match = re.match(r"if (.+?), (?=(?:and if |you may ))", rest, re.IGNORECASE)
         if match:
             predicate = parse_condition(match.group(1))
@@ -3424,7 +3608,7 @@ def _ability_parts(text: str) -> AbilityParts | None:
     else:
         return None
     rest = rest[0].upper() + rest[1:]
-    return AbilityParts(trigger, checks, rest, cost, repeatable, shared)
+    return AbilityParts(trigger, checks, rest, cost, repeatable, shared, also_ko is not None)
 
 
 def _opp_any_targets(ctx: Ctx) -> list[Target | None]:
@@ -3473,6 +3657,7 @@ def compiled_ability(text: str) -> AbilitySpec | None:
         options,
         shared_limit=parts.shared_limit,
         repeatable=parts.repeatable,
+        on_knocked_out=parts.on_knocked_out,
     )
 
 
