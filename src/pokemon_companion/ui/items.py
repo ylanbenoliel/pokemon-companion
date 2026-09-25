@@ -41,8 +41,8 @@ from PyQt6.QtWidgets import (
 
 from pokemon_companion.cards_db.models import Attack, Card, Supertype
 from pokemon_companion.engine.effects.cardinfo import has_rule_box
+from pokemon_companion.engine.effects.coverage import unimplemented
 from pokemon_companion.engine.effects.descriptions import describe_ability, describe_card
-from pokemon_companion.engine.effects.trainers import is_implemented
 from pokemon_companion.engine.game_state import PokemonInPlay
 from pokemon_companion.ui.anim import Animator, par, prop, seq
 from pokemon_companion.ui.art import (
@@ -1759,7 +1759,7 @@ class InspectPanel(QGraphicsObject):
                 Qt.AlignmentFlag.AlignLeft,
                 wrap=True,
             )
-        if not is_implemented(card):
+        if unimplemented(card):
             note = QRectF(rect.left() + 14, rect.bottom() - 46, rect.width() - 28, 34)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(with_alpha(GOLD, 40))

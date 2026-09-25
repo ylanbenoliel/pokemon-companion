@@ -40,9 +40,8 @@ from pokemon_companion.cards_db.deck_rules import DECK_SIZE, MAX_COPIES, validat
 from pokemon_companion.cards_db.decklist_parser import load_deck
 from pokemon_companion.cards_db.models import Card, Supertype
 from pokemon_companion.cards_db.standard import load_legal, signature
-from pokemon_companion.engine.effects import attacks as attack_effects
-from pokemon_companion.engine.effects import trainers
 from pokemon_companion.engine.effects.cardinfo import is_basic_energy, stage_of, trainer_kind
+from pokemon_companion.engine.effects.coverage import unimplemented
 from pokemon_companion.engine.effects.descriptions import describe_card
 from pokemon_companion.paths import BUNDLED_DECKS, USER_DECKS
 from pokemon_companion.ui.theme import ENERGY_NAMES_PT, ui_font
@@ -83,19 +82,6 @@ def search_text(card: Card) -> str:
     for ability in card.abilities:
         parts += [ability.name, ability.text]
     return _fold(" ".join(parts))
-
-
-def unimplemented(card: Card) -> list[str]:
-    """Efeitos da carta que o jogo ainda não aplica (ataques e Treinadores;
-    Habilidades passivas escritas à mão não entram na conta)."""
-    missing = [
-        f"ataque {attack.name}"
-        for attack in card.attacks
-        if attack.text and attack_effects.spec_for(attack) is None
-    ]
-    if card.supertype == Supertype.TRAINER and not trainers.is_implemented(card):
-        missing.append("efeito do Treinador")
-    return missing
 
 
 @dataclass

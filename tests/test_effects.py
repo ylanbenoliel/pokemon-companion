@@ -26,6 +26,7 @@ from pokemon_companion.engine.actions import (
 )
 from pokemon_companion.engine.effects import passives
 from pokemon_companion.engine.effects.core import Ctx
+from pokemon_companion.engine.effects.coverage import unimplemented
 from pokemon_companion.engine.game_state import PlayerId, PokemonInPlay
 
 from .conftest import make_basic_pokemon, make_energy, make_evolution
@@ -781,3 +782,14 @@ def test_exposed_defender_hides_a_protected_active(state):
     assert ctx.exposed_defender is state.opponent.active
     state.opponent.active.protected_turn = state.turn_number
     assert ctx.exposed_defender is None
+
+
+def test_unimplemented_lists_attacks_abilities_and_trainers():
+    card = dataclasses.replace(
+        mon("Nada"),
+        attacks=[Attack(name="Ataque Inventado", cost=[], damage="10", text="Faça algo inédito.")],
+        abilities=[Ability(name="Habilidade Inventada", text="Algo inédito.")],
+    )
+    assert unimplemented(card) == ["ataque Ataque Inventado", "habilidade Habilidade Inventada"]
+    assert unimplemented(trainer("Carta Inventada")) == ["efeito do Treinador"]
+    assert unimplemented(trainer("Boss's Orders", "Supporter")) == []

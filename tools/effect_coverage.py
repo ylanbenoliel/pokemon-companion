@@ -9,7 +9,6 @@ Uso:
 from __future__ import annotations
 
 import argparse
-import inspect
 from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
@@ -18,19 +17,7 @@ from pokemon_companion.cards_db.cache import CardCache
 from pokemon_companion.cards_db.decklist_parser import load_deck
 from pokemon_companion.cards_db.models import Card, Supertype
 from pokemon_companion.deck_loading import make_lookup
-from pokemon_companion.engine import rules
-from pokemon_companion.engine.effects import (
-    abilities,
-    attacks,
-    core,
-    passive_text,
-    passives,
-    trainers,
-)
-
-PASSIVE_SOURCE = "".join(
-    inspect.getsource(module) for module in (passives, rules, core, trainers, abilities, attacks)
-)
+from pokemon_companion.engine.effects.coverage import unimplemented
 
 
 def missing_effects(cards: Iterable[Card]) -> tuple[Counter[str], Counter[str]]:
@@ -39,32 +26,14 @@ def missing_effects(cards: Iterable[Card]) -> tuple[Counter[str], Counter[str]]:
     total: Counter[str] = Counter()
     for card in cards:
         if card.supertype == Supertype.POKEMON:
-            for attack in card.attacks:
-                if attack.text:
-                    total["ataque"] += 1
-                    if attacks.spec_for(attack) is None:
-                        missing[f"ataque  {attack.name} ({card.name})"] += 1
-            for ability in card.abilities:
-                total["habilidade"] += 1
-                known = abilities.spec_for(ability) is not None or bool(
-                    passive_text.passives_of(ability)
-                )
-                if not known and f'"{ability.name}"' not in PASSIVE_SOURCE:
-                    missing[f"habilid {ability.name} ({card.name})"] += 1
+            total["ataque"] += sum(1 for attack in card.attacks if attack.text)
+            total["habilidade"] += len(card.abilities)
         elif card.supertype == Supertype.TRAINER:
             total["treinador"] += 1
-            if not trainers.is_implemented(card):
-                missing[f"treinad {card.name}"] += 1
-            elif (
-                "Stadium" in card.subtypes
-                and trainers.stadium_spec_for(card) is None
-                and f'"{card.name}"' not in PASSIVE_SOURCE
-            ):
-                missing[f"estádio {card.name}"] += 1
         elif "Special" in card.subtypes or card.rules:
             total["energia especial"] += 1
-            if f'"{card.name}"' not in PASSIVE_SOURCE:
-                missing[f"energia {card.name}"] += 1
+        for effect in unimplemented(card):
+            missing[f"{effect} ({card.name})"] += 1
     return total, missing
 
 
