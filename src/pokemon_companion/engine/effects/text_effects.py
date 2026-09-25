@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import random
 import re
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from functools import lru_cache
+from functools import cache, lru_cache
 from typing import NamedTuple
 
 from pokemon_companion.cards_db.models import Attack, Card
@@ -2146,6 +2147,95 @@ def _energy_from_fallen(n: str) -> Step:
     return after(act)
 
 
+@phrase(
+    "Turn 1 of your opponent's face-down Prize cards face up and choose a random card from your "
+    "opponent's hand"
+)
+def _prize_and_hand_card() -> Step:
+    def act(run: Run) -> None:
+        if not run.opp.prizes or not run.opp.hand:
+            return
+        # ponytail: o prêmio virado não fica marcado; guardar o índice se a UI for mostrar
+        run.counted = random.randrange(len(run.opp.prizes))
+        run.chosen_card = random.choice(run.opp.hand)
+        run.ctx.log(f"Prêmio virado: {run.opp.prizes[run.counted].name}.")
+
+    return after(act)
+
+
+@phrase("Your opponent reveals that card")
+def _opp_reveals() -> Step:
+    return after(lambda run: None)
+
+
+@phrase("You may have your opponent switch those cards")
+def _switch_prize_and_hand() -> Step:
+    """Troca quando a carta da mão vale mais para o oponente que o prêmio."""
+
+    def act(run: Run) -> None:
+        card = run.chosen_card
+        if card is None or card not in run.opp.hand or run.counted >= len(run.opp.prizes):
+            return
+        prize = run.opp.prizes[run.counted]
+        state, opp = run.ctx.state, run.ctx.opp_id
+        if core.card_priority(state, opp, card) > core.card_priority(state, opp, prize):
+            run.opp.hand[run.opp.hand.index(card)] = prize
+            run.opp.prizes[run.counted] = card
+            run.ctx.log(f"{card.name} foi para os prêmios; {prize.name} para a mão.")
+
+    return after(act)
+
+
+@cache
+def _common_hp(name: str) -> int | None:
+    """HP mais comum entre as impressões com esse nome (o palpite natural)."""
+    from pokemon_companion.cards_db.catalog import load_catalog
+
+    counts = Counter(e.card.hp for e in load_catalog() if e.card.name == name and e.card.hp)
+    return counts.most_common(1)[0][0] if counts else None
+
+
+@phrase(
+    "Tell your opponent the name of a Pokémon in your hand and put that Pokémon face down in "
+    "front of you"
+)
+def _tyme_pick() -> Step:
+    def act(run: Run) -> None:
+        mons = [c for c in run.me.hand if c.is_pokemon]
+        if not mons:
+            return
+        # quem joga prefere um Pokémon cujo HP foge do palpite natural
+        run.chosen_card = min(mons, key=lambda c: c.hp == _common_hp(c.name))
+
+    return after(act)
+
+
+@phrase("Your opponent guesses that Pokémon's HP, and then you reveal it")
+def _tyme_guess() -> Step:
+    def act(run: Run) -> None:
+        card = run.chosen_card
+        run.did = card is not None and _common_hp(card.name) == card.hp
+        if card is not None:
+            run.ctx.log(f"Palpite de HP {'certo' if run.did else 'errado'} ({card.name}).")
+
+    return after(act)
+
+
+@phrase("If your opponent guessed right, they draw {N} cards")
+def _tyme_right(n: str) -> Step:
+    return after(lambda run: core.draw(run.opp, num(n)) if run.did else None)
+
+
+@phrase("If they guessed wrong, you draw {N} cards")
+def _tyme_wrong(n: str) -> Step:
+    return after(lambda run: core.draw(run.me, num(n)) if not run.did else None)
+
+
+@phrase("Return the Pokémon to your hand")
+def _tyme_return() -> Step:
+    return after(lambda run: None)  # a carta nunca saiu da mão
+
+
 @phrase("Discard the bottom card of your deck")
 def _mill_bottom() -> Step:
     def act(run: Run) -> None:
@@ -3446,7 +3536,7 @@ def _k_rocket_stage(stage: str) -> CardFilter | None:
     return lambda card: card.is_pokemon and test(card) and card.name.startswith("Team Rocket's")
 
 
-@kind(r"((?:[A-Z][\w.']+ )*[A-Z][\w.']+'s) Pokémon")
+@kind(r"((?:[A-Z][\w.']+ )*[A-Z][\w.']*'s) Pokémon")
 def _k_owner_group(owner: str) -> CardFilter | None:
     if not owner.endswith("'s"):
         return None
@@ -3867,6 +3957,26 @@ def _played(run: Run, test: Callable[[Card], bool]) -> bool:
 def _c_played_group(group: str) -> Predicate:
     test = cardinfo.is_ancient if group == "Ancient" else cardinfo.is_future
     return lambda run: _played(run, lambda c: trainer_kind(c) == "Supporter" and test(c))
+
+
+@condition(r"you have ((?:[^,]+, )+and [^,]+) in play")
+def _c_all_in_play(names: str) -> Predicate | None:
+    wanted = [card_name(n) for n in re.split(r",\s*(?:and\s+)?", names.strip())]
+    if not wanted or any(n is None for n in wanted):
+        return None
+    return lambda run: all(
+        any(m.card.name == n for m in run.me.all_pokemon_in_play()) for n in wanted
+    )
+
+
+@phrase(
+    "During this turn, if your opponent's Active Pokémon is Knocked Out by damage from an attack "
+    "used by your {X}, take {N} more Prize cards"
+)
+def _prize_bonus(what: str, n: str) -> Step | None:
+    if parse_kind(what.strip()) is None:
+        return None
+    return after(lambda run: setattr(run.me, "prize_bonus", (num(n), run.ctx.turn, what.strip())))
 
 
 @condition(r"you have any {X} in play", r"you have any {X} on your Bench")

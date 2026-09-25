@@ -159,8 +159,9 @@ class PlayerState:
     legacy_energy_used: bool = False
     #: ataques já feitos neste turno (Festival Lead permite 2)
     attacks_this_turn: int = 0
-    #: Briar: prêmio extra se um Tera nocautear o Ativo neste turno
-    extra_prize_turn: int | None = None
+    #: prêmios extras se um Pokémon do tipo pedido nocautear o Ativo do
+    #: oponente neste turno: (quantidade, turno, tipo — "Tera Pokémon", "N's Pokémon")
+    prize_bonus: tuple[int, int, str] | None = None
     #: último ataque usado: (nome, turno)
     last_attack: tuple[str, int] | None = None
     #: cartas de Treinador jogadas da mão neste turno

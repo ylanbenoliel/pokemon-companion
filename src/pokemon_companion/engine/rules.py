@@ -41,7 +41,6 @@ from pokemon_companion.engine.effects.cardinfo import (
     is_basic_energy,
     is_fossil_item,
     is_fossil_pokemon,
-    is_tera,
     pokemon_type,
     trainer_kind,
 )
@@ -412,13 +411,13 @@ def _process_knockouts(
                 if "Legacy Energy" in mon.attached_energies and not owner.legacy_energy_used:
                     owner.legacy_energy_used = True
                     prizes -= 1
-                if (
-                    was_active
-                    and taker.extra_prize_turn == state.turn_number
-                    and attacker_mon is not None
-                    and is_tera(attacker_mon.card)
-                ):
-                    prizes += 1
+                bonus = taker.prize_bonus
+                if was_active and bonus and bonus[1] == state.turn_number and attacker_mon:
+                    from pokemon_companion.engine.effects.text_effects import parse_kind
+
+                    kind = parse_kind(bonus[2])
+                    if kind is not None and kind(attacker_mon.card):
+                        prizes += bonus[0]
             messages.append(f"{mon.card.name} ({owner_id.value}) foi nocauteado!")
             by_attack = attacker is not None and owner_id is attacker.other
             core.discard_pokemon(owner, mon)

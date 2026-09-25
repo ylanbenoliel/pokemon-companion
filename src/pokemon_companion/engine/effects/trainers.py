@@ -461,7 +461,7 @@ def _salvatore(ctx: Ctx) -> None:
 
 @trainer("Briar", lambda ctx: len(ctx.opp.prizes) == 2)
 def _briar(ctx: Ctx) -> None:
-    ctx.me.extra_prize_turn = ctx.turn
+    ctx.me.prize_bonus = (1, ctx.turn, "Tera Pokémon")
 
 
 @trainer("Hassel", lambda ctx: my_ko_last_turn(ctx))
