@@ -36,6 +36,7 @@ from pokemon_companion.engine.actions import (
     UseAbility,
     UseAttack,
 )
+from pokemon_companion.engine.effects import passives
 from pokemon_companion.engine.game_state import GameState, PlayerId
 
 MAX_TURNS = 120
@@ -52,8 +53,12 @@ def _damaging(state: GameState, action: object) -> bool:
     """Ataque legal que causa dano (ignora utilitários como Burst Roar)."""
     if not isinstance(action, UseAttack) or action.target == ("mode", 0):
         return False
-    active = state.state_of(rules.decision_player(state)).active
-    return active is not None and bool(active.card.attacks[action.attack_index].damage)
+    pid = rules.decision_player(state)
+    active = state.state_of(pid).active
+    if active is None:
+        return False
+    # índice da lista com ataques emprestados (Memory Helix, Ferramentas), não da carta
+    return bool(passives.available_attacks(state, pid, active)[action.attack_index].damage)
 
 
 def play_game(job: tuple[str, str, int, str, int]) -> dict[str, Any]:
