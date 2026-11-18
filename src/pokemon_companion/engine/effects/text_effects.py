@@ -975,15 +975,21 @@ def _discard_own(n: str, symbol: str | None = None) -> Step:
 
 
 @phrase("Discard all Energy from this Pokémon", "Discard all {E} Energy from this Pokémon")
-def _discard_all_own(symbol: str | None = None) -> Step:
+def _discard_all_own(symbol: str | None = None) -> list[Step]:
     kind_ = energy(symbol) if symbol else None
+
+    def estimate(run: Run) -> None:
+        # a IA só roda a fase "pre": sem isto "for each card you discarded" valia 0
+        mon = run.source
+        if run.estimate and mon is not None:
+            run.counted = sum(1 for e in mon.attached_energies if kind_ is None or e == kind_)
 
     def act(run: Run) -> None:
         mon = run.source
         if mon is not None:
             run.counted = attacks.discard_own_energy(run.ctx, len(mon.attached_energies), kind_)
 
-    return after(act)
+    return [pre(estimate), after(act)]
 
 
 def _discard_from_defender(amount: int, special_only: bool) -> Act:

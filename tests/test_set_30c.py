@@ -291,3 +291,20 @@ def test_opponent_shuffles_hand_and_draws(state):
     attack(state, "Your opponent shuffles their hand into their deck and draws 4 cards.")
 
     assert len(state.opponent.hand) == 4 + 1  # + a compra do início do turno dele
+
+
+def test_ai_estimate_counts_energy_that_will_be_discarded(state):
+    from pokemon_companion.engine.effects.core import Ctx
+
+    burst = Attack(
+        name="Steel Burst",
+        cost=["Colorless"],
+        damage="50×",
+        text="Discard all {M} Energy from this Pokémon. This attack does 50 damage for each card "
+        "you discarded in this way.",
+    )
+    state.player.active.attached_energies = ["Metal", "Metal", "Metal", "Fire"]
+    ctx = Ctx(state, PlayerId.PLAYER, state.player.active, None, [])
+
+    assert attacks.spec_for(burst).estimate(ctx, burst) == 150
+    assert state.player.active.attached_energies.count("Metal") == 3  # estimar não descarta
