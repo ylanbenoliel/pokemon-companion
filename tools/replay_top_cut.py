@@ -22,13 +22,12 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-import requests
-
 sys.path.insert(0, str(Path(__file__).parent))
 
 from fetch_top_decks import decklist_text, slug  # noqa: E402
 from tournament import _init_worker, load_all, play_game  # noqa: E402
 
+from pokemon_companion import net  # noqa: E402
 from pokemon_companion.paths import BUNDLED_DECKS  # noqa: E402
 
 LIMITLESS = "https://limitlesstcg.com"
@@ -66,8 +65,7 @@ class Match:
 
 
 def _get(url: str) -> str:
-    response = requests.get(url, headers=HEADERS, timeout=30)
-    response.raise_for_status()
+    response = net.get(url, headers=HEADERS, timeout=30)
     response.encoding = "utf-8"  # o Labs não declara o charset (nomes como "Łaszkiewicz")
     return response.text
 

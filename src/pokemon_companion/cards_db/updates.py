@@ -24,6 +24,7 @@ from pathlib import Path
 
 import requests
 
+from pokemon_companion import net
 from pokemon_companion.paths import BUNDLED_DECKS, PACKAGE_DIR, USER_DATA
 
 #: versão do vocabulário do motor; sobe quando os compiladores ganham frases
@@ -126,6 +127,4 @@ def refresh(
 
 
 def _fetch(url: str) -> bytes:
-    response = requests.get(url, timeout=TIMEOUT)
-    response.raise_for_status()
-    return response.content
+    return net.get(url, timeout=TIMEOUT).content

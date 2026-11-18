@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import requests
 
+from pokemon_companion import net
 from pokemon_companion.cards_db.models import (
     Ability,
     Attack,
@@ -21,6 +22,7 @@ from pokemon_companion.cards_db.models import (
 )
 
 BASE_URL = "https://api.tcgdex.net/v2/en"
+
 
 _CATEGORY_MAP = {
     "Pokemon": Supertype.POKEMON,
@@ -106,9 +108,10 @@ class TcgdexClient:
         self._set_codes: dict[str, str | None] = {}
 
     def _get(self, path: str, params: dict[str, str] | None = None) -> object:
-        response = self._session.get(f"{BASE_URL}{path}", params=params, timeout=self._timeout)
-        response.raise_for_status()
-        return response.json()
+        url = f"{BASE_URL}{path}"
+        return net.get(
+            url, params=params, timeout=self._timeout, tries=4, session=self._session
+        ).json()
 
     def _set_code(self, set_id: str) -> str | None:
         if set_id not in self._set_codes:

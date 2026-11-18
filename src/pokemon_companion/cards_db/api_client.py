@@ -8,10 +8,10 @@ retry com backoff exponencial em respostas 429/5xx.
 from __future__ import annotations
 
 import os
-import time
 
 import requests
 
+from pokemon_companion import net
 from pokemon_companion.cards_db.models import (
     Attack,
     Card,
@@ -84,20 +84,16 @@ class PokemonTcgApiClient:
         return {"X-Api-Key": self._api_key} if self._api_key else {}
 
     def _get(self, path: str, params: dict[str, str]) -> dict:
-        url = f"{BASE_URL}{path}"
-        delay = self._backoff_seconds
-        for attempt in range(self._max_retries):
-            response = self._session.get(
-                url, params=params, headers=self._headers(), timeout=self._timeout
-            )
-            retryable = response.status_code == 429 or response.status_code >= 500
-            if retryable and attempt < self._max_retries - 1:
-                time.sleep(delay)
-                delay *= 2
-                continue
-            response.raise_for_status()
-            return response.json()
-        raise RuntimeError(f"Falha ao consultar {url} após {self._max_retries} tentativas.")
+        response = net.get(
+            f"{BASE_URL}{path}",
+            params=params,
+            headers=self._headers(),
+            timeout=self._timeout,
+            tries=self._max_retries,
+            backoff=self._backoff_seconds,
+            session=self._session,
+        )
+        return response.json()
 
     def find_card(self, name: str, set_ptcgo_code: str, number: str) -> Card | None:
         query = f'name:"{name}" set.ptcgoCode:{set_ptcgo_code} number:{number}'

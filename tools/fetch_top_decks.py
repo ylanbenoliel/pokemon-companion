@@ -11,8 +11,7 @@ import html
 import re
 from pathlib import Path
 
-import requests
-
+from pokemon_companion import net
 from pokemon_companion.paths import BUNDLED_DECKS
 
 BASE = "https://limitlesstcg.com"
@@ -27,13 +26,13 @@ CARD_RE = re.compile(
 
 
 def _get(path: str) -> str:
-    response = requests.get(f"{BASE}{path}", headers=HEADERS, timeout=30)
-    response.raise_for_status()
-    return response.text
+    return net.get(f"{BASE}{path}", headers=HEADERS, timeout=30).text
 
 
 def archetypes(top: int) -> list[tuple[int, str, str, float]]:
-    page = _get("/decks")
+    # a página mostra 25 por padrão; `show` aceita 25, 50 ou 100
+    show = next((n for n in (25, 50, 100) if n >= top), 100)
+    page = _get(f"/decks?show={show}")
     result = []
     for rank, deck_id, raw_name, share in ROW_RE.findall(page)[:top]:
         name = re.sub(r"<[^>]+>", " ", html.unescape(raw_name))

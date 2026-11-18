@@ -17,6 +17,7 @@ from pathlib import Path
 
 import requests
 
+from pokemon_companion import net
 from pokemon_companion.cards_db import updates
 from pokemon_companion.cards_db.cache import card_from_json, card_to_json
 from pokemon_companion.cards_db.models import Card
@@ -57,8 +58,9 @@ def fetch_set_codes(set_ids: set[str]) -> dict[str, str]:
     """Abreviação oficial de cada set na TCGdex ("me02" → "PFL")."""
     codes: dict[str, str] = {}
     for set_id in sorted(set_ids):
-        response = requests.get(SETS_URL.format(set_id), timeout=20)
-        if not response.ok:
+        try:
+            response = net.get(SETS_URL.format(set_id), timeout=20)
+        except requests.HTTPError:
             continue
         official = (response.json().get("abbreviation") or {}).get("official")
         if official:

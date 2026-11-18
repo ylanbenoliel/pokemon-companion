@@ -53,6 +53,8 @@ def test_mega_ex_without_suffix_is_three_prizes():
 
 
 class _FakeResponse:
+    status_code = 200
+
     def __init__(self, payload: object) -> None:
         self._payload = payload
 
@@ -124,3 +126,52 @@ def test_fallback_raises_when_every_source_is_down():
 
     with pytest.raises(RuntimeError):
         lookup.find_card("Dreepy", "TWM", "128")
+
+
+def test_net_get_retries_server_errors_and_connection_drops(monkeypatch):
+    import requests
+
+    from pokemon_companion import net
+
+    monkeypatch.setattr(net.time, "sleep", lambda _: None)
+    answers: list[object] = [requests.ConnectionError(), 503, 200]
+
+    def get(url, **kwargs):  # noqa: ANN001, ANN003, ANN202
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        response = _FakeResponse({"ok": True})
+        response.status_code = answer
+        return response
+
+    class Session:
+        pass
+
+    session = Session()
+    session.get = get  # type: ignore[attr-defined]
+    assert net.get("u", session=session).json() == {"ok": True}
+    assert answers == []
+
+
+def test_pokemontcg_stadium_text_compiles_like_tcgdex():
+    from pokemon_companion.cards_db.models import Card, Supertype
+    from pokemon_companion.engine.effects.coverage import unimplemented
+
+    reminder = (
+        "You may play only 1 Stadium card during your turn. Put it next to the Active Spot, and "
+        "discard it if another Stadium comes into play. A Stadium with the same name can't be "
+        "played."
+    )
+    garden = Card(
+        id="me1-122",
+        name="Mystery Garden",
+        supertype=Supertype.TRAINER,
+        subtypes=["Stadium"],
+        rules=[
+            "Once during each player's turn, that player may discard an Energy card from their "
+            "hand in order to draw cards until they have as many cards in their hand as they "
+            "have Psychic Pokémon in play.",
+            reminder,
+        ],
+    )
+    assert unimplemented(garden) == []

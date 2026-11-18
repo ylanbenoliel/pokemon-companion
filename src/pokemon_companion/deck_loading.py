@@ -22,8 +22,9 @@ class DeckLoadError(Exception):
 
 
 def make_lookup() -> CardLookup:
-    """pokemontcg.io primeiro; se estiver fora do ar, TCGdex (uma falha só)."""
-    return FallbackLookup([PokemonTcgApiClient(max_retries=1), TcgdexClient()])
+    """TCGdex primeiro (o pool e os efeitos são conferidos contra o texto
+    dela); pokemontcg.io só se ela estiver fora do ar."""
+    return FallbackLookup([TcgdexClient(), PokemonTcgApiClient(max_retries=1)])
 
 
 def _load_deck_file(

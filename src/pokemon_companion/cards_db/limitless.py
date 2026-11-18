@@ -20,7 +20,7 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 
-import requests
+from pokemon_companion import net
 
 BASE = "https://limitlesstcg.com"
 HEADERS = {"User-Agent": "Mozilla/5.0 (pokemon-companion deck import)"}
@@ -51,8 +51,7 @@ class Archetype:
 
 
 def fetch(url: str) -> str:
-    response = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
-    response.raise_for_status()
+    response = net.get(url, headers=HEADERS, timeout=TIMEOUT)
     response.encoding = "utf-8"
     return response.text
 

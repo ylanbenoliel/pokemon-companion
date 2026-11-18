@@ -10,6 +10,8 @@ from importlib.metadata import PackageNotFoundError, version
 
 import requests
 
+from pokemon_companion import net
+
 RELEASES_URL = "https://api.github.com/repos/ylanbenoliel/pokemon-companion/releases"
 TIMEOUT = 5
 _TAG = re.compile(r"v?(\d+(?:\.\d+)*)")
@@ -44,8 +46,7 @@ def newer_release(releases: list[dict], installed: str) -> tuple[str, str] | Non
 def check() -> tuple[str, str] | None:
     """Consulta o GitHub; sem rede ou com resposta estranha, não avisa nada."""
     try:
-        response = requests.get(RELEASES_URL, params={"per_page": 20}, timeout=TIMEOUT)
-        response.raise_for_status()
+        response = net.get(RELEASES_URL, params={"per_page": 20}, timeout=TIMEOUT, tries=2)
         releases = response.json()
     except (requests.RequestException, ValueError):
         return None
