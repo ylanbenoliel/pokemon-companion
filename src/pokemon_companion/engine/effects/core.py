@@ -767,6 +767,3 @@ def spread_counters(ctx: Ctx, opp_id: PlayerId, counters: int, bench_only: bool)
 def type_filter(energy_type: str) -> CardFilter:
     return lambda card: is_basic_energy(card) and energy_type_of(card) == energy_type
 
-
-def is_pokemon_of_type(energy_type: str) -> CardFilter:
-    return lambda card: card.is_pokemon and pokemon_type(card) == energy_type

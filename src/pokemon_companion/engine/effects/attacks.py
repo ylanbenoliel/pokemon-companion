@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from pokemon_companion.cards_db.models import Attack, Card
 from pokemon_companion.engine.effects import core, passives
 from pokemon_companion.engine.effects.cardinfo import (
-    energy_type_of,
     has_ability,
     has_rule_box,
     in_group,
@@ -1377,14 +1376,6 @@ def _destined_fight(ctx: Ctx, a: Attack) -> None:
     for mon in (ctx.me.active, ctx.opp.active):
         if mon is not None:
             mon.damage_counters = mon.max_hp
-
-
-def energy_cards_in(cards: list[Card], energy_type: str | None = None) -> list[Card]:
-    return [
-        c
-        for c in cards
-        if is_basic_energy(c) and (energy_type is None or energy_type_of(c) == energy_type)
-    ]
 
 
 # ---------------------------------------------------------------------------

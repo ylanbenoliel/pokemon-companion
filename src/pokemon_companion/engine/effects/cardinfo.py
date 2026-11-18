@@ -28,7 +28,6 @@ BASIC_TYPES = (
     "Fairy",
 )
 RULE_BOX_SUBTYPES = {"ex", "EX", "V", "VMAX", "VSTAR", "GX"}
-TRAINER_GROUPS = ("Team Rocket's", "N's", "Cynthia's", "Marnie's", "Lillie's", "Ethan's", "Hop's")
 
 
 def has_rule_box(card: Card) -> bool:

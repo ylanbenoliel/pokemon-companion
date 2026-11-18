@@ -30,10 +30,6 @@ _SUPERTYPE_MAP = {
 }
 
 
-class CardNotFoundError(Exception):
-    pass
-
-
 def _parse_attack(data: dict) -> Attack:
     return Attack(
         name=data.get("name", ""),

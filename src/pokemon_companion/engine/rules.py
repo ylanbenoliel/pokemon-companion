@@ -18,7 +18,7 @@ por heurística na hora. `decision_player()` diz quem deve agir.
 
 from __future__ import annotations
 
-from pokemon_companion.cards_db.models import Attack, Card, Supertype
+from pokemon_companion.cards_db.models import Card, Supertype
 from pokemon_companion.engine.actions import (
     Action,
     AttachEnergy,
@@ -61,22 +61,6 @@ from pokemon_companion.engine.status_conditions import (
     recover_from_paralysis,
 )
 
-
-def energy_satisfies_cost(attached: list[str], cost: list[str]) -> bool:
-    return passives.energy_satisfies(attached, cost)
-
-
-def calculate_damage(attacker: PokemonInPlay, attack: Attack, defender: PokemonInPlay) -> int:
-    """Dano base com Fraqueza (×2) e Resistência (−30), sem efeitos."""
-    damage = attack.base_damage
-    attacker_types = set(attacker.card.types)
-    if attacker_types & {w.energy_type for w in defender.card.weaknesses}:
-        damage *= 2
-    if attacker_types & {r.energy_type for r in defender.card.resistances}:
-        damage = max(damage - 30, 0)
-    return damage
-
-
 _TRIPLE_PRIZE_SUBTYPES = {"VMAX", "VSTAR"}
 _DOUBLE_PRIZE_SUBTYPES = {"ex", "EX", "GX", "V", "BREAK"}
 
@@ -106,7 +90,7 @@ def choose_promotion(
                 passives.can_pay(state, owner, mon, a)
                 for a in passives.available_attacks(state, owner, mon)
             )
-        return any(energy_satisfies_cost(mon.attached_energies, a.cost) for a in mon.card.attacks)
+        return any(passives.energy_satisfies(mon.attached_energies, a.cost) for a in mon.card.attacks)
 
     def score(mon: PokemonInPlay) -> tuple[bool, int, int]:
         return (ready(mon), len(mon.attached_energies), mon.current_hp)

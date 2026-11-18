@@ -80,11 +80,9 @@ GOLD = VOLT  # nome antigo do destaque principal
 PLAYABLE_GLOW = QColor("#6bffa8")
 DAMAGE_RED = FLARE
 HEAL_GREEN = QColor("#49e08a")
-MAT_TOP = FELT_MID
 MAT_BOTTOM = FELT_DEEP
 ZONE_FILL = QColor(255, 255, 255, 12)
 ZONE_STROKE = QColor(233, 255, 246, 48)
-TEXT_DARK = INK
 
 ENERGY_COLORS: dict[str, str] = {
     "Grass": "#35c759",

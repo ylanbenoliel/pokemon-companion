@@ -1210,10 +1210,6 @@ def _tool_passives(rules_text: str) -> tuple[Passive, ...]:
     )
 
 
-def is_card_passive(card: Card) -> bool:
-    return any(passives_of(ability) for ability in card.abilities)
-
-
 # ---------------------------------------------------------------------------
 # prêmios, supressão, evolução, custo de ataque, Checkup e gatilhos
 

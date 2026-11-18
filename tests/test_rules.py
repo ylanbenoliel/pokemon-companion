@@ -12,6 +12,7 @@ from pokemon_companion.engine.actions import (
     Retreat,
     UseAttack,
 )
+from pokemon_companion.engine.effects import passives
 from pokemon_companion.engine.game_state import (
     GameState,
     PlayerId,
@@ -48,18 +49,18 @@ def build_state(
     return GameState(player=player, opponent=opponent, active_player=active_player, turn_number=3)
 
 
-def test_calculate_damage_applies_weakness(charmander, squirtle):
-    attacker = PokemonInPlay(card=squirtle)
-    defender = PokemonInPlay(card=charmander)
-    attack = squirtle.attacks[0]
-
-    damage = rules.calculate_damage(attacker, attack, defender)
-
-    assert damage == 40  # 20 base * 2 (fraqueza de Charmander a Water)
+def _attack_damage(attacker: Card, defender: Card) -> int:
+    state = build_state(player_active=attacker, opponent_active=defender)
+    state.player.active.attached_energies = list(attacker.attacks[0].cost)
+    rules.apply_action(state, UseAttack(attack_index=0))
+    return state.opponent.active.damage_counters
 
 
-def test_calculate_damage_applies_resistance(charmander):
-    attacker = PokemonInPlay(card=charmander)
+def test_attack_damage_applies_weakness(charmander, squirtle):
+    assert _attack_damage(squirtle, charmander) == 40  # 20 base * 2 (fraqueza a Water)
+
+
+def test_attack_damage_applies_resistance(charmander):
     resistant_card = dataclasses.replace(
         charmander,
         id="resistant-mon",
@@ -67,18 +68,14 @@ def test_calculate_damage_applies_resistance(charmander):
         weaknesses=[],
         resistances=[WeaknessResistance("Fire", "-30")],
     )
-    defender = PokemonInPlay(card=resistant_card)
-
-    damage = rules.calculate_damage(attacker, charmander.attacks[0], defender)
-
-    assert damage == 0  # 20 base - 30 resistência, piso em 0
+    assert _attack_damage(charmander, resistant_card) == 0  # 20 - 30 resistência, piso em 0
 
 
 def test_energy_satisfies_cost():
-    assert rules.energy_satisfies_cost(["Fire", "Colorless"], ["Fire", "Colorless"])
-    assert rules.energy_satisfies_cost(["Fire", "Fire"], ["Fire", "Colorless"])
-    assert not rules.energy_satisfies_cost(["Water"], ["Fire"])
-    assert not rules.energy_satisfies_cost(["Fire"], ["Fire", "Colorless"])
+    assert passives.energy_satisfies(["Fire", "Colorless"], ["Fire", "Colorless"])
+    assert passives.energy_satisfies(["Fire", "Fire"], ["Fire", "Colorless"])
+    assert not passives.energy_satisfies(["Water"], ["Fire"])
+    assert not passives.energy_satisfies(["Fire"], ["Fire", "Colorless"])
 
 
 def test_legal_actions_include_attack_only_with_enough_energy(charmander, squirtle):
