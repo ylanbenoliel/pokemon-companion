@@ -1,13 +1,11 @@
-"""Arte dos Pokémon e desenhos vetoriais do tabuleiro.
+"""Arte das cartas e desenhos vetoriais do tabuleiro.
 
-Arte da carta (só a ilustração, sem a moldura), em ordem de preferência:
-1. Pokémon: arte oficial em PNG transparente do repositório de sprites da
-   PokeAPI, indexada pelo número da Pokédex (`Card.national_pokedex_numbers`,
-   que a API do TCG já fornece).
-2. Recorte da janela de ilustração da imagem da carta (`Card.image_url`) —
-   usado para Treinadores e Pokémon sem número de Pokédex; a janela muda de
-   lugar conforme o tipo de carta.
-3. `None` — quem desenha usa um placeholder.
+Arte da carta = recorte da janela de ilustração da imagem oficial da carta
+(`Card.image_url`). A janela pega a ilustração inteira (incluindo o que a
+própria carta imprime sobre ela, como o selo de evolução) e muda de lugar
+conforme o tipo de carta. Sem imagem, `None` — quem desenha usa um
+placeholder. Quem desenha sempre escala mantendo a proporção, então o
+recorte nunca é cortado de novo.
 
 Downloads ficam em cache em disco (diretório de dados do usuário) e em
 memória; qualquer falha de rede vira `None`, nunca uma exceção na UI.
@@ -24,6 +22,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import requests
+from PIL import Image
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import (
     QBrush,
@@ -40,12 +39,7 @@ from PyQt6.QtGui import (
 from pokemon_companion.cards_db.models import Card, Supertype
 from pokemon_companion.paths import USER_DATA
 from pokemon_companion.ui.theme import energy_color
-from pokemon_companion.vision.recognition_index import load_or_download_card_image
 
-POKEAPI_ARTWORK_URL = (
-    "https://raw.githubusercontent.com/PokeAPI/sprites/master/"
-    "sprites/pokemon/other/official-artwork/{number}.png"
-)
 DEFAULT_ART_DIR = USER_DATA / "card_art"
 
 # Janela da ilustração dentro do scan de uma carta (frações de largura/altura).
@@ -71,31 +65,26 @@ class ArtProvider:
         self._cache: dict[str, QPixmap | None] = {}
 
     def card_art(self, card: Card) -> QPixmap | None:
-        if card.id in self._cache:
-            return self._cache[card.id]
-        pixmap = self._official_artwork(card) or self._cropped_card_art(card)
-        self._cache[card.id] = pixmap
-        return pixmap
+        if card.id not in self._cache:
+            self._cache[card.id] = self._cropped_card_art(card)
+        return self._cache[card.id]
 
-    def _official_artwork(self, card: Card) -> QPixmap | None:
-        if not card.national_pokedex_numbers:
-            return None
-        number = card.national_pokedex_numbers[0]
-        path = self._art_dir / f"{number}.png"
+    def _card_image(self, card: Card) -> Image.Image | None:
+        path = self._art_dir / "cards" / f"{card.id}.png"
         if not path.exists():
-            data = self._fetch(POKEAPI_ARTWORK_URL.format(number=number))
+            data = self._fetch(card.image_url) if card.image_url else None
             if not data:
                 return None
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(data)
-        pixmap = QPixmap(str(path))
-        return None if pixmap.isNull() else pixmap
+        try:
+            return Image.open(path).convert("RGBA").convert("RGB")
+        except OSError:
+            path.unlink(missing_ok=True)  # download corrompido: tenta de novo na próxima
+            return None
 
     def _cropped_card_art(self, card: Card) -> QPixmap | None:
-        try:
-            image = load_or_download_card_image(card, self._art_dir / "cards")
-        except (requests.RequestException, OSError):
-            return None
+        image = self._card_image(card)
         if image is None:
             return None
         left, top, right, bottom = (
@@ -108,7 +97,7 @@ class ArtProvider:
             (int(left * width), int(top * height), int(right * width), int(bottom * height))
         )
         buffer = io.BytesIO()
-        cropped.convert("RGB").save(buffer, format="PNG")
+        cropped.save(buffer, format="PNG")
         pixmap = QPixmap()
         return pixmap if pixmap.loadFromData(buffer.getvalue(), "PNG") else None
 

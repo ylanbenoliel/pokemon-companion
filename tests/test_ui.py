@@ -97,7 +97,7 @@ def test_humanize_replaces_engine_ids():
 # arte
 
 
-def test_art_provider_uses_official_artwork_by_pokedex_number(tmp_path, qapp):
+def test_art_provider_crops_illustration_from_card_image(tmp_path, qapp):
     requested = []
     png = _tiny_png()
 
@@ -105,18 +105,20 @@ def test_art_provider_uses_official_artwork_by_pokedex_number(tmp_path, qapp):
         requested.append(url)
         return png
 
+    card = dataclasses.replace(_deck_card("Charmander"), image_url="https://x/card.png")
     provider = ArtProvider(art_dir=tmp_path, fetch=fetch)
-    art = provider.card_art(_deck_card("Charmander"))
+    art = provider.card_art(card)
 
     assert art is not None and not art.isNull()
-    assert requested and requested[0].endswith("/official-artwork/4.png")
-    assert (tmp_path / "4.png").exists()
+    assert requested == ["https://x/card.png"]  # nada de PokeAPI
+    assert (tmp_path / "cards" / f"{card.id}.png").exists()
+    assert art.width() > art.height()  # só a janela da ilustração, não a carta toda
 
 
 def test_art_provider_caches_and_returns_none_offline(tmp_path, qapp):
     calls = []
     provider = ArtProvider(art_dir=tmp_path, fetch=lambda url: calls.append(url))
-    card = dataclasses.replace(_deck_card("Squirtle"), image_url=None)
+    card = dataclasses.replace(_deck_card("Squirtle"), image_url="https://x/squirtle.png")
 
     assert provider.card_art(card) is None
     assert provider.card_art(card) is None
