@@ -463,7 +463,8 @@ class PokemonToken(QGraphicsObject):
         if self._status != "NONE":
             label = STATUS_LABELS.get(self._status, self._status)
             painter.setFont(ui_font(8.5, QFont.Weight.DemiBold))
-            width = QFontMetricsF(painter.font()).horizontalAdvance(label) + 14
+            # largura pelo texto (respiro de 12) para caber ao lado de "Habilidade"
+            width = QFontMetricsF(painter.font()).horizontalAdvance(label) + 12
             badge = QRectF(card.left() + 6, card.top() + 6, width, 18)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(QColor(STATUS_COLORS.get(self._status, "#d81b60")))
@@ -486,7 +487,8 @@ class PokemonToken(QGraphicsObject):
 
         if self._ability_ready:
             painter.setFont(ui_font(8.5, QFont.Weight.DemiBold))
-            badge = QRectF(card.right() - 78, card.top() + 6, 72, 18)
+            width = QFontMetricsF(painter.font()).horizontalAdvance("Habilidade") + 12
+            badge = QRectF(card.right() - 6 - width, card.top() + 6, width, 18)
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(VOLT)
             painter.drawRoundedRect(badge, 9, 9)
