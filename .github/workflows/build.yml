@@ -1,0 +1,84 @@
+# Testes a cada push/PR; executáveis de Windows, macOS (arm64) e Linux a cada
+# push no main (artefatos do run) e, numa tag vX.Y.Z, anexados ao release.
+name: build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Bibliotecas do Qt e do OpenCV
+        run: >
+          sudo apt-get update && sudo apt-get install -y
+          libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libglib2.0-0 libpulse0
+      - run: uv sync --frozen
+      - run: uv run ruff check src tests tools
+      - run: uv run black --check src tests tools
+      - run: uv run pytest -q
+
+  build:
+    needs: test
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+          - os: macos-latest
+            name: macos-arm64
+          - os: ubuntu-latest
+            name: linux-x64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: uv run pyinstaller --noconfirm packaging/pokemon_companion.spec
+      # ditto/tar preservam os symlinks dos frameworks do Qt; no Windows não há
+      - name: Compactar
+        run: |
+          cd dist
+          case "${{ matrix.os }}" in
+            macos-*) ditto -c -k --keepParent "Pokemon Companion.app" ../pokemon-companion-${{ matrix.name }}.zip ;;
+            ubuntu-*) tar -czf ../pokemon-companion-${{ matrix.name }}.tar.gz "Pokemon Companion" ;;
+            windows-*) uv run python -m zipfile -c ../pokemon-companion-${{ matrix.name }}.zip "Pokemon Companion" ;;
+          esac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pokemon-companion-${{ matrix.name }}
+          path: pokemon-companion-${{ matrix.name }}.*
+          retention-days: 14
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Anexar ao release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes
+          gh release upload "$TAG" pokemon-companion-* --repo "$GITHUB_REPOSITORY" --clobber
