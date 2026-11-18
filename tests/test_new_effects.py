@@ -73,7 +73,10 @@ def test_emergency_rotation_benches_from_hand_against_stage_2(state):
         "Stage 2 Pokémon in play, you may put this Pokémon onto your Bench.",
     )
     state.player.hand = [klinklang]
-    hand_uses = lambda: [a for a in rules.legal_actions(state) if isinstance(a, UseHandAbility)]  # noqa: E731
+
+    def hand_uses() -> list[UseHandAbility]:
+        return [a for a in rules.legal_actions(state) if isinstance(a, UseHandAbility)]
+
     assert hand_uses() == []
     state.opponent.bench = [
         PokemonInPlay(card=dataclasses.replace(mon("Big"), subtypes=["Stage 2"]))

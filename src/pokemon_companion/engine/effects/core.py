@@ -647,8 +647,10 @@ def _knockout_abilities(own: Ctx, defender: PokemonInPlay) -> None:
 
     for ability in defender.card.abilities:
         spec = abilities.spec_for(ability)
-        if spec is not None and spec.on_knocked_out and passives.ability_active(
-            own.state, defender, ability.name
+        if (
+            spec is not None
+            and spec.on_knocked_out
+            and passives.ability_active(own.state, defender, ability.name)
         ):
             own.log(f"{defender.card.name} usou {ability.name} ao ser nocauteado.")
             spec.fn(own)
@@ -766,4 +768,3 @@ def spread_counters(ctx: Ctx, opp_id: PlayerId, counters: int, bench_only: bool)
 
 def type_filter(energy_type: str) -> CardFilter:
     return lambda card: is_basic_energy(card) and energy_type_of(card) == energy_type
-

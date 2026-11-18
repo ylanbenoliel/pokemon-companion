@@ -1256,11 +1256,7 @@ def _icicle_loop(ctx: Ctx, a: Attack) -> None:
 def _whirlpool(ctx: Ctx, a: Attack) -> None:
     hit_active(ctx, a.base_damage)
     defender = ctx.exposed_defender
-    if (
-        defender
-        and defender.attached_energies
-        and core.coin()
-    ):
+    if defender and defender.attached_energies and core.coin():
         core.discard_energy(ctx.opp, defender, defender.attached_energies[0])
         ctx.log(f"Uma energia de {defender.card.name} foi descartada.")
 

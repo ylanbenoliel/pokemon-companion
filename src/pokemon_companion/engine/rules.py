@@ -90,7 +90,9 @@ def choose_promotion(
                 passives.can_pay(state, owner, mon, a)
                 for a in passives.available_attacks(state, owner, mon)
             )
-        return any(passives.energy_satisfies(mon.attached_energies, a.cost) for a in mon.card.attacks)
+        return any(
+            passives.energy_satisfies(mon.attached_energies, a.cost) for a in mon.card.attacks
+        )
 
     def score(mon: PokemonInPlay) -> tuple[bool, int, int]:
         return (ready(mon), len(mon.attached_energies), mon.current_hp)
