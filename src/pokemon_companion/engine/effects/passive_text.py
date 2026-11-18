@@ -471,6 +471,11 @@ def _tool_attack() -> Passive:
     return Passive("tool_attack")
 
 
+@rule(r"This Pokémon can use the attacks of any of your Benched Pokémon")
+def _bench_attacks() -> Passive:
+    return Passive("bench_attacks")
+
+
 @rule(r"If this card is attached to 1 of your Pokémon, discard it at the end of your turn")
 def _tool_expires() -> Passive:
     return Passive("tool_expires")
@@ -662,9 +667,7 @@ def _conditional_reaction(
     if attacker is None:
         return None
     knocked_out = event.startswith("is Knocked Out")
-    passive = (
-        _owner_effect("on_knocked_out", action) if knocked_out else _counter_attack(action)
-    )
+    passive = _owner_effect("on_knocked_out", action) if knocked_out else _counter_attack(action)
     if passive is None:
         return None
     least = int(minimum or 0)

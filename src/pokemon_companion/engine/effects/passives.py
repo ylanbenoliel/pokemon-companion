@@ -275,7 +275,8 @@ def attack_allowed(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack
 
 def available_attacks(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> list[Attack]:
     """Ataques que o Pokémon pode usar: os da carta, os das evoluções
-    anteriores (Memory Dive) e o impresso na Ferramenta (Core Memory, TMs).
+    anteriores (Memory Dive), o impresso na Ferramenta (Core Memory, TMs) e
+    os dos Pokémon no Banco (Memory Helix).
     `UseAttack.attack_index` indexa esta lista."""
     found = list(mon.card.attacks)
     if any(_applies(p, h, mon) for p, h in compiled(state, owner, "prior_attacks")):
@@ -283,6 +284,14 @@ def available_attacks(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> 
             found += [a for a in prior.attacks if a not in found]
     if mon.tool is not None and any(h is mon for _, h in compiled(state, owner, "tool_attack")):
         found += mon.tool.attacks
+    if any(h is mon for _, h in compiled(state, owner, "bench_attacks")):
+        from pokemon_companion.engine.effects.attacks import COPY_ATTACKS
+
+        # ponytail: ataques que copiam outros ficam de fora (evita cópia de cópia)
+        for benched in state.state_of(owner).bench:
+            found += [
+                a for a in benched.card.attacks if a not in found and a.name not in COPY_ATTACKS
+            ]
     return found
 
 

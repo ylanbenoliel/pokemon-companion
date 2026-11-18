@@ -801,3 +801,39 @@ def test_unimplemented_lists_attacks_abilities_and_trainers():
     assert unimplemented(card) == ["ataque Ataque Inventado", "habilidade Habilidade Inventada"]
     assert unimplemented(trainer("Carta Inventada")) == ["efeito do Treinador"]
     assert unimplemented(trainer("Boss's Orders", "Supporter")) == []
+
+
+def test_mysterious_signal_takes_one_more_prize_on_knock_out(state):
+    signal = "If your opponent's Pokémon is Knocked Out by damage from this attack, take 1 more Prize card."
+    unown = dataclasses.replace(
+        mon("Unown"),
+        attacks=[Attack(name="Mysterious Signal", cost=["Colorless"], damage="40", text=signal)],
+    )
+    state.player.active = PokemonInPlay(card=unown, attached_energies=["Colorless"])
+    state.opponent.active = PokemonInPlay(card=mon("Small", hp=40))
+    state.opponent.bench = [PokemonInPlay(card=mon("Next"))]
+
+    rules.apply_action(state, UseAttack(attack_index=0))
+
+    assert len(state.player.prizes) == 4  # 1 do nocaute + 1 a mais
+
+
+def test_memory_helix_uses_attacks_of_benched_pokemon(state):
+    helix = "This Pokémon can use the attacks of any of your Benched Pokémon."
+    mew = with_ability(
+        with_attack(mon("Mew ex"), "Teleportation Burst", ["Colorless"], "30"),
+        "Memory Helix",
+        helix,
+    )
+    state.player.active = PokemonInPlay(card=mew, attached_energies=["Colorless", "Colorless"])
+    state.player.bench = [
+        PokemonInPlay(card=with_attack(mon("Hitter"), "Big Hit", ["Colorless", "Colorless"], "120"))
+    ]
+    state.opponent.active = PokemonInPlay(card=mon("Tank", hp=300))
+
+    names = [
+        a.name for a in passives.available_attacks(state, PlayerId.PLAYER, state.player.active)
+    ]
+    assert names == ["Teleportation Burst", "Big Hit"]
+    rules.apply_action(state, UseAttack(attack_index=1))
+    assert state.opponent.active.damage_counters == 120

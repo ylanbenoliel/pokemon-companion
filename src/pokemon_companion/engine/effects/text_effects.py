@@ -3717,7 +3717,11 @@ def _ability_parts(text: str) -> AbilityParts | None:
                 if check is not None:
                     checks.append(check)
         if re.match(r"if this Pokémon is in your hand and ", rest):
-            rest, trigger, changed = "if " + rest[len("if this Pokémon is in your hand and ") :], "hand", True
+            rest, trigger, changed = (
+                "if " + rest[len("if this Pokémon is in your hand and ") :],
+                "hand",
+                True,
+            )
         promoted = re.match(r"when your (.+?) moves from your Bench to the Active Spot,? ", rest)
         if promoted:
             name = promoted.group(1)
@@ -4050,8 +4054,6 @@ def _k_tera() -> CardFilter:
 def _k_paradox(group: str) -> CardFilter:
     test = cardinfo.is_ancient if group.lower() == "ancient" else cardinfo.is_future
     return lambda card: card.is_pokemon and test(card)
-
-
 
 
 @kind(r"(.+?) card")
@@ -4536,7 +4538,11 @@ def _look_only(_n: str) -> Step:
 def _devolve_defender() -> Step:
     def act(run: Run) -> None:
         mon = run.defender
-        if mon is None or not mon.prior_cards or passives.hand_return_blocked(run.ctx.state, run.ctx.opp_id):
+        if (
+            mon is None
+            or not mon.prior_cards
+            or passives.hand_return_blocked(run.ctx.state, run.ctx.opp_id)
+        ):
             return
         run.opp.hand.append(mon.card)
         mon.card = mon.prior_cards[0]
@@ -7060,6 +7066,17 @@ def _bounty(n: str) -> Step:
     def act(run: Run) -> None:
         if run.defender is not None:
             run.defender.bounty = (num(n), run.ctx.turn + 2)
+
+    return after(act)
+
+
+@phrase("take {N} more Prize cards?")
+def _bounty_now(n: str) -> Step:
+    """Depois de "If your opponent's Pokémon is Knocked Out by damage from this attack"."""
+
+    def act(run: Run) -> None:
+        if run.defender is not None:
+            run.defender.bounty = (num(n), run.ctx.turn)
 
     return after(act)
 
