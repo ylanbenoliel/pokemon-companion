@@ -1,6 +1,6 @@
 [project]
 name = "pokemon-companion"
-version = "0.1.0"
+version = "0.2.0"
 description = "Treino de Pokémon TCG contra IA, com as regras oficiais e o Standard atual"
 readme = "README.md"
 license = "GPL-3.0-or-later"
