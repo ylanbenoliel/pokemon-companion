@@ -93,9 +93,26 @@ def hp_bonus(state: GameState, mon: PokemonInPlay) -> int:
 
 
 def refresh_hp_bonuses(state: GameState) -> None:
+    """HP extra e "can't be healed": dependem do tabuleiro, então são
+    recalculados após cada ação (o Pokémon guarda o valor)."""
     for pid in (PlayerId.PLAYER, PlayerId.OPPONENT):
-        for mon in state.state_of(pid).all_pokemon_in_play():
+        player = state.state_of(pid)
+        locked = bool(compiled(state, pid.other, "no_heal"))
+        for mon in player.all_pokemon_in_play():
             mon.hp_bonus = hp_bonus(state, mon)
+            mon.heal_locked = locked and mon is player.active
+
+
+def weakness_multiplier(state: GameState) -> int:
+    """×2, ou o que uma Habilidade em jogo mandar ("apply Weakness ... as ×3")."""
+    return max(
+        (
+            p.amount  # type: ignore[attr-defined]
+            for pid in (PlayerId.PLAYER, PlayerId.OPPONENT)
+            for p, _ in compiled(state, pid, "weakness_multiplier")
+        ),
+        default=2,
+    )
 
 
 def retreat_cost(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> int:
@@ -798,9 +815,14 @@ def after_switch_to_bench(
 
 
 def checkup_extra(state: GameState, owner: PlayerId) -> list[str]:
-    """Contadores extras no Checkup vindos de passivas do oponente de `owner`."""
+    """Contadores extras no Checkup vindos de passivas do oponente de `owner`
+    e cura de quem continua Adormecido (passiva do próprio)."""
     messages: list[str] = []
     player = state.state_of(owner)
+    for _, holder in compiled(state, owner, "asleep_heal"):
+        if holder.status.name == "ASLEEP" and holder.damage_counters and not holder.heal_locked:
+            holder.damage_counters = 0
+            messages.append(f"{holder.card.name} dormiu e curou todo o dano.")
     for passive, holder in compiled(state, owner.other, "checkup_burn"):
         active = player.active
         if active is not None and active.status.name == "BURNED":

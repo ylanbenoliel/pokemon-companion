@@ -780,6 +780,11 @@ def _play_trainer(state: GameState, pid: PlayerId, action: PlayTrainer) -> list[
     messages: list[str] = []
     card = player.hand.pop(action.hand_index)
     kind = trainer_kind(card)
+    if player.trainer_coin_turn == state.turn_number and not core.coin():
+        player.discard.append(card)
+        messages.append(f"{pid.value} tentou jogar {card.name}: coroa, a carta foi descartada.")
+        _after_action(state, messages)
+        return messages
     messages.append(f"{pid.value} jogou {card.name}.")
     player.played_this_turn.append(card)
     ctx = Ctx(state, pid, None, action.target, messages, playing=kind)

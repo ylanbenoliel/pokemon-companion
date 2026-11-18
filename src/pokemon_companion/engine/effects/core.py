@@ -547,6 +547,8 @@ def place_counters(
 
 
 def heal(mon: PokemonInPlay, amount: int) -> int:
+    if mon.heal_locked:
+        return 0
     healed = min(amount, mon.damage_counters)
     mon.damage_counters -= healed
     if healed:
@@ -579,7 +581,7 @@ def deal_damage(
     if attacker is not None and is_active and amount > 0:
         attacker_types = passives.types_of(state, ctx.player_id, attacker)
         if apply_weakness and attacker_types & passives.weakness_types(state, owner, defender):
-            amount *= 2
+            amount *= passives.weakness_multiplier(state)
         resistances = {r.energy_type for r in defender.card.resistances}
         if apply_resistance and attacker_types & resistances:
             amount -= 30
@@ -682,6 +684,11 @@ def _counterattack(
     for passive, holder in passives.damage_reactions(
         state, owner, defender, defender.is_knocked_out, attacker, amount
     ):
+        if passive.coin and not coin():  # type: ignore[attr-defined]
+            continue
+        if passive.knock_out:  # type: ignore[attr-defined]
+            attacker.damage_counters = attacker.max_hp
+            ctx.log(f"{holder.card.name} nocauteou o atacante.")
         counters = passive.counters * (  # type: ignore[attr-defined]
             passive.per(state, owner, holder) if passive.per else 1  # type: ignore[attr-defined]
         )

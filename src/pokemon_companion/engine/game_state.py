@@ -50,6 +50,8 @@ class PokemonInPlay:
     tool: Card | None = None
     #: bônus de HP de Ferramentas/Estádio, recalculado após cada ação
     hp_bonus: int = 0
+    #: "can't be healed" (Habilidade do oponente), recalculado após cada ação
+    heal_locked: bool = False
     abilities_used: set[str] = field(default_factory=set)
     #: marcas de efeitos com duração ("no seu próximo turno, este Pokémon...")
     cannot_attack_turn: int | None = None
@@ -146,6 +148,8 @@ class PlayerState:
     #: bônus de dano válidos só neste turno: (quantidade, condição)
     damage_bonus_this_turn: list[tuple[int, str]] = field(default_factory=list)
     items_blocked_turn: int | None = None
+    #: turno em que cada Treinador jogado da mão pede moeda (coroa: descartado sem efeito)
+    trainer_coin_turn: int | None = None
     supporters_blocked_turn: int | None = None
     #: Pokémon com menos de N energias não atacam no turno T: (N, T)
     attack_energy_min: tuple[int, int] | None = None

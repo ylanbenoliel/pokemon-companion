@@ -30,6 +30,7 @@ from pokemon_companion.engine.effects import attacks, cardinfo, core, pack, pass
 from pokemon_companion.engine.effects.abilities import AbilitySpec
 from pokemon_companion.engine.effects.attacks import AttackSpec, Target
 from pokemon_companion.engine.effects.cardinfo import (
+    BASIC_TYPES,
     TYPED_SPECIAL_ENERGIES,
     energy_type_of,
     fossil_pokemon,
@@ -2411,8 +2412,10 @@ def _shuffle_unchosen() -> Step:
 @phrase("Take {N} Prize cards?", "Take {N} Prize card", "take {N} Prize card")
 def _take_prize(n: str) -> Step:
     def act(run: Run) -> None:
-        for _ in range(min(num(n), len(run.me.prizes))):
+        taken = min(num(n), len(run.me.prizes))
+        for _ in range(taken):
             run.me.hand.append(run.me.prizes.pop())
+        run.did = taken > 0
         run.ctx.log(f"{run.ctx.who()} pegou {num(n)} prêmio(s).")
 
     return after(act)
@@ -2937,18 +2940,21 @@ def _evolve_bench() -> Step:
 
 @phrase(
     "Devolve each of your opponent's evolved Pokémon by shuffling the highest Stage Evolution "
-    "card on it into your opponent's deck"
+    "card on it into your opponent's (deck)",
+    "Devolve each of your opponent's evolved Pokémon by putting the highest Stage Evolution "
+    "card on it into your opponent's (hand)",
 )
-def _devolve_all() -> Step:
+def _devolve_all(where: str) -> Step:
     def act(run: Run) -> None:
         for mon in run.opp.all_pokemon_in_play():
             if not mon.prior_cards:
                 continue
-            run.opp.deck.append(mon.card)
+            (run.opp.deck if where == "deck" else run.opp.hand).append(mon.card)
             mon.card = mon.prior_cards[0]
             mon.prior_cards = mon.prior_cards[1:]
             mon.hp_bonus = passives.hp_bonus(run.ctx.state, mon)
-        core.shuffle_deck(run.opp)
+        if where == "deck":
+            core.shuffle_deck(run.opp)
 
     return after(act)
 
@@ -3999,9 +4005,9 @@ def _c_played_group(group: str) -> Predicate:
     return lambda run: _played(run, lambda c: trainer_kind(c) == "Supporter" and test(c))
 
 
-@condition(r"you have ((?:[^,]+, )+and [^,]+) in play")
+@condition(r"you have ((?:[^,]+, )+and [^,]+) in play", r"you have ([^,]+ and [^,]+) in play")
 def _c_all_in_play(names: str) -> Predicate | None:
-    wanted = [card_name(n) for n in re.split(r",\s*(?:and\s+)?", names.strip())]
+    wanted = [card_name(n) for n in re.split(r",\s*(?:and\s+)?|\s+and\s+", names.strip())]
     if not wanted or any(n is None for n in wanted):
         return None
     return lambda run: all(
@@ -6988,14 +6994,16 @@ def _n_placed() -> Counter_:
 
 @phrase(
     "Search your deck for an amount of Basic Energy up to the number of heads and attach it to "
-    "this Pokémon"
+    "this Pokémon",
+    "Search your deck for an amount of Basic {E} Energy up to the number of heads and attach it "
+    "to this Pokémon",
 )
-def _energy_per_heads() -> Step:
+def _energy_per_heads(symbol: str | None = None) -> Step:
+    wanted = core.type_filter(energy(symbol)) if symbol else is_basic_energy
+
     def act(run: Run) -> None:
         me = run.source
-        core.attach_from(
-            run.ctx, run.me.deck, is_basic_energy, run.heads, allowed=lambda m: m is me
-        )
+        core.attach_from(run.ctx, run.me.deck, wanted, run.heads, allowed=lambda m: m is me)
         core.shuffle_deck(run.me)
 
     return after(act)
@@ -7616,5 +7624,102 @@ def _items_onto_bench(n: str, part: str) -> Step:
             run.me.deck.remove(card)
             core.put_on_bench(run.ctx.state, run.me, fossil_pokemon(card))
         core.shuffle_deck(run.me)
+
+    return after(act)
+
+
+# ---------------------------------------------------------------------------
+# set 30C
+
+
+@condition(r"you have exactly {N} cards in your hand")
+def _c_hand_exactly(n: str) -> Predicate:
+    return lambda run: len(run.me.hand) == num(n)
+
+
+@phrase("Your opponent shuffles their hand into their deck and draws {N} cards")
+def _opp_shuffle_draw(n: str) -> Step:
+    def act(run: Run) -> None:
+        core.shuffle_hand_into_deck(run.opp)
+        core.draw(run.opp, num(n))
+
+    return after(act)
+
+
+@phrase("Discard the top {N} cards of your deck and put {N} of them into your hand")
+def _mill_keep(n: str, k: str) -> Step:
+    def act(run: Run) -> None:
+        milled = core.mill(run.ctx, run.ctx.player_id, num(n))
+        for card in core.choose_cards(run.ctx.state, run.ctx.player_id, milled, num(k)):
+            run.me.discard.remove(card)
+            run.me.hand.append(card)
+
+    return after(act)
+
+
+@count(r"type of Basic Energy attached to all of your Pokémon")
+def _n_basic_types() -> Counter_:
+    return lambda run: len(
+        {e for m in run.me.all_pokemon_in_play() for e in m.attached_energies} & set(BASIC_TYPES)
+    )
+
+
+@count(r"of your Benched Pokémon that has a maximum HP of {N}")
+def _n_bench_max_hp(n: str) -> Counter_:
+    return lambda run: sum(1 for m in run.me.bench if m.max_hp == num(n))
+
+
+@phrase(
+    "This attack does {N} damage to 1 of your opponent's Pokémon for each damage counter on that "
+    "Pokémon"
+)
+def _damage_per_target_counters(n: str) -> list[Step]:
+    def damage_on(run: Run, position: int) -> int:
+        mon = core.mon_at(run.opp, position)
+        return num(n) * core.damage_counters_on(mon) if mon is not None else 0
+
+    def replace(run: Run) -> None:
+        run.main_hit = False
+        run.damage = max((damage_on(run, p) for p in core.positions(run.opp)), default=0)
+
+    def act(run: Run) -> None:
+        ctx = run.ctx
+        chosen = attacks.target_index(ctx, -2) if ctx.target else -2
+        if chosen < -1:
+            chosen = max(core.positions(run.opp), key=lambda p: damage_on(run, p), default=-1)
+        attacks.hit(ctx, chosen, damage_on(run, chosen))
+
+    return [pre(replace), after(act, "opp_any")]
+
+
+@phrase(
+    "During your opponent's next turn, whenever they try to use a Trainer card from their hand, "
+    "they flip a coin"
+)
+def _trainer_coin() -> Step:
+    def act(run: Run) -> None:
+        run.opp.trainer_coin_turn = run.ctx.turn + 1
+
+    return after(act)
+
+
+@phrase("your opponent discards that Trainer card instead of using it")
+def _trainer_coin_detail() -> Step:
+    """Continuação da frase acima ("If tails, ..."): quem aplica é `rules`."""
+    return after(lambda run: None)
+
+
+@phrase(
+    "Your opponent reveals their hand, and you put an Item card you find there on the bottom of "
+    "your opponent's deck"
+)
+def _item_to_bottom() -> Step:
+    def act(run: Run) -> None:
+        items = [c for c in run.opp.hand if trainer_kind(c) == "Item"]
+        if items:
+            card = core.choose_cards(run.ctx.state, run.ctx.opp_id, items, 1)[0]
+            run.opp.hand.remove(card)
+            run.opp.deck.append(card)
+            run.ctx.log(f"{card.name} foi para o fundo do deck do oponente.")
 
     return after(act)

@@ -73,6 +73,8 @@ class Passive:
     event: Callable[..., bool] = _always
     #: Ferramenta de uso único ("discard this card"): vai para o descarte ao agir
     discard_tool: bool = False
+    #: contra-ataque que nocauteia o atacante (com `coin`, só com cara)
+    knock_out: bool = False
     #: efeito do dono do Pokémon (texto compilado como Treinador), ex.: "draw 3 cards"
     effect: str = ""
     #: custo que substitui o do ataque citado ("attack_cost"; `event` testa o nome)
@@ -108,8 +110,16 @@ def energy(symbol: str) -> str:
     return SYMBOLS.get(symbol.upper(), "Colorless")
 
 
+_SPELLED_ENERGY = re.compile(
+    rf"\b(Basic|any|\d+ or more) ({'|'.join(n for n in SYMBOLS.values() if n != 'Colorless')}) Energy"
+)
+_LETTER = {name: letter for letter, name in SYMBOLS.items()}
+
+
 def _clean(text: str) -> str:
     text = re.sub(r"\s*\([^)]*\)", "", text).replace("’", "'")
+    # "6 or more Grass Energy" (tipo por extenso, em alguns sets) = "6 or more {G} Energy"
+    text = _SPELLED_ENERGY.sub(lambda m: f"{m.group(1)} {{{_LETTER[m.group(2)]}}} Energy", text)
     return text.strip()
 
 
@@ -203,6 +213,13 @@ def _self_condition(text: str) -> HolderTest | None:
     if typed:
         kind_ = energy(typed.group(1))
         return lambda s, o, h: kind_ in h.attached_energies
+    at_least = re.fullmatch(rf"this Pokémon has {N} or more {E} Energy attached", text)
+    if at_least:
+        least, kind_ = int(at_least.group(1)), energy(at_least.group(2))
+        return lambda s, o, h: h.attached_energies.count(kind_) >= least
+    named = re.fullmatch(r"you have ([A-Z][\w'. -]*?) in play", text)
+    if named and not named.group(1).startswith(("any ", "Pokémon")):
+        return _has_in_play(named.group(1))
     counters = re.fullmatch(rf"this Pokémon has {N} or more damage counters on it", text)
     if counters:
         least = int(counters.group(1))
@@ -684,6 +701,44 @@ def _conditional_reaction(
 @rule(r"If this Pokémon is damaged by an attack from your opponent's Pokémon, (.+)")
 def _when_hit(action: str) -> Passive | None:
     return _counter_attack(action)
+
+
+@rule(
+    r"If this Pokémon is Knocked Out by damage from an attack from your opponent's Pokémon, flip a "
+    r"coin\. If heads, the Attacking Pokémon is Knocked Out"
+)
+def _knock_out_attacker_coin() -> Passive:
+    return Passive("on_knocked_out", knock_out=True, coin=True)
+
+
+@rule(
+    r"If your ((?:[^,]+? or )*[^,]+?) is in the Active Spot and is damaged by an attack from your "
+    r"opponent's Pokémon, (.+)"
+)
+def _when_named_hit(names: str, action: str) -> Passive | None:
+    """ "If your Wishiwashi or Wishiwashi ex is in the Active Spot and is damaged ..." """
+    wanted = set(re.split(r"\s+or\s+", names))
+    passive = _counter_attack(action)
+    if passive is None:
+        return None
+    return Passive(
+        **{**passive.__dict__, "scope": "team", "target": lambda m: m.card.name in wanted}
+    )
+
+
+@rule(r"Your opponent's Active Pokémon can't be healed")
+def _no_heal_opp_active() -> Passive:
+    return Passive("no_heal", scope="opp_active")
+
+
+@rule(r"If this Pokémon remains Asleep during Pokémon Checkup, heal all damage from this Pokémon")
+def _asleep_heal() -> Passive:
+    return Passive("asleep_heal")
+
+
+@rule(rf"apply Weakness for both Active Pokémon as ×{N}")
+def _weakness_multiplier(n: str) -> Passive:
+    return Passive("weakness_multiplier", int(n), scope="all")
 
 
 @rule(r"If your Active (.*?)Pokémon is damaged by an attack from your opponent's Pokémon, (.+)")
