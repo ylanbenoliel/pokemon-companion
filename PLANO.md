@@ -320,8 +320,8 @@ Standard (1961 cartas distintas): **0 efeitos faltando** (eram 53, contando
   mais comum do catálogo como palpite.
 - *UI*: a 2ª Ferramenta (Multi Adapter) não aparece no desenho do Pokémon;
   ataques extras (Memory Dive, TM) já aparecem nos botões.
-- *Rotina semanal*: o repositório existe; falta criar a rotina (prompt
-  abaixo) e incluir nela `tools/publish_data.py` depois dos testes.
+- *Rotina semanal*: prompt pronto (abaixo); falta conectar o GitHub ao
+  Claude para criá-la. A publicação dos dados fica para depois do merge do PR.
 - *Empacotar de novo* (`dist/` é anterior a estas mudanças).
 - ✅ *Primeiro release do app* (17/11/2026): `v0.1.0` no GitHub com os
   executáveis de Windows x64, macOS arm64 e Linux x64, gerados pelo
@@ -329,34 +329,44 @@ Standard (1961 cartas distintas): **0 efeitos faltando** (eram 53, contando
   tag `vX.Y.Z` cria o release e anexa). Próximo release: subir `version` no
   `pyproject.toml` e criar a tag.
 
-**Rotina agendada (pendente: repositório criado, rotina ainda não)** — segunda
-às 9h de Belém (`0 12 * * 1` UTC), lote de ~40 efeitos por PR. Prompt:
+**Rotina agendada (prompt pronto em 18/11/2026; falta conectar o GitHub ao
+Claude em claude.ai/connect-github para criá-la)** — segunda às 9h de Belém
+(`0 12 * * 1` UTC), na nuvem, sobre o `main` do GitHub. Sai um set a cada ~8
+semanas, mas a TCGdex demora um tempo variável para marcá-lo como legal, e o
+meta do Limitless muda toda semana: por isso semanal, não mensal. Semana sem
+novidade não abre PR. Prompt:
 
 > Você é a rotina semanal de manutenção das regras do projeto
 > pokemon_companion (Pokémon TCG em Python; use `uv`; o PLANO.md explica o
-> projeto). 1) `uv sync` e `uv run python tools/maintenance.py --refresh`. Se o
-> download da TCGdex ou do Limitless falhar, não improvise: pare e explique o
-> erro. 2) Leia `data/maintenance_report.md`. Prioridade: (a) textos sem
-> efeito nos decks do meta e cartas fora da rotação neles; (b) depois, até
-> somar ~40 efeitos, textos da seção "Faltando no pool legal", começando
-> pelos que aparecem em mais impressões. 3) Implemente em
-> `src/pokemon_companion/engine/effects/`: ataques em `attacks.py`
-> (`@attack`), Habilidades ativadas em `abilities.py`, Treinadores e
-> Estádios em `trainers.py`, efeitos contínuos em `passives.py`, e uma linha
-> em português por Treinador/Habilidade em `descriptions.py`. Nunca coloque
-> nome de carta ou número fixo em código compartilhado (`core.py`, funções
-> gerais de `passives.py`): crie um mecanismo genérico. Leia valores do
-> texto com `number_in_text` e, quando o efeito for igual ao de uma carta já
-> implementada, só acrescente o nome ao decorator. Escolhas estratégicas
-> viram `options`; o resto é heurística. 4) Teste cada mecanismo novo em
-> `tests/test_effects.py`. Tudo verde antes do PR: `uv run black . && uv run
-> ruff check . && uv run mypy src && uv run pytest -q`; `uv run python
-> tools/effect_coverage.py src/pokemon_companion/decks/top` com 0 faltando; `uv run
-> python tools/tournament.py src/pokemon_companion/decks/top --games 2 --level hard` sem
-> erros. 5) Atualize os números desta seção do PLANO.md. 6) Commits em
-> português, numa branch nova; abra um PR para `main` com a cobertura antes e
-> depois e a lista do que foi implementado. Nunca faça push na `main` nem
-> force push. Se não houver nada a fazer, não abra PR.
+> projeto). 1) `uv sync` e `uv run python tools/maintenance.py --refresh`
+> (baixa a rotação da TCGdex, o catálogo e os 25 decks do meta). Se a TCGdex
+> ou o Limitless falharem mesmo com as novas tentativas, não improvise: pare e
+> explique o erro. 2) Leia `data/maintenance_report.md`. Se houver "⚠ Set
+> lançado fora da rotação", só registre no PR (a TCGdex ainda não marcou o set
+> como legal; não há o que implementar). Prioridade: (a) textos sem efeito
+> nos decks do meta e cartas fora da rotação neles; (b) depois, até somar ~40,
+> textos da seção "Faltando no pool legal", começando pelos de mais
+> impressões. 3) Antes de escrever código, rode o texto no compilador
+> (`text_effects.compile_text`, `passive_text.compile_passive`) e veja qual
+> frase falha. Se só a redação difere de uma frase já conhecida, acrescente
+> uma reescrita em `rewrites` do `src/pokemon_companion/engine/effects/effects.json`
+> (chega ao app instalado sem release). Senão, crie um mecanismo genérico:
+> frases e condições em `text_effects.py` (`@phrase`, `@condition`, `@count`),
+> passivas em `passive_text.py` (`@rule`), e só use os registros por nome
+> (`@attack`, `ABILITIES`, `trainers.py`) quando não houver frase possível.
+> Nunca coloque nome de carta ou número fixo em código compartilhado.
+> 4) Um teste por mecanismo novo (veja `tests/test_set_30c.py`). Tudo verde
+> antes do PR: `uv run black --check src tests tools && uv run ruff check src
+> tests tools && uv run mypy src && uv run pytest -q`; `uv run python
+> tools/effect_coverage.py src/pokemon_companion/decks/top` com 0 faltando;
+> `uv run python tools/tournament.py src/pokemon_companion/decks/top --games 2
+> --level hard` sem erros. 5) Atualize os números desta seção do PLANO.md.
+> 6) Commits em português, numa branch nova; abra um PR para `main` com a
+> cobertura antes e depois, a lista do que foi implementado e, no fim, o
+> lembrete "depois do merge: `uv run python tools/publish_data.py`" (rotação,
+> catálogo, reescritas e decks do meta chegam ao app instalado por ali).
+> Nunca faça push na `main` nem force push. Se não houver nada a fazer, não
+> abra PR.
 
 ## Executável (PyInstaller)
 

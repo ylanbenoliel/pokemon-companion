@@ -53,7 +53,7 @@ def refresh() -> None:
     update_groups({signature(card) for card in cards})
     print("Atualizando os decks do meta (Limitless)…")
     subprocess.run(
-        [sys.executable, str(TOOLS / "fetch_top_decks.py"), "--top", "100", "--clean"],
+        [sys.executable, str(TOOLS / "fetch_top_decks.py"), "--top", "25", "--clean"],
         check=True,
     )
 
