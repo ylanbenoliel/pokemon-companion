@@ -2335,7 +2335,9 @@ def _shift_own_counters(n: str, what: str) -> Step | None:
 def _evolve_self_from_hand() -> Step:
     def act(run: Run) -> None:
         mon = run.source
-        card = mon and next((c for c in run.me.hand if c.evolves_from == mon.card.name), None)
+        card = None
+        if mon is not None:
+            card = next((c for c in run.me.hand if c.evolves_from == mon.card.name), None)
         run.did = card is not None
         if mon is None or card is None:
             return
@@ -3738,12 +3740,16 @@ def _ability_parts(text: str) -> AbilityParts | None:
             )
         promoted = re.match(r"when your (.+?) moves from your Bench to the Active Spot,? ", rest)
         if promoted:
-            name = promoted.group(1)
-            checks.append(
-                lambda ctx, name=name: ctx.me.active is not None
-                and ctx.me.active.card.name == name
-                and ctx.me.active.moved_to_active_turn == ctx.turn
-            )
+
+            def just_promoted(ctx: Ctx, name: str = promoted.group(1)) -> bool:
+                active = ctx.me.active
+                return (
+                    active is not None
+                    and active.card.name == name
+                    and active.moved_to_active_turn == ctx.turn
+                )
+
+            checks.append(just_promoted)
             rest, changed = rest[promoted.end() :], True
         match = re.match(r"if (.+?), (?=(?:and if |you may ))", rest, re.IGNORECASE)
         if match:

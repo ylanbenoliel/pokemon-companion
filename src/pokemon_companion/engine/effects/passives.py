@@ -8,7 +8,7 @@ dano e de efeitos, e restrições de ataque.
 
 from __future__ import annotations
 
-from pokemon_companion.cards_db.models import Attack
+from pokemon_companion.cards_db.models import Attack, Card
 from pokemon_companion.engine.effects.cardinfo import (
     TYPED_SPECIAL_ENERGIES,
     has_ability,
@@ -675,10 +675,10 @@ def hand_return_blocked(state: GameState, owner: PlayerId) -> bool:
     return bool(compiled(state, owner.other, "no_return_to_hand"))
 
 
-def pokemon_locked(state: GameState, player_id: PlayerId, card: object) -> bool:
+def pokemon_locked(state: GameState, player_id: PlayerId, card: Card) -> bool:
     """Pokémon que o oponente trava de jogar da mão ("can't play any Pokémon that…")."""
     return any(
-        p.target(card)  # type: ignore[attr-defined]
+        p.card_test(card)  # type: ignore[attr-defined]
         for p, _ in compiled(state, player_id.other, "lock_pokemon")
     )
 

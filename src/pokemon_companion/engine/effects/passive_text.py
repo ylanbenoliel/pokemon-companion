@@ -15,6 +15,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import TypeVar
 
 from pokemon_companion.cards_db.models import Ability, Card
 from pokemon_companion.engine.effects import pack
@@ -32,6 +33,9 @@ from pokemon_companion.engine.effects.cardinfo import (
 from pokemon_companion.engine.game_state import GameState, PlayerId, PokemonInPlay, StatusCondition
 
 MonTest = Callable[[PokemonInPlay], bool]
+#: filtro de carta (na mão, antes de entrar em jogo)
+CardTest = Callable[[Card], bool]
+_F = TypeVar("_F", bound=Callable[..., object])
 #: condição avaliada com (estado, dono da Habilidade, Pokémon que a tem)
 HolderTest = Callable[[GameState, PlayerId, PokemonInPlay], bool]
 Scaler = Callable[[GameState, PlayerId, PokemonInPlay], int]
@@ -58,6 +62,8 @@ class Passive:
     #: a quem se aplica: "self", "team" (seus Pokémon), "opp_active"
     scope: str = "self"
     target: MonTest = _always
+    #: "lock_pokemon": quais cartas da mão o oponente não pode jogar
+    card_test: CardTest = _always
     attacker: MonTest = _always
     defender: MonTest = _always
     when: HolderTest = _always
@@ -262,8 +268,8 @@ Rule = tuple[re.Pattern[str], Callable[..., list[Passive] | Passive | None]]
 RULES: list[Rule] = []
 
 
-def rule(*patterns: str) -> Callable[[Callable[..., object]], Callable[..., object]]:
-    def decorator(fn: Callable[..., object]) -> Callable[..., object]:
+def rule(*patterns: str) -> Callable[[_F], _F]:
+    def decorator(fn: _F) -> _F:
         for pattern in patterns:
             RULES.append((re.compile(pattern), fn))  # type: ignore[arg-type]
         return fn
@@ -754,7 +760,7 @@ def _when_team_hit(who: str, action: str) -> Passive | None:
     r"If this Pokémon is in the Active Spot and is Knocked Out by damage from an attack from "
     rf"your opponent's Pokémon, put {N} damage counters on the Attacking Pokémon"
 )
-def _when_knocked_out(n: str) -> Passive:
+def _when_knocked_out_in_active(n: str) -> Passive:
     return Passive("on_knocked_out", counters=int(n), holder_at="active")
 
 
@@ -816,7 +822,7 @@ def _lock_pokemon(what: str) -> list[Passive] | None:
         Passive(
             "lock_pokemon",
             scope="opp",
-            target=lambda card: bool(card.abilities)
+            card_test=lambda card: bool(card.abilities)
             and not (group and card.name.startswith(group)),
         )
     ]
