@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -32,8 +33,13 @@ POOL_FILE = Path("data/standard_pool.json")
 TIMEOUT = 60
 
 
-def _get(url: str, params: dict[str, str] | None = None) -> object:
-    response = requests.get(url, params=params, timeout=TIMEOUT)
+def _get(url: str, params: dict[str, str] | None = None, tries: int = 5) -> object:
+    """Erro 5xx da TCGdex é passageiro; em ~2000 pedidos um só derrubava tudo."""
+    for attempt in range(tries):
+        response = requests.get(url, params=params, timeout=TIMEOUT)
+        if response.status_code < 500 or attempt == tries - 1:
+            break
+        time.sleep(2**attempt)
     response.raise_for_status()
     return response.json()
 
