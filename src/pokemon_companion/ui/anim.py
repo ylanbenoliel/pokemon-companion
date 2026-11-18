@@ -105,7 +105,13 @@ class AnimationQueue(QObject):
             animation = step()
             if animation is not None and animation.totalDuration() != 0:
                 self._running = animation
-                animation.finished.connect(self._on_finished)
+                # Avança quando o passo PARA, não só quando termina: o Qt
+                # interrompe com stop() (sem `finished`) uma animação cuja
+                # propriedade outra passa a animar — ex.: o hover numa carta
+                # da mão durante o leque — e a fila ficaria ocupada para sempre.
+                animation.stateChanged.connect(
+                    lambda new, _old, anim=animation: self._on_stopped(anim, new)
+                )
                 animation.start()
                 return
             if animation is not None:
@@ -117,6 +123,7 @@ class AnimationQueue(QObject):
         self._active = False
         self.idle.emit()
 
-    def _on_finished(self) -> None:
-        self._running = None
-        self._next()
+    def _on_stopped(self, animation: QAbstractAnimation, state: QAbstractAnimation.State) -> None:
+        if state == QAbstractAnimation.State.Stopped and animation is self._running:
+            self._running = None
+            self._next()

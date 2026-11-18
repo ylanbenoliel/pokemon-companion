@@ -558,3 +558,23 @@ def test_move_lines_and_chip_contrast(qapp):
     assert move_lines(card, ability_ready=True)[0][2] == QColor(VOLT)
     assert text_color_on(QColor("#ffd426")) == QColor(INK)  # amarelo do Paralisado
     assert text_color_on(QColor("#8a4fd1")) == QColor("white")
+
+
+def test_animation_queue_moves_on_when_a_step_is_stopped_externally(qapp):
+    # O Qt interrompe (stop(), sem `finished`) a animação cuja propriedade
+    # outra passa a animar — ex.: hover numa carta da mão durante o leque.
+    from PyQt6.QtCore import QPauseAnimation
+
+    from pokemon_companion.ui.anim import AnimationQueue
+
+    queue = AnimationQueue()
+    long_step = QPauseAnimation(60_000)
+    ran: list[str] = []
+    queue.push(lambda: long_step)
+    queue.push(lambda: ran.append("next") or None)
+    assert queue.busy and not ran
+
+    long_step.stop()
+
+    assert ran == ["next"]
+    assert not queue.busy
