@@ -55,7 +55,10 @@ jobs:
           cd dist
           case "${{ matrix.os }}" in
             macos-*) ditto -c -k --keepParent "Pokemon Companion.app" ../pokemon-companion-${{ matrix.name }}.zip ;;
-            ubuntu-*) tar -czf ../pokemon-companion-${{ matrix.name }}.tar.gz "Pokemon Companion" ;;
+            ubuntu-*)
+              # o executável não carrega ícone no Linux: o install.sh põe o .desktop e os PNGs
+              cp ../packaging/linux/install.sh "Pokemon Companion/"
+              tar -czf ../pokemon-companion-${{ matrix.name }}.tar.gz "Pokemon Companion" ;;
             windows-*) uv run python -m zipfile -c ../pokemon-companion-${{ matrix.name }}.zip "Pokemon Companion" ;;
           esac
       - uses: actions/upload-artifact@v4

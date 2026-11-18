@@ -44,7 +44,9 @@ uv run pokemon-companion --player-deck MEU_DECK.txt
 ```
 
 Executável: `uv run pyinstaller --noconfirm packaging/pokemon_companion.spec`
-(gera o app para o sistema em que roda).
+(gera o app para o sistema em que roda). Os releases do GitHub trazem os de
+Windows, macOS (Apple Silicon) e Linux; no Linux, rode `./install.sh` de dentro
+da pasta extraída para pôr o app no menu, com ícone.
 
 ## Desenvolver
 
