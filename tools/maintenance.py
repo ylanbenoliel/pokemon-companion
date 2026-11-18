@@ -90,7 +90,12 @@ def meta_decks() -> dict[str, list[Card]]:
     return decks
 
 
-def report(pool: list[Card], decks: dict[str, list[Card]], legal: set[str]) -> tuple[str, bool]:
+def report(
+    pool: list[Card],
+    decks: dict[str, list[Card]],
+    legal: set[str],
+    missing_sets: list[tuple[str, str, str]] | None = None,
+) -> tuple[str, bool]:
     pool_total, pool_missing = missing_effects(pool)
     meta_cards = [card for cards in decks.values() for card in cards]
     _, meta_missing = missing_effects(meta_cards)
@@ -105,6 +110,7 @@ def report(pool: list[Card], decks: dict[str, list[Card]], legal: set[str]) -> t
         f"{sum(pool_total.values())} textos-impressão ({len(pool_missing)} textos distintos faltando)",
         f"- Decks do meta: {len(decks)}; textos faltando: {len(meta_missing)}; "
         f"decks com carta fora da rotação: {len(illegal)}",
+        *_missing_sets_lines(missing_sets),
         "",
         "## Faltando nos decks do meta (prioridade máxima)",
         *[f"- {count}× {name}" for name, count in meta_missing.most_common()],
@@ -116,6 +122,20 @@ def report(pool: list[Card], decks: dict[str, list[Card]], legal: set[str]) -> t
         *[f"- {count}× {name}" for name, count in _by_category(pool_missing)],
     ]
     return "\n".join(lines) + "\n", bool(meta_missing or illegal)
+
+
+def _missing_sets_lines(sets: list[tuple[str, str, str]] | None) -> list[str]:
+    """Set lançado que a TCGdex ainda não marcou como legal: só esperar e rodar
+    `--refresh` de novo (não é trabalho para a rotina, então não falha)."""
+    if sets is None:
+        return ["- Sets novos: não verificado (TCGdex fora do ar)"]
+    if not sets:
+        return ["- Sets novos: nenhum lançado fora da rotação"]
+    return [
+        f"- ⚠ Set lançado fora da rotação: {name} ({set_id}, {date}) — a TCGdex ainda não "
+        "marca as cartas dele como legais no Standard"
+        for set_id, name, date in sets
+    ]
 
 
 def _by_category(missing: Counter[str]) -> list[tuple[str, int]]:
@@ -130,7 +150,12 @@ def main() -> None:
         refresh()
     legal = standard.load_legal()
     assert legal is not None
-    text, needs_work = report(standard.load_pool(), meta_decks(), legal)
+    pool = standard.load_pool()
+    try:
+        new_sets: list[tuple[str, str, str]] | None = standard.missing_sets(pool)
+    except requests.RequestException:
+        new_sets = None
+    text, needs_work = report(pool, meta_decks(), legal, new_sets)
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(text, encoding="utf-8")
     print(text.split("\n## Faltando no pool")[0])

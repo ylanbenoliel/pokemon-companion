@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import datetime
 import json
+from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -29,6 +30,7 @@ from pokemon_companion.engine.effects.cardinfo import is_basic_energy
 LEGAL_FILE = Path(__file__).with_name("standard_legal.json")
 POOL_FILE = Path("data/standard_pool.json")
 TIMEOUT = 60
+MIN_CARDS_IN_ROTATION = 20
 
 
 def _get(url: str, params: dict[str, str] | None = None) -> object:
@@ -51,6 +53,43 @@ def fetch_pool(
         details = [d for d in executor.map(detail, [b["id"] for b in briefs]) if d]
     marks = sorted({str(d["regulationMark"]) for d in details if d.get("regulationMark")})
     return [tcgdex_card_to_card(d) for d in details], marks
+
+
+def missing_sets(
+    pool: list[Card], today: datetime.date | None = None, get: Callable[..., object] = _get
+) -> list[tuple[str, str, str]]:
+    """Sets lançados depois do mais novo da rotação, nas séries dela: (id,
+    nome, data). A TCGdex demora a marcar um set novo como legal no Standard,
+    e até lá as cartas dele não entram no app. Sets mais antigos fora do pool
+    não contam: são de marca que já rodou (Paldean Fates, G) ou coleções de
+    reimpressão que não valem no Standard."""
+    today = today or datetime.date.today()
+    per_set = Counter(card.id.removeprefix("tcgdex-").rsplit("-", 1)[0] for card in pool)
+    in_pool = set(per_set)
+
+    def detail(path: str) -> dict:
+        data = get(f"{BASE_URL}{path}")
+        return data if isinstance(data, dict) else {}
+
+    # sets antigos aparecem no pool só por reimpressões legais (energia
+    # básica etc.): a rotação de verdade são os sets com muitas cartas nele
+    rotation = sorted(set_id for set_id, n in per_set.items() if n >= MIN_CARDS_IN_ROTATION)
+    known = [detail(f"/sets/{set_id}") for set_id in rotation]
+    dates = [d["releaseDate"] for d in known if d.get("releaseDate")]
+    if not dates:
+        return []
+    newest = max(dates)
+    series = {d["serie"]["id"] for d in known if isinstance(d.get("serie"), dict)}
+    found = []
+    for serie in sorted(series):
+        for brief in detail(f"/series/{serie}").get("sets", []):
+            official = (brief.get("cardCount") or {}).get("official", 0)
+            if brief["id"] in in_pool or not official:
+                continue
+            released = detail(f"/sets/{brief['id']}").get("releaseDate", "")
+            if newest < released <= today.isoformat():
+                found.append((brief["id"], brief.get("name", ""), released))
+    return sorted(found, key=lambda item: item[2])
 
 
 def save_pool(

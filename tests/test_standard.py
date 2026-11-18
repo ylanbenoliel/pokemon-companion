@@ -89,3 +89,36 @@ def test_fetch_pool_fails_loudly_when_the_source_returns_nothing():
 
 def test_missing_legal_file_disables_the_check(tmp_path):
     assert standard.load_legal(tmp_path / "nope.json") is None
+
+
+def test_missing_sets_warns_only_about_sets_newer_than_the_rotation():
+    import datetime
+
+    from pokemon_companion.cards_db.models import Card, Supertype
+    from pokemon_companion.cards_db.standard import missing_sets
+
+    def card(set_id: str, n: int) -> Card:
+        return Card(id=f"tcgdex-{set_id}-{n}", name=f"C{n}", supertype=Supertype.POKEMON)
+
+    pool = [card("me05", n) for n in range(30)] + [card("base2", 1)]  # base2: só reimpressão
+    api = {
+        "/sets/me05": {"releaseDate": "2026-07-17", "serie": {"id": "me"}},
+        "/series/me": {
+            "sets": [
+                {"id": "me04", "cardCount": {"official": 86}},  # antigo e fora: marca que rodou
+                {"id": "me05", "cardCount": {"official": 84}},
+                {"id": "mep", "cardCount": {"official": 0}},  # promos sem cartas oficiais
+                {"id": "me06", "name": "Delta Reign", "cardCount": {"official": 103}},
+                {"id": "me07", "cardCount": {"official": 90}},  # ainda não lançado
+            ]
+        },
+        "/sets/me04": {"releaseDate": "2026-05-22"},
+        "/sets/me06": {"releaseDate": "2026-11-06"},
+        "/sets/me07": {"releaseDate": "2027-01-15"},
+    }
+
+    def get(url: str) -> object:
+        return api[url.split("/v2/en")[1]]
+
+    found = missing_sets(pool, datetime.date(2026, 11, 18), get)
+    assert found == [("me06", "Delta Reign", "2026-11-06")]
