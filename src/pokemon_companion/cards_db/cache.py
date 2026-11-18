@@ -12,7 +12,14 @@ import json
 import sqlite3
 from pathlib import Path
 
-from pokemon_companion.cards_db.models import Ability, Attack, Card, Supertype, WeaknessResistance
+from pokemon_companion.cards_db.models import (
+    Ability,
+    Attack,
+    Card,
+    Supertype,
+    WeaknessResistance,
+    plain_text,
+)
 from pokemon_companion.paths import USER_DATA
 
 DEFAULT_DB_PATH = USER_DATA / "cards_cache.db"
@@ -33,13 +40,18 @@ def card_from_json(raw: str) -> Card:
         subtypes=data.get("subtypes", []),
         hp=data.get("hp"),
         types=data.get("types", []),
-        attacks=[Attack(**a) for a in data.get("attacks", [])],
+        attacks=[
+            Attack(**{**a, "text": plain_text(a.get("text", ""))}) for a in data.get("attacks", [])
+        ],
         weaknesses=[WeaknessResistance(**w) for w in data.get("weaknesses", [])],
         resistances=[WeaknessResistance(**r) for r in data.get("resistances", [])],
         retreat_cost=data.get("retreat_cost", []),
         evolves_from=data.get("evolves_from"),
-        abilities=[Ability(**a) for a in data.get("abilities", [])],
-        rules=data.get("rules", []),
+        abilities=[
+            Ability(**{**a, "text": plain_text(a.get("text", ""))})
+            for a in data.get("abilities", [])
+        ],
+        rules=[plain_text(rule) for rule in data.get("rules", [])],
         image_url=data.get("image_url"),
         image_local_path=data.get("image_local_path"),
         national_pokedex_numbers=data.get("national_pokedex_numbers", []),

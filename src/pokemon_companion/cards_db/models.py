@@ -7,8 +7,42 @@ depende apenas destas dataclasses, nunca da origem dos dados.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
+
+ENERGY_LETTERS = {
+    "Grass": "G",
+    "Fire": "R",
+    "Water": "W",
+    "Lightning": "L",
+    "Psychic": "P",
+    "Fighting": "F",
+    "Darkness": "D",
+    "Metal": "M",
+    "Fairy": "Y",
+    "Dragon": "N",
+    "Colorless": "C",
+}
+_ENERGY_SPAN = re.compile(r'<span class="energy-symbol (\w+)"[^>]*>.*?</span>')
+_ENERGY_RUN = re.compile(rf"\b(?:{'|'.join(ENERGY_LETTERS)}){{2,}}\b")
+
+
+def plain_text(text: str) -> str:
+    """Texto de carta no formato do resto do pool: alguns sets da TCGdex vêm
+    com HTML (`<span class="energy-symbol Lightning">` em vez de `{L}`,
+    `<em>`) ou com símbolos colados ("ColorlessColorless")."""
+    if "<" not in text and "\t" not in text and not _ENERGY_RUN.search(text):
+        return text
+    text = _ENERGY_SPAN.sub(lambda m: f"{{{ENERGY_LETTERS.get(m.group(1), 'C')}}}", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = _ENERGY_RUN.sub(
+        lambda m: "".join(
+            f"{{{ENERGY_LETTERS[name]}}}" for name in re.findall(r"[A-Z][a-z]+", m.group(0))
+        ),
+        text,
+    )
+    return re.sub(r"\s+", " ", text).strip()
 
 
 class Supertype(StrEnum):

@@ -17,6 +17,7 @@ from pokemon_companion.cards_db.models import (
     Card,
     Supertype,
     WeaknessResistance,
+    plain_text,
 )
 
 BASE_URL = "https://api.tcgdex.net/v2/en"
@@ -70,7 +71,7 @@ def tcgdex_card_to_card(data: dict) -> Card:
                 name=attack.get("name", ""),
                 cost=attack.get("cost", []),
                 damage=str(attack.get("damage", "")),
-                text=attack.get("effect", ""),
+                text=plain_text(attack.get("effect", "")),
             )
             for attack in data.get("attacks", [])
         ],
@@ -87,12 +88,12 @@ def tcgdex_card_to_card(data: dict) -> Card:
         abilities=[
             Ability(
                 name=a.get("name", ""),
-                text=a.get("effect", ""),
+                text=plain_text(a.get("effect", "")),
                 ability_type=a.get("type", "Ability"),
             )
             for a in data.get("abilities", [])
         ],
-        rules=[data["effect"]] if data.get("effect") else [],
+        rules=[plain_text(data["effect"])] if data.get("effect") else [],
         image_url=f"{image}/high.png" if image else None,
         national_pokedex_numbers=list(data.get("dexId", [])),
     )
