@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from pokemon_companion.cards_db import updates
 from pokemon_companion.cards_db.basic_energies import BASIC_ENERGIES
 from pokemon_companion.cards_db.cache import CardCache
 from pokemon_companion.cards_db.catalog import CatalogEntry, load_catalog
@@ -559,7 +560,7 @@ def card_html(entry: CatalogEntry) -> str:
 
 
 def _existing_decks() -> list[Path]:
-    folders = [USER_DECKS, BUNDLED_DECKS / "originais", BUNDLED_DECKS / "top", BUNDLED_DECKS]
+    folders = [USER_DECKS, BUNDLED_DECKS / "originais", updates.meta_decks_folder(), BUNDLED_DECKS]
     seen: set[Path] = set()
     found = []
     for folder in folders:

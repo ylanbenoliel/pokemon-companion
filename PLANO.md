@@ -38,8 +38,10 @@ uv run python -m pokemon_companion.ui.app --spectate --difficulty hard --player-
 uv run python tools/tournament.py src/pokemon_companion/decks/top --games 4 --level hard
 # Quais textos de cartas dos decks ainda não têm efeito implementado:
 uv run python tools/effect_coverage.py src/pokemon_companion/decks/top
-# Atualizar os decks do meta a partir do limitlesstcg.com (o ranking tem 25):
-uv run python tools/fetch_top_decks.py --top 25
+# Atualizar os decks do meta a partir do limitlesstcg.com (o ranking tem 25;
+# --clean tira os que saíram/mudaram de posição) e mandar para o app instalado:
+uv run python tools/fetch_top_decks.py --top 25 --clean
+uv run python tools/publish_data.py
 # Reproduzir o top cut de um torneio real (padrão: Mundial 2026):
 uv run python tools/replay_top_cut.py --series 40
 ```
@@ -278,7 +280,10 @@ Standard (1961 cartas distintas): **0 efeitos faltando** (eram 53, contando
   partir da próxima abertura. Arquivos: `standard_legal.json`,
   `standard_catalog.json` e `engine/effects/effects.json` (`rewrites`: texto
   original → texto com frases que os compiladores conhecem; `groups`:
-  assinaturas Tera/Ancient/Future, que a TCGdex não marca). `min_app`
+  assinaturas Tera/Ancient/Future, que a TCGdex não marca) e
+  `meta_decks.json` (gerado de `decks/top` ao publicar, desempacotado em
+  `updates/top/`; o menu e o construtor usam essa pasta, senão a embutida).
+  `min_app`
   (`APP_DATA_VERSION`) bloqueia pacote que exige vocabulário mais novo.
   Publicar: `uv run python tools/publish_data.py` (usa `gh`).
 - *Grupos por dados.* `is_tera/is_ancient/is_future` leem `effects.json`

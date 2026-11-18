@@ -63,3 +63,29 @@ def test_rewrite_makes_new_text_compile(monkeypatch):
 
     monkeypatch.setattr(pack, "rewrites", lambda: {"Totally new wording.": "Draw 2 cards."})
     assert compile_text("Totally new wording.") is not None
+
+
+def test_meta_decks_unpack_into_folder_replacing_old_ones(tmp_path):
+    (tmp_path / "top").mkdir()
+    (tmp_path / "top" / "99_saiu.txt").write_text("velho")
+    decks = json.dumps({"01_dragapult_ex.txt": "4 Dreepy TWM 128\n"}).encode()
+
+    assert updates.refresh(URL, tmp_path, _server({"meta_decks.json": decks})) == [
+        "meta_decks.json"
+    ]
+    folder = updates.meta_decks_folder(tmp_path)
+    assert folder == tmp_path / "top"
+    assert [p.name for p in folder.iterdir()] == ["01_dragapult_ex.txt"]
+
+
+def test_meta_decks_with_unsafe_name_are_ignored(tmp_path):
+    decks = json.dumps({"../fora.txt": "x"}).encode()
+
+    assert updates.refresh(URL, tmp_path, _server({"meta_decks.json": decks})) == []
+    assert not (tmp_path / "fora.txt").exists()
+    assert updates.meta_decks_folder(tmp_path) == updates.BUNDLED_DECKS / "top"
+
+
+def test_pack_meta_decks_round_trips_bundled_folder():
+    decks = json.loads(updates.pack_meta_decks())
+    assert decks and all(name.endswith(".txt") for name in decks)

@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from pokemon_companion.cards_db import updates
 from pokemon_companion.cards_db.cache import CardCache
 from pokemon_companion.cards_db.decklist_parser import load_deck
 from pokemon_companion.cards_db.models import Card
@@ -48,13 +49,18 @@ from pokemon_companion.ui.theme import (
     ui_font,
 )
 
-DECK_FOLDERS = (
-    BUNDLED_DECKS / "top",
-    BUNDLED_DECKS / "originais",
-    BUNDLED_DECKS / "worlds2026",
-    BUNDLED_DECKS,
-    USER_DECKS,
-)
+
+def deck_folders() -> tuple[Path, ...]:
+    """Meta atual: o baixado pelo endpoint de dados, senão o embutido."""
+    return (
+        updates.meta_decks_folder(),
+        BUNDLED_DECKS / "originais",
+        BUNDLED_DECKS / "worlds2026",
+        BUNDLED_DECKS,
+        USER_DECKS,
+    )
+
+
 GROUP_LABELS = {"top": "Meta atual", "originais": "Originais", "worlds2026": "Mundial 2026"}
 DIFFICULTIES = (("easy", "Fácil"), ("medium", "Média"), ("hard", "Difícil"))
 HERO_SIZE = QSize(300, 306)
@@ -100,10 +106,10 @@ def _group(folder: Path) -> str:
     return GROUP_LABELS.get(folder.name, folder.name)
 
 
-def discover_decks(folders: tuple[Path, ...] = DECK_FOLDERS) -> list[DeckEntry]:
+def discover_decks(folders: tuple[Path, ...] | None = None) -> list[DeckEntry]:
     entries: list[DeckEntry] = []
     seen: set[Path] = set()
-    for folder in folders:
+    for folder in folders or deck_folders():
         for path in sorted(folder.glob("*.txt")):
             if path.resolve() not in seen:
                 seen.add(path.resolve())
