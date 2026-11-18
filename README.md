@@ -43,25 +43,70 @@ uv run python -m pokemon_companion.ui.app --spectate --difficulty hard \
 uv run pokemon-companion --player-deck MEU_DECK.txt
 ```
 
-Executável: `uv run pyinstaller --noconfirm packaging/pokemon_companion.spec`
-(gera o app para o sistema em que roda). Os releases do GitHub trazem os de
-Windows, macOS (Apple Silicon) e Linux; no Linux, rode `./install.sh` de dentro
-da pasta extraída para pôr o app no menu, com ícone.
+Os releases do GitHub trazem o app para Windows, macOS (Apple Silicon) e
+Linux; no Linux, rode `./install.sh` de dentro da pasta extraída para pôr o
+app no menu, com ícone. Todos os comandos estão em [Comandos](#comandos).
 
 ## Desenvolver
 
 ```bash
-uv run pytest             # testes (a UI roda sem tela, em modo offscreen)
-uv run black --check .    # formatação
-uv run ruff check .       # lint
-uv run mypy src           # tipos
-uv run python tools/maintenance.py   # cobertura de efeitos e legalidade
+uv sync                   # dependências em .venv
+uv run pytest -q          # testes (a UI roda sem tela, em modo offscreen)
+uv run black --check src tests tools
+uv run ruff check src tests tools
+uv run mypy src           # tipos (o CI roda os quatro)
 ```
 
 O [PLANO.md](PLANO.md) descreve a arquitetura, as decisões e o que falta.
 Efeitos novos devem ser mecanismos genéricos (uma frase de texto → um passo
 do compilador em `engine/effects/text_effects.py`), nunca código para uma
 carta específica.
+
+## Comandos
+
+Todos rodam da raiz do projeto com `uv run`. Cada script de `tools/` também
+aceita `--help`, exceto `publish_data.py` e `make_icon.py`, que não leem
+argumentos e executam direto.
+
+### Jogar
+
+| Comando | O que faz |
+|---|---|
+| `python -m pokemon_companion.ui.app` | Abre o app na tela de seleção de decks |
+| `… ui.app --player-deck A.txt --opponent-deck B.txt --difficulty hard` | Vai direto para uma partida (`easy`, `medium`, `hard`) |
+| `… ui.app --spectate --player-difficulty hard --speed 2` | IA contra IA; `--speed` acelera as animações |
+| `… ui.app --record-history partida.json` | Grava as ações da partida em JSON |
+| `pokemon-companion --player-deck A.txt --opponent-deck B.txt` | Partida pelo terminal (sem deck: deck de demonstração) |
+
+Decks prontos: `src/pokemon_companion/decks/top/` (meta atual),
+`originais/`, `worlds2026/` e os da raiz de `decks/`.
+
+### Manutenção das cartas
+
+| Comando | O que faz |
+|---|---|
+| `python tools/maintenance.py` | Relatório de cobertura e legalidade com os dados já baixados (`data/maintenance_report.md`); avisa set lançado que ainda não entrou na rotação |
+| `python tools/maintenance.py --refresh` | Antes do relatório, baixa de novo a rotação (TCGdex), o catálogo e os 25 decks do meta |
+| `python tools/effect_coverage.py PASTA` | Textos sem efeito nos decks de uma pasta |
+| `python tools/compile_report.py [--top N] [--explain N]` | Frases que o compilador de efeitos ainda não reconhece, por frequência |
+| `python tools/fetch_top_decks.py --top 25 --clean [--out PASTA]` | Baixa os decks do meta do Limitless; `--clean` remove os que saíram do ranking |
+| `python tools/publish_data.py` | **Publica no GitHub** (release `data`) a rotação, o catálogo, as reescritas e os decks do meta, que o app instalado baixa ao abrir |
+
+### IA e simulação
+
+| Comando | O que faz |
+|---|---|
+| `python tools/tournament.py PASTA [--games N] [--level hard] [--workers N] [--seed N] [--out PASTA]` | Torneio IA contra IA entre todos os decks da pasta, em paralelo; resumo de vitórias, deck-outs e erros |
+| `python tools/replay_top_cut.py [--tournament ID] [--labs ID] [--series N] [--level hard]` | Reproduz o top cut de um torneio real e compara com quem venceu (padrão: Mundial 2026) |
+
+### Recursos e empacotamento
+
+| Comando | O que faz |
+|---|---|
+| `python tools/make_sounds.py [nomes] [--play]` | Gera os efeitos sonoros por síntese (`--play` toca no macOS) |
+| `python tools/make_music.py [nomes] [--play]` | Gera as músicas de fundo |
+| `python tools/make_icon.py` | **Regera** o ícone em todos os tamanhos (PNG, `.icns`, `.ico`) |
+| `pyinstaller --noconfirm packaging/pokemon_companion.spec` | Executável para o sistema atual (os releases `vX.Y.Z` saem do GitHub Actions para Windows, macOS e Linux) |
 
 ## Licença e aviso
 

@@ -10,41 +10,13 @@ trabalho avançar.
 
 ```bash
 cd ~/pokemon_companion
-uv sync                 # instala dependências em .venv
-uv run pytest -v        # confirma que tudo continua passando (233 testes)
-uv run mypy src          # type-check
-uv run black --check . && uv run ruff check .   # formatação/lint
-
-# CLI (deck mockado por padrão):
-uv run python -m pokemon_companion.main --difficulty medium
-
-# CLI com decklists reais (precisa de internet; formato Limitless/PTCGO):
-uv run python -m pokemon_companion.main --player-deck meu_deck.txt --opponent-deck deck_da_ia.txt --record-history data/partida1.json
-
-# Tabuleiro gráfico (PyQt6): sem argumentos abre a tela de seleção de decks
-# (seu deck × deck da IA × dificuldade, estilo TCG Pocket; Esc volta ao menu):
-uv run python -m pokemon_companion.ui.app
-# Direto numa partida, sem passar pelo menu:
-uv run python -m pokemon_companion.ui.app --difficulty hard \
-  --player-deck src/pokemon_companion/decks/top/01_dragapult_ex.txt \
-  --opponent-deck src/pokemon_companion/decks/worlds2026/1_andrew_hedrick_dragapult.txt
-
-# Modo espectador: duas IAs no difícil com decks competitivos (Regional de Baltimore, 09/2026):
-uv run python -m pokemon_companion.ui.app --spectate --difficulty hard --player-difficulty hard \
-  --player-deck src/pokemon_companion/decks/dragapult_ex.txt --opponent-deck src/pokemon_companion/decks/ns_zoroark_ex.txt \
-  --speed 1.5 --record-history data/partida.json
-
-# Torneio IA vs IA (round robin, sem interface, paralelo) com os 25 decks do meta:
-uv run python tools/tournament.py src/pokemon_companion/decks/top --games 4 --level hard
-# Quais textos de cartas dos decks ainda não têm efeito implementado:
-uv run python tools/effect_coverage.py src/pokemon_companion/decks/top
-# Atualizar os decks do meta a partir do limitlesstcg.com (o ranking tem 25;
-# --clean tira os que saíram/mudaram de posição) e mandar para o app instalado:
-uv run python tools/fetch_top_decks.py --top 25 --clean
-uv run python tools/publish_data.py
-# Reproduzir o top cut de um torneio real (padrão: Mundial 2026):
-uv run python tools/replay_top_cut.py --series 40
+uv sync && uv run pytest -q          # tudo verde antes de mexer
+uv run python tools/maintenance.py   # cobertura, legalidade e set novo
 ```
+
+Todos os comandos (jogo, manutenção, IA, recursos e empacotamento), com as
+opções de cada um: [README.md → Comandos](README.md#comandos). Cuidado:
+`tools/publish_data.py` publica no GitHub assim que roda, sem `--help`.
 
 ## Status — todas as 5 fases do plano original têm código funcional
 
