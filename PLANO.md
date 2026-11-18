@@ -323,9 +323,11 @@ Standard (1961 cartas distintas): **0 efeitos faltando** (eram 53, contando
 - *Rotina semanal*: o repositório existe; falta criar a rotina (prompt
   abaixo) e incluir nela `tools/publish_data.py` depois dos testes.
 - *Empacotar de novo* (`dist/` é anterior a estas mudanças).
-- *Primeiro release do app*: não há nenhum `vX.Y.Z` no GitHub; o aviso de
-  versão nova só funciona para quem instalar a partir de um release. Publicar
-  o `v0.1.0` com os executáveis (ver "Versões e aviso de atualização").
+- ✅ *Primeiro release do app* (17/11/2026): `v0.1.0` no GitHub com os
+  executáveis de Windows x64, macOS arm64 e Linux x64, gerados pelo
+  `.github/workflows/build.yml` (testes em todo push; build em push no main;
+  tag `vX.Y.Z` cria o release e anexa). Próximo release: subir `version` no
+  `pyproject.toml` e criar a tag.
 
 **Rotina agendada (pendente: repositório criado, rotina ainda não)** — segunda
 às 9h de Belém (`0 12 * * 1` UTC), lote de ~40 efeitos por PR. Prompt:
@@ -377,9 +379,10 @@ importados, cache de cartas, artes) na pasta de dados do SO
 O `Info.plist` declara `NSCameraUsageDescription` — sem isso o macOS encerra
 o app ao abrir a câmera.
 
-Limites atuais: sem build cruzado (o `.exe` precisa ser gerado num Windows —
-o caminho é GitHub Actions quando houver repositório); o build sai só para a
-arquitetura da máquina (arm64 aqui; Mac Intel precisa de build próprio); sem
+Limites atuais: sem build cruzado local (Windows e Linux saem do GitHub
+Actions, `.github/workflows/build.yml`; no Linux o executável não tem ícone e
+o `install.sh` do pacote põe o `.desktop` no menu); Mac só arm64 (Intel
+precisaria do runner `macos-13`); sem
 assinatura/notarização o macOS mostra "desenvolvedor não identificado"
 (abrir com botão direito → Abrir) e o Windows mostra o SmartScreen.
 
