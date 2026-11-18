@@ -315,6 +315,12 @@ def _clean(text: str) -> str:
         lambda m: f"Basic {{{_TYPE_SYMBOL[m.group(1)]}}} Energy",
         text,
     )
+    # "Psychic Pokémon" (pokemontcg.io) = "{P} Pokémon" (TCGdex)
+    text = re.sub(
+        r"\b(Grass|Fire|Water|Lightning|Psychic|Fighting|Darkness|Metal) Pokémon\b",
+        lambda m: f"{{{_TYPE_SYMBOL[m.group(1)]}}} Pokémon",
+        text,
+    )
     return text.replace("’", "'").strip()
 
 
@@ -324,6 +330,8 @@ _RULE_REMINDERS = re.compile(
     r"\s*(?:You may play only 1 Supporter card during your turn"
     r"|You may play any number of Item cards during your turn"
     r"|You may play only 1 Stadium card during your turn"
+    r"|Put it (?:next to|into) the Active Spot, and discard it if another Stadium comes into play"
+    r"|A Stadium with the same name can't be played"
     r"|You can't have more than 1 ACE SPEC card in your deck"
     r"|Attach a Pokémon Tool to 1 of your Pokémon that doesn't already have a Pokémon Tool "
     r"attached"
