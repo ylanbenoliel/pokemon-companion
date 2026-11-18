@@ -86,3 +86,27 @@ def test_hard_ai_does_not_retreat_just_to_dump_energy(charmander, squirtle):
     chosen = HardAI().choose_action(state, actions)
 
     assert not isinstance(chosen, Retreat)
+
+
+def test_hard_weights_dont_punish_knock_outs_or_opponent_benching(charmander, squirtle):
+    from pokemon_companion.ai.heuristics_medium import evaluate_state, load_weights
+    from pokemon_companion.ai.opponent import WEIGHTS_FILE
+
+    weights = load_weights(WEIGHTS_FILE, "hard")
+    state = build_state(player_active=charmander, opponent_active=squirtle)
+    state.opponent.bench = [PokemonInPlay(card=squirtle)]
+    state.opponent.active.damage_counters = 40
+
+    def score() -> float:
+        return evaluate_state(state, PlayerId.PLAYER, weights)
+
+    before = score()
+    state.opponent.bench.append(PokemonInPlay(card=squirtle))  # ele baixa outro Pokémon
+    assert score() >= before - weights["board_presence"]
+
+    damaged = score()
+    knocked = state.opponent.active
+    state.opponent.hp_knocked_out += knocked.max_hp  # nocaute: o dano não some
+    state.opponent.active = state.opponent.bench.pop(0)
+    state.player.prizes.pop()
+    assert score() > damaged

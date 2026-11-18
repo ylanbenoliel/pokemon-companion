@@ -16,4 +16,14 @@ medium: &default
   attack_progress: 20.0
   deck_out: 150.0
 
-hard: *default
+# Difícil: dano acumulado (com o HP dos nocauteados) no lugar do HP restante do
+# oponente e potencial contra um Ativo sem dano. A/B no espelho dos 65 decks
+# (390 partidas, 18/11/2026): 59,5% contra os pesos do médio, e pula menos
+# ataques (30 × 79). `win` alto: a soma do dano passava de 1000 e a IA chegava
+# a recusar o ataque que vencia a partida. No médio (guloso) não houve ganho.
+hard:
+  <<: *default
+  win: 100000.0
+  damage_dealt: 1.0
+  opponent_hp: 0.0
+  potential_vs_fresh: 1.0

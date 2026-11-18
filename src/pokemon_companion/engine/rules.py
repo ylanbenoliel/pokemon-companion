@@ -394,6 +394,7 @@ def _process_knockouts(
         taker = state.state_of(owner_id.other)
         for mon in [m for m in owner.all_pokemon_in_play() if m.is_knocked_out]:
             was_active = owner.active is mon
+            owner.hp_knocked_out += mon.max_hp
             prizes = prize_count_for(mon.card)
             if attacker is not None and owner_id is attacker.other:
                 prizes += passives.prize_adjustment(

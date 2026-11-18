@@ -139,6 +139,9 @@ class PlayerState:
     prizes: list[Card] = field(default_factory=list)
     active: PokemonInPlay | None = None
     bench: list[PokemonInPlay] = field(default_factory=list)
+    #: HP máximo somado dos Pokémon deste jogador já nocauteados (avaliação da IA:
+    #: o nocaute não "apaga" o dano causado)
+    hp_knocked_out: int = 0
     has_attached_energy_this_turn: bool = False
     has_retreated_this_turn: bool = False
     supporter_played_this_turn: bool = False

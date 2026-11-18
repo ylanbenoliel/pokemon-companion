@@ -40,6 +40,14 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     # Deck acabando: perder por não conseguir comprar (cresce ao quadrado
     # abaixo de LOW_DECK cartas; sem isto a IA comprava até o deck-out).
     "deck_out": 150.0,
+    # Dano total causado no oponente, contando o HP máximo dos nocauteados:
+    # ao contrário de `opponent_hp`, o Pokémon novo que ele baixa no Banco
+    # não pesa contra (com `opponent_hp`, nocautear abria vaga, ele baixava
+    # outro e o KO parecia ruim).
+    "damage_dealt": 0.0,
+    # 1 = potencial de ataque medido contra um Ativo sem dano: senão ataques
+    # que crescem com o dano do alvo (Mad Bite) "preferiam" não nocautear.
+    "potential_vs_fresh": 0.0,
 }
 
 HAND_CAP = 8
@@ -72,6 +80,9 @@ def evaluate_state(state: GameState, perspective: PlayerId, weights: dict[str, f
     my_mons, their_mons = me.all_pokemon_in_play(), opponent.all_pokemon_in_play()
     score += weights["own_hp"] * sum(m.current_hp for m in my_mons)
     score -= weights["opponent_hp"] * sum(m.current_hp for m in their_mons)
+    dealt = weights.get("damage_dealt", 0.0)
+    if dealt:
+        score += dealt * (sum(m.damage_counters for m in their_mons) + opponent.hp_knocked_out)
     energy = weights["energy_attached"]
     score += energy * sum(len(m.attached_energies) for m in my_mons)
     score -= energy * sum(len(m.attached_energies) for m in their_mons)
@@ -85,9 +96,12 @@ def evaluate_state(state: GameState, perspective: PlayerId, weights: dict[str, f
 
     progress = weights.get("attack_progress", 0.0)
     if progress:
-        score += progress * sum(_attack_potential(state, perspective, m) for m in my_mons)
+        fresh = bool(weights.get("potential_vs_fresh", 0.0))
+        score += progress * sum(_attack_potential(state, perspective, m, fresh) for m in my_mons)
         score -= (
-            progress * 0.5 * sum(_attack_potential(state, perspective.other, m) for m in their_mons)
+            progress
+            * 0.5
+            * sum(_attack_potential(state, perspective.other, m, fresh) for m in their_mons)
         )
 
     ready = weights.get("attack_ready", 0.0)
@@ -104,9 +118,26 @@ def evaluate_state(state: GameState, perspective: PlayerId, weights: dict[str, f
     return score
 
 
-def _attack_potential(state: GameState, side: PlayerId, mon: PokemonInPlay) -> float:
-    """Melhor (dano/100 × fração do custo paga) entre os ataques do Pokémon."""
+def _attack_potential(
+    state: GameState, side: PlayerId, mon: PokemonInPlay, vs_fresh: bool = False
+) -> float:
+    """Melhor (dano/100 × fração do custo paga) entre os ataques do Pokémon.
+    `vs_fresh`: estima contra o Ativo do oponente sem contadores de dano."""
     units = passives.provided_energy(state, side, mon)
+    target = state.state_of(side.other).active
+    saved = target.damage_counters if target is not None else 0
+    if vs_fresh and target is not None:
+        target.damage_counters = 0
+    try:
+        return _best_potential(state, side, mon, units)
+    finally:
+        if target is not None:
+            target.damage_counters = saved
+
+
+def _best_potential(
+    state: GameState, side: PlayerId, mon: PokemonInPlay, units: list[str]
+) -> float:
     best = 0.0
     for attack in mon.card.attacks:
         damage = attacks.estimated_damage(state, side, mon, attack)

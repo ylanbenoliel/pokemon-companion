@@ -413,6 +413,19 @@ roadmap, feita:
 
 ## Torneio IA vs IA — top 20 do meta (resultados e ajustes)
 
+**Pesos do difícil (18/11/2026).** A avaliação punia o nocaute: o oponente
+baixava um Pokémon na vaga aberta e o "HP restante dele" subia; com Mad Bite,
+nocautear o alvo machucado derrubava o potencial de ataque. O difícil agora
+soma o dano causado contando o HP dos nocauteados (`damage_dealt`,
+`PlayerState.hp_knocked_out`), mede o potencial contra um Ativo sem dano
+(`potential_vs_fresh`) e tem `win` = 100 000 (com a soma do dano, um estado
+comum passava de 1000 e a IA recusava o ataque que vencia). A/B no espelho
+dos 65 decks (25 do meta + 40 de fora, `show=50` no Limitless): 59,5% em 390
+partidas contra os pesos antigos, 30 × 79 vezes "passou podendo atacar". No
+médio, sem ganho (46%), então ficou como estava. Não resolve combos de vários
+passos (Festival Lead com Gladion's Final Battle: `hand_size` premia guardar
+cartas e a busca não planeja esvaziar a mão).
+
 `tools/tournament.py` joga um round robin headless (IA difícil nos dois
 lados, 4 partidas por par alternando quem começa, 1 processo por núcleo) e
 grava `data/tournament/*/results.json` + `summary.txt`.
