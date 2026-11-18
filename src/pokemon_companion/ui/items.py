@@ -198,6 +198,47 @@ def orb_row_positions(
     return [QRectF(left + i * (size + gap), y, size, size) for i in range(count)]
 
 
+def text_color_on(background: QColor) -> QColor:
+    """Tinta legível sobre um fundo colorido (amarelo pede texto escuro)."""
+    luminance = 0.299 * background.red() + 0.587 * background.green() + 0.114 * background.blue()
+    return QColor(INK) if luminance > 160 else QColor("white")
+
+
+Line = tuple[str, str, QColor | None]  # rótulo, dano, fundo de destaque
+
+
+def move_lines(card: Card, ability_ready: bool = False) -> list[Line]:
+    """Habilidades (\u2605, destacadas quando prontas) e ataques com dano."""
+    lines: list[Line] = [
+        (f"\u2605 {ability.name}", "", QColor(VOLT) if ability_ready else None)
+        for ability in card.abilities
+    ]
+    return lines + [(attack.name, attack.damage, None) for attack in card.attacks]
+
+
+def draw_lines(painter: QPainter, row: QRectF, lines: list[Line], color: QColor) -> None:
+    """Uma linha por item a partir de `row`: rótulo à esquerda, dano à direita."""
+    metrics = QFontMetricsF(painter.font())
+    row = QRectF(row)
+    left = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+    right = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+    for label, damage, background in lines:
+        pen = QColor(color)
+        if background is not None:
+            radius = row.height() / 2
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(background)
+            painter.drawRoundedRect(row.adjusted(-4, 0, 4, 0), radius, radius)
+            pen = text_color_on(background)
+        painter.setPen(pen)
+        damage_width = metrics.horizontalAdvance(damage) + 4 if damage else 0
+        label = metrics.elidedText(label, Qt.TextElideMode.ElideRight, row.width() - damage_width)
+        draw_text(painter, row.adjusted(0, 0, -damage_width, 0), label, left)
+        if damage:
+            draw_text(painter, row, damage, right)
+        row.translate(0, row.height())
+
+
 def _pulse_animation(target: QGraphicsObject, name: bytes) -> QPropertyAnimation | None:
     """Brilho pulsante em loop (sinaliza "dá pra interagir aqui")."""
     if Animator.speed == 0:
@@ -216,6 +257,8 @@ def _pulse_animation(target: QGraphicsObject, name: bytes) -> QPropertyAnimation
 
 
 TOKEN_RECT = QRectF(-75, -100, 150, 200)
+# janela da arte na proporção do recorte da ilustração (~1,63:1)
+TOKEN_ART_RECT = QRectF(-67, -76, 134, 82)
 
 
 class PokemonToken(QGraphicsObject):
@@ -232,7 +275,7 @@ class PokemonToken(QGraphicsObject):
         self.side = side
         self.slot: object = "active"
         self.card: Card = mon.card
-        self._art = scaled_art(art, 122, 116)
+        self._art = scaled_art(art, 134, 82)
         self._max_hp = mon.max_hp
         self._hp_display = float(mon.current_hp)
         self._tool: str | None = mon.tool.name if mon.tool is not None else None
@@ -344,7 +387,7 @@ class PokemonToken(QGraphicsObject):
         self._pending = (mon, art)
 
     def _apply(self, mon: PokemonInPlay, art: QPixmap | None) -> None:
-        self._art = scaled_art(art, 122, 116)
+        self._art = scaled_art(art, 134, 82)
         self.update_from(mon)
 
     def energy_anchor(self, index: int, count: int) -> QPointF:
@@ -395,105 +438,101 @@ class PokemonToken(QGraphicsObject):
         paint_glow(painter, card, 16, GOLD, self._glow)
         paint_soft_shadow(painter, card, 16)
 
-        # cartolina da carta, com a faixa do tipo atrás da arte
+        # Zonas fixas (nada é desenhado sobre a arte), de cima para baixo:
+        #   nome + tipo | arte | status + Ferramenta | HP | Habilidade e ataques | energias
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(BONE)
         painter.drawRoundedRect(card, 14, 14)
-        art_rect = QRectF(-67, -92, 134, 128)
+
+        orb = QRectF(card.right() - 23, card.top() + 5, 16, 16)
+        paint_energy_orb(painter, orb, energy_type)
+        painter.setPen(INK)
+        painter.setFont(ui_font(10.5, QFont.Weight.DemiBold))
+        title = QRectF(card.left() + 9, card.top() + 3, orb.left() - card.left() - 13, 20)
+        name = QFontMetricsF(painter.font()).elidedText(
+            self.card.name, Qt.TextElideMode.ElideRight, title.width()
+        )
+        draw_text(painter, title, name, Qt.AlignmentFlag.AlignVCenter)
+
+        art_rect = TOKEN_ART_RECT
         clip = QPainterPath()
-        clip.addRoundedRect(art_rect, 10, 10)
+        clip.addRoundedRect(art_rect, 9, 9)
         painter.save()
         painter.setClipPath(clip)
         band = QLinearGradient(art_rect.topLeft(), art_rect.bottomLeft())
         band.setColorAt(0.0, type_color.lighter(128))
         band.setColorAt(1.0, type_color.lighter(168))
         painter.fillRect(art_rect, QBrush(band))
+        draw_art(painter, art_rect, self._art, energy_type)
         if has_rule_box(self.card):
             # brilho holográfico das cartas com regra especial (ex/Mega)
             holo = QLinearGradient(art_rect.bottomLeft(), art_rect.topRight())
             for stop, color in (
-                (0.10, QColor(255, 120, 190, 55)),
-                (0.35, QColor(120, 215, 255, 60)),
-                (0.60, QColor(255, 236, 130, 65)),
-                (0.85, QColor(150, 255, 200, 45)),
+                (0.10, QColor(255, 120, 190, 40)),
+                (0.35, QColor(120, 215, 255, 45)),
+                (0.60, QColor(255, 236, 130, 50)),
+                (0.85, QColor(150, 255, 200, 35)),
             ):
                 holo.setColorAt(stop, color)
             holo.setColorAt(0.0, QColor(255, 255, 255, 0))
             holo.setColorAt(1.0, QColor(255, 255, 255, 0))
             painter.fillRect(art_rect, QBrush(holo))
-        draw_art(painter, art_rect.adjusted(4, 4, -4, -2), self._art, energy_type)
         painter.restore()
         painter.setPen(QPen(with_alpha(INK, 40), 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawRoundedRect(art_rect, 10, 10)
+        painter.drawRoundedRect(art_rect, 9, 9)
 
-        plate = QRectF(-67, 40, 134, 26)
-        painter.setPen(INK)
-        painter.setFont(ui_font(10.5, QFont.Weight.DemiBold))
-        name = QFontMetricsF(painter.font()).elidedText(
-            self.card.name, Qt.TextElideMode.ElideRight, 92
-        )
-        draw_text(painter, plate.adjusted(2, 0, -2, 0), name, Qt.AlignmentFlag.AlignVCenter)
-        painter.setFont(display_font(9))
-        painter.setPen(with_alpha(INK, 140))
-        draw_text(
-            painter,
-            plate.adjusted(2, 0, -2, 0),
-            str(self._max_hp),
-            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
-        )
+        # faixa reservada (mesmo vazia) para o HP ficar sempre no mesmo lugar
+        chip_top = art_rect.bottom() + 3
+        if self._status != "NONE":
+            painter.setFont(ui_font(8, QFont.Weight.DemiBold))
+            label = STATUS_LABELS.get(self._status, self._status)
+            background = QColor(STATUS_COLORS.get(self._status, "#d81b60"))
+            width = QFontMetricsF(painter.font()).horizontalAdvance(label) + 12
+            chip = QRectF(card.left() + 8, chip_top, width, 16)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(background)
+            painter.drawRoundedRect(chip, 8, 8)
+            painter.setPen(text_color_on(background))
+            draw_text(painter, chip, label)
 
-        bar = QRectF(-67, 70, 134, 14)
+        # HP: o que resta em destaque, o máximo pequeno ao lado
+        bar = QRectF(card.left() + 8, chip_top + 19, card.width() - 16, 18)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(with_alpha(INK, 45))
-        painter.drawRoundedRect(bar, 7, 7)
+        painter.setBrush(with_alpha(INK, 40))
+        painter.drawRoundedRect(bar, 9, 9)
         ratio = max(0.0, min(1.0, self._hp_display / self._max_hp))
         if ratio > 0:
-            fill = QRectF(bar.left(), bar.top(), bar.width() * ratio, bar.height())
+            fill = QRectF(bar.left(), bar.top(), max(bar.width() * ratio, 18), bar.height())
             painter.setBrush(hp_color(self.hp_value, self._max_hp))
-            painter.drawRoundedRect(fill, 7, 7)
+            painter.drawRoundedRect(fill, 9, 9)
+        current, maximum = f"{self.hp_value}", f" / {self._max_hp}"
+        big, small = display_font(10), display_font(7.5)
+        big_width = QFontMetricsF(big).horizontalAdvance(current)
+        left = bar.center().x() - (big_width + QFontMetricsF(small).horizontalAdvance(maximum)) / 2
+        align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         painter.setPen(INK)
-        painter.setFont(display_font(8.5))
-        draw_text(painter, bar, f"{self.hp_value}")
+        painter.setFont(big)
+        draw_text(painter, QRectF(left, bar.top(), big_width + 2, bar.height()), current, align)
+        painter.setFont(small)
+        painter.setPen(with_alpha(INK, 170))
+        draw_text(
+            painter, QRectF(left + big_width, bar.top() + 1, 60, bar.height()), maximum, align
+        )
+
+        # Habilidade, ataques e Ferramenta; linhas encolhem para caber todas
+        lines = move_lines(self.card, self._ability_ready)
+        if self._tool:
+            lines.append((self._tool, "", QColor(TRAINER_COLORS["Tool"])))
+        top = bar.bottom() + 3
+        height = min(13.0, (card.bottom() - 12 - top) / max(len(lines), 1))
+        painter.setFont(ui_font(8 if height >= 12 else 7, QFont.Weight.DemiBold))
+        moves = QRectF(card.left() + 10, top, card.width() - 20, height)
+        draw_lines(painter, moves, lines, QColor(INK))
 
         visible = self._energies[: self.visible_energy_count]
         for rect, energy in zip(orb_row_positions(len(visible), 0, 89, 22), visible, strict=True):
             paint_energy_orb(painter, rect, energy)
-
-        if self._status != "NONE":
-            label = STATUS_LABELS.get(self._status, self._status)
-            painter.setFont(ui_font(8.5, QFont.Weight.DemiBold))
-            # largura pelo texto (respiro de 12) para caber ao lado de "Habilidade"
-            width = QFontMetricsF(painter.font()).horizontalAdvance(label) + 12
-            badge = QRectF(card.left() + 6, card.top() + 6, width, 18)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(STATUS_COLORS.get(self._status, "#d81b60")))
-            painter.drawRoundedRect(badge, 9, 9)
-            painter.setPen(QColor("white"))
-            draw_text(painter, badge, label)
-
-        if self._tool:
-            painter.setFont(ui_font(8.5, QFont.Weight.DemiBold))
-            label = QFontMetricsF(painter.font()).elidedText(
-                self._tool, Qt.TextElideMode.ElideRight, 104
-            )
-            width = QFontMetricsF(painter.font()).horizontalAdvance(label) + 16
-            pill = QRectF(-width / 2, 20, width, 17)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(QColor(TRAINER_COLORS["Tool"]))
-            painter.drawRoundedRect(pill, 8.5, 8.5)
-            painter.setPen(QColor("white"))
-            draw_text(painter, pill, label)
-
-        if self._ability_ready:
-            painter.setFont(ui_font(8.5, QFont.Weight.DemiBold))
-            width = QFontMetricsF(painter.font()).horizontalAdvance("Habilidade") + 12
-            badge = QRectF(card.right() - 6 - width, card.top() + 6, width, 18)
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(VOLT)
-            painter.drawRoundedRect(badge, 9, 9)
-            painter.setPen(INK)
-            draw_text(painter, badge, "Habilidade")
 
         if self._flash > 0:
             overlay = QColor(self._flash_color)
@@ -541,7 +580,7 @@ class HandCard(QGraphicsObject):
         super().__init__()
         self.card = card
         self.hand_index = hand_index
-        self._art = scaled_art(art, 104, 92)
+        self._art = scaled_art(art, 106, 64)
         self.fan_pos = QPointF()
         self.fan_rotation = 0.0
         self.fan_z = 0.0
@@ -662,14 +701,22 @@ class HandCard(QGraphicsObject):
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
         )
 
-        art_rect = QRectF(rect.left() + 7, rect.top() + 27, rect.width() - 14, 96)
+        art_rect = QRectF(rect.left() + 7, rect.top() + 27, rect.width() - 14, 68)
         background = QRadialGradient(art_rect.center(), 70)
         background.setColorAt(0.0, QColor(255, 255, 255))
         background.setColorAt(1.0, type_color.lighter(170))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(background))
         painter.drawRoundedRect(art_rect, 9, 9)
-        draw_art(painter, art_rect.adjusted(3, 3, -3, -3), self._art, energy_type)
+        draw_art(painter, art_rect.adjusted(2, 2, -2, -2), self._art, energy_type)
+
+        # o que a carta faz: Habilidade e ataques com dano (detalhes na inspeção)
+        lines = move_lines(self.card)
+        top = art_rect.bottom() + 3
+        height = min(14.0, (rect.bottom() - 42 - top) / max(len(lines), 1))
+        painter.setFont(ui_font(8 if height >= 12 else 7, QFont.Weight.DemiBold))
+        row = QRectF(rect.left() + 9, top, rect.width() - 18, height)
+        draw_lines(painter, row, lines, QColor("white"))
 
         stage = "BÁSICO" if self.card.is_basic else f"EVOLUI DE {self.card.evolves_from}".upper()
         painter.setFont(ui_font(7.5))

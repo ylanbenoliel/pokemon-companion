@@ -540,3 +540,21 @@ def test_manual_setup_uses_ready_button(controller):
     ctrl.scene.end_turn_button.clicked.emit()
     assert state.pending_setup == ()
     assert ctrl.scene.end_turn_button.mode in ("play", "done")
+
+
+def test_move_lines_and_chip_contrast(qapp):
+    from PyQt6.QtGui import QColor
+
+    from pokemon_companion.cards_db.models import Ability, Attack
+    from pokemon_companion.ui.items import move_lines, text_color_on
+    from pokemon_companion.ui.theme import INK, VOLT
+
+    card = dataclasses.replace(
+        _deck_card("Charmander"),
+        abilities=[Ability("Blaze")],
+        attacks=[Attack("Ember", damage="30+")],
+    )
+    assert move_lines(card) == [("★ Blaze", "", None), ("Ember", "30+", None)]
+    assert move_lines(card, ability_ready=True)[0][2] == QColor(VOLT)
+    assert text_color_on(QColor("#ffd426")) == QColor(INK)  # amarelo do Paralisado
+    assert text_color_on(QColor("#8a4fd1")) == QColor("white")
