@@ -18,6 +18,7 @@ from pokemon_companion.engine.effects.cardinfo import (
     is_future,
     is_tera,
     pokemon_type,
+    special_energy_units,
     stage_of,
 )
 from pokemon_companion.engine.game_state import GameState, PlayerId, PokemonInPlay
@@ -160,6 +161,8 @@ def provided_energy(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> li
             units.extend(["Any", "Any"] if stage_of(mon.card) == "Stage 2" else ["Colorless"])
         elif energy == "Team Rocket's Energy":
             units.extend(["Psychic|Darkness", "Psychic|Darkness"])
+        elif printed := _printed_units(mon, energy):
+            units.extend(printed)
         elif energy in TYPED_SPECIAL_ENERGIES:
             units.append(TYPED_SPECIAL_ENERGIES[energy])
         elif energy == "Ignition Energy":
@@ -171,6 +174,12 @@ def provided_energy(state: GameState, owner: PlayerId, mon: PokemonInPlay) -> li
         else:
             units.append(energy)
     return units
+
+
+def _printed_units(mon: PokemonInPlay, energy: str) -> list[str] | None:
+    """Energia Especial cujo texto só diz o que fornece (Double Colorless, Unit Energy)."""
+    card = next((c for c in mon.special_energy_cards if c.name == energy), None)
+    return special_energy_units(card) if card is not None else None
 
 
 def energy_satisfies(units: list[str], cost: list[str]) -> bool:
@@ -346,6 +355,7 @@ def attacker_bonus(
             or (condition == "ex" and is_ex(defender.card))
             or (condition == "ex_v" and has_rule_box(defender.card))
             or (condition == "fighting" and pokemon_type(attacker.card) == "Fighting")
+            or (condition.startswith("type:") and pokemon_type(attacker.card) == condition[5:])
             or (condition == "no_rule_box" and not has_rule_box(attacker.card))
         ):
             bonus += amount

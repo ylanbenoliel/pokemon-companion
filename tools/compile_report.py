@@ -1,10 +1,11 @@
 """Mede o compilador de texto (`engine/effects/text_effects.py`) contra o
-pool legal do Standard: quantos ataques sem registro à mão compilam, quais
+pool legal do Standard (ou do Expanded, com `--format expanded`): quantos ataques sem registro à mão compilam, quais
 frases ainda não são reconhecidas (por frequência) e se os compilados rodam
 sem erro num estado de jogo sintético montado com cartas reais do pool.
 
     uv run python tools/compile_report.py            # resumo + 40 frases
     uv run python tools/compile_report.py --top 150  # mais frases
+    uv run python tools/compile_report.py --format expanded
 """
 
 from __future__ import annotations
@@ -75,8 +76,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--top", type=int, default=40)
     parser.add_argument("--explain", type=int, default=0, help="mostra N programas compilados")
+    parser.add_argument("--format", default="standard", choices=sorted(standard.FORMATS))
     args = parser.parse_args()
-    pool = standard.load_pool()
+    pool = standard.load_pool(standard.pool_file(args.format))
     missing: dict[tuple[str, str], Card] = {}
     for card in pool:
         for attack in card.attacks if card.is_pokemon else []:

@@ -71,6 +71,11 @@ def is_future(card: Card) -> bool:
     return signature(card) in pack.group("Future")
 
 
+def is_pokemon_v(card: Card) -> bool:
+    """Pokémon V inclui VMAX, VSTAR e V-UNION."""
+    return bool({"V", "VMAX", "VSTAR", "V-UNION"} & set(card.subtypes))
+
+
 def is_ace_spec(card: Card) -> bool:
     """A TCGdex só marca as ACE SPEC novas (raridade); as de Black & White
     vêm do grupo "ACE SPEC" do pacote de dados."""
@@ -109,6 +114,38 @@ TYPED_SPECIAL_ENERGIES = {
     "Magnetic Metal Energy": "Metal",
     "Nitro Fire Energy": "Fire",
 }
+
+
+_ENERGY_WORDS = "|".join(BASIC_TYPES + ("Colorless",))
+_PROVIDES = re.compile(
+    rf"(?:This card|.+? Energy|As long as this card is attached to a Pokémon, it) provides "
+    rf"(\d+ )?((?:[{{\[]\w[}}\]])+|{_ENERGY_WORDS}) Energy"
+)
+_ONE_AT_A_TIME = re.compile(
+    r"While (?:in play|this card is attached to a Pokémon), (?:this card|it) provides "
+    r"(every type of|.+?) Energy but provides only 1 Energy at a time"
+)
+
+
+def special_energy_units(card: Card) -> list[str] | None:
+    """Unidades de uma Energia Especial cujo texto só diz o que ela fornece
+    ("Double Colorless Energy provides {C}{C} Energy", "While in play, this
+    card provides every type of Energy but provides only 1 Energy at a time");
+    None se o texto tiver qualquer outro efeito."""
+    text = re.sub(r"\s*\([^)]*\)", "", " ".join(card.rules)).replace("’", "'")
+    units: list[str] | None = None
+    for sentence in filter(None, (s.strip() for s in re.split(r"(?<=\.)\s+", text))):
+        sentence = sentence.rstrip(".")
+        if match := _PROVIDES.fullmatch(sentence):
+            symbols = re.findall(r"[{\[](\w)[}\]]", match.group(2))
+            names = [_SYMBOL_TYPES.get(s, "Colorless") for s in symbols] or [match.group(2)]
+            units = names * int(match.group(1) or 1)
+        elif match := _ONE_AT_A_TIME.fullmatch(sentence):
+            kinds = re.split(r",? and |, ", match.group(1))
+            units = ["Any" if match.group(1) == "every type of" else "|".join(kinds)]
+        else:
+            return None
+    return units
 
 
 def is_basic_energy(card: Card) -> bool:

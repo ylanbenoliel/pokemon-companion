@@ -30,6 +30,13 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
   motivo aparece ao passar o mouse. Trocar de formato mantém o deck e só
   marca o que deixou de valer.
 
+- Muito mais cartas do Expandido com efeito: a cobertura de textos subiu de
+  68% para 78%. O jogo agora entende a redação antiga das cartas (Black & White
+  a Sol e Lua), Energias Especiais que só fornecem energia (Double Colorless,
+  Unit Energy) e Treinadores do meta do Expandido como N, Quick Ball, Trainers'
+  Mail, Max Elixir, Field Blower, Hypnotoxic Laser, Colress, Acerola, Rescue
+  Stretcher e Counter Catcher.
+
 ### Corrigido
 
 - Listas antigas importadas do Limitless agora acham as cartas: nomes GX/EX

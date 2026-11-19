@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pokemon_companion.cards_db.models import Card, Supertype
 from pokemon_companion.engine.effects import abilities, attacks, passive_text, trainers
-from pokemon_companion.engine.effects.cardinfo import trainer_kind
+from pokemon_companion.engine.effects.cardinfo import special_energy_units, trainer_kind
 from pokemon_companion.engine.effects.passive_text import HAND_WRITTEN
 
 
@@ -41,6 +41,10 @@ def unimplemented(card: Card) -> list[str]:
             and card.name not in HAND_WRITTEN
         ):
             missing.append("efeito do Estádio")
-    elif ("Special" in card.subtypes or card.rules) and card.name not in HAND_WRITTEN:
+    elif (
+        ("Special" in card.subtypes or card.rules)
+        and card.name not in HAND_WRITTEN
+        and special_energy_units(card) is None
+    ):
         missing.append("efeito da Energia")
     return missing

@@ -18,7 +18,7 @@ from functools import lru_cache
 from typing import TypeVar
 
 from pokemon_companion.cards_db.models import Ability, Card
-from pokemon_companion.engine.effects import pack
+from pokemon_companion.engine.effects import pack, wording
 from pokemon_companion.engine.effects.cardinfo import (
     has_rule_box,
     is_ancient,
@@ -892,19 +892,22 @@ def compile_passive(text: str) -> tuple[Passive, ...] | None:
     found: list[Passive] = []
     stacks = True
     whole = re.sub(r"\s*The effect of .+ doesn't stack\.?$", "", _clean(text)).rstrip(".")
-    for pattern, build in RULES:
-        match = pattern.fullmatch(whole)
-        if match:
-            result = build(*match.groups())
-            if result is not None:
-                stacks = "doesn't stack" not in text
-                items = result if isinstance(result, list) else [result]
-                return tuple(Passive(**{**p.__dict__, "stacks": stacks}) for p in items)
+    for candidate in dict.fromkeys((whole, wording.modernize(whole))):
+        for pattern, build in RULES:
+            match = pattern.fullmatch(candidate)
+            if match:
+                result = build(*match.groups())
+                if result is not None:
+                    stacks = "doesn't stack" not in text
+                    items = result if isinstance(result, list) else [result]
+                    return tuple(Passive(**{**p.__dict__, "stacks": stacks}) for p in items)
     for sentence in _sentences(text):
         if re.fullmatch(r"The effect of .+ doesn't stack", sentence):
             stacks = False
             continue
         parsed = _parse_sentence(sentence)
+        if parsed is None and wording.modernize(sentence) != sentence:
+            parsed = _parse_sentence(wording.modernize(sentence))
         if parsed is None:
             return None
         found.extend(parsed)
