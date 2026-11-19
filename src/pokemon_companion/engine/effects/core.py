@@ -479,6 +479,48 @@ def best_bench_index(state: GameState, pid: PlayerId) -> int | None:
     return choose_promotion(bench, state, pid) if bench else None
 
 
+#: marcas que ataques deixam num Pokémon ("durante o próximo turno...")
+_ATTACK_MARKS = (
+    "cannot_attack_turn",
+    "blocked_attack",
+    "cannot_retreat_turn",
+    "damage_reduction",
+    "attack_debuff",
+    "retaliation",
+    "protected_turn",
+    "shield",
+    "shield_anchor_turn",
+    "doom",
+    "attack_coin_turn",
+    "attach_trap",
+    "bounty",
+    "weakness_to",
+    "taxed_turn",
+    "no_weakness_turn",
+)
+#: e as que deixam num jogador
+_PLAYER_MARKS = (
+    "items_blocked_turn",
+    "supporters_blocked_turn",
+    "stadiums_blocked_turn",
+    "evolution_blocked_turn",
+    "attack_energy_min",
+    "trainer_coin_turn",
+)
+
+
+def clear_attack_effects(state: GameState) -> None:
+    """Pokémon Ranger: tira os efeitos de ataques dos dois jogadores e de todos
+    os Pokémon em jogo (dano e Condições Especiais ficam)."""
+    for pid in (PlayerId.PLAYER, PlayerId.OPPONENT):
+        side = state.state_of(pid)
+        for name in _PLAYER_MARKS:
+            setattr(side, name, None)
+        for mon in side.all_pokemon_in_play():
+            for name in _ATTACK_MARKS:
+                setattr(mon, name, None)
+
+
 def gust_target(state: GameState, opp_id: PlayerId) -> int | None:
     """Pokémon do banco adversário mais vantajoso de puxar: o que dá para
     nocautear agora (mais prêmios primeiro), senão o mais frágil."""

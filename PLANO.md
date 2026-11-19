@@ -382,8 +382,17 @@ manifesto publicado, como os do Standard) e `data/expanded_pool.json`.
   família N/Marnie/Iono; bônus de time no turno por tipo; Field Blower,
   Target Whistle, Max Elixir, "reveal a X you find there", "Choose 1:" (IA fica
   com a 1ª opção). Torneio com 8 decks do Expandido: 168 partidas, 0 erros.
-  Faltam no meta: Great Catcher (gust filtrado), Brigette, Guzma & Hala, Faba,
-  Roxie, Devolution Spray, Hex Maniac, AZ, Pokémon Ranger e Ghetsis.
+  **Lote 2**: os Treinadores restantes do meta, todos por mecanismo: tipos
+  `Basic Pokémon-EX`/`Pokémon V`/"Pokémon that aren't Pokémon-GX or
+  Pokémon-EX" e `Special Energy card`; busca "1 X ou 3 Y" (fica com a opção
+  que traz mais cartas); gust filtrado por tipo; custo opcional "When you play
+  this card, you may discard N" + "If you do, you may also search for ...";
+  Zona Perdida (a carta só sai do jogo: o motor não tem Zona Perdida);
+  devolver um estágio; `core.clear_attack_effects` (Pokémon Ranger);
+  `GameState.abilities_locked_until` (Hex Maniac, consultado em
+  `passives.ability_suppressed`). Cobertura 78% (15.155 textos-impressão);
+  torneio com 8 decks do Expandido: 168 partidas, 0 erros, nenhum Treinador
+  sem efeito além do Ghetsis (banido no Expandido).
   O passo a passo para montar efeitos está em `EFEITOS.md` (e `AGENTS.md`
   aponta para ele).
 - **Próximo passo** (se pedirem): implementar os efeitos que faltam no

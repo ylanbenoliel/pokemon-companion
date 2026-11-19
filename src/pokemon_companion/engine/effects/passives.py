@@ -699,6 +699,9 @@ def ability_suppressed(state: GameState, mon: PokemonInPlay, name: str) -> bool:
     passar por `ability_active`, para não entrar em recursão."""
     from pokemon_companion.engine.effects.passive_text import kind_entries
 
+    locked = state.abilities_locked_until
+    if locked is not None and state.turn_number <= locked:
+        return True
     benched: bool | None = None
     for pid in (PlayerId.PLAYER, PlayerId.OPPONENT):
         side = state.state_of(pid)

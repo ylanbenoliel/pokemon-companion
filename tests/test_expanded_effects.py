@@ -234,3 +234,124 @@ def test_full_heal_and_hypnotoxic_laser(state, monkeypatch):
         "Active Pokémon is also Asleep.",
     )
     assert state.opponent.active.status == StatusCondition.ASLEEP
+
+
+def _rule_mon(name: str, *subtypes: str, hp: int = 180) -> Card:
+    return dataclasses.replace(mon(name, hp), subtypes=["Basic", *subtypes])
+
+
+def test_great_catcher_only_pulls_gx_or_ex(state):
+    state.player.hand = [mon("A"), mon("B"), mon("Great Catcher")]
+    state.opponent.bench = [
+        PokemonInPlay(card=mon("Small", 30)),
+        PokemonInPlay(card=_rule_mon("Shaymin-EX", "EX")),
+    ]
+    _play(
+        state,
+        "You can play this card only if you discard 2 other cards from your hand. Switch 1 of "
+        "your opponent's Benched Pokémon-GX or Pokémon-EX with their Active Pokémon.",
+    )
+    assert state.opponent.active.card.name == "Shaymin-EX"
+    assert len(state.player.discard) == 2
+
+
+def test_brigette_takes_the_option_that_brings_more_pokemon(state):
+    state.player.deck = [_rule_mon("Shaymin-EX", "EX")] + [mon(f"Joltik{i}", 40) for i in range(3)]
+    _play(
+        state,
+        "Search your deck for 1 Basic Pokémon-EX or 3 Basic Pokémon (except for Pokémon-EX) and "
+        "put them onto your Bench. Shuffle your deck afterward.",
+    )
+    assert len(state.player.bench) == 3
+
+
+def test_roxie_discards_only_non_rule_box_pokemon_and_draws_for_each(state):
+    state.player.hand = [_rule_mon("Tapu Lele-GX", "GX"), mon("Zubat"), mon("Golbat")]
+    _play(
+        state,
+        "Discard up to 2 Pokémon that aren't Pokémon-GX or Pokémon-EX from your hand. Draw 3 "
+        "cards for each card you discarded in this way.",
+    )
+    assert {c.name for c in state.player.discard} == {"Zubat", "Golbat"}
+    assert len(state.player.hand) == 1 + 6
+
+
+def test_guzma_and_hala_pays_the_optional_cost_for_the_extra_search(state):
+    tool = Card(id="t", name="Choice Band", supertype=Supertype.TRAINER, subtypes=["Tool"])
+    stadium = Card(id="s", name="Shrine", supertype=Supertype.TRAINER, subtypes=["Stadium"])
+    energy = _special("Double Colorless Energy", "Double Colorless Energy provides {C}{C} Energy.")
+    state.player.deck = [tool, stadium, energy] + state.player.deck
+    state.player.hand = [mon("A"), mon("B"), mon("C"), mon("D")]
+    _play(
+        state,
+        "Search your deck for a Stadium card, reveal it, and put it into your hand. Then, shuffle "
+        "your deck. When you play this card, you may discard 2 other cards from your hand. If "
+        "you do, you may also search for a Pokémon Tool card and a Special Energy card in this "
+        "way.",
+    )
+    names = {c.name for c in state.player.hand}
+    assert {"Shrine", "Choice Band", "Double Colorless Energy"} <= names
+    assert len(state.player.discard) == 2
+
+
+def test_faba_removes_the_opponents_special_energy_from_the_game(state):
+    dce = _special("Double Colorless Energy", "Double Colorless Energy provides {C}{C} Energy.")
+    core.attach_energy_card(state.opponent.active, dce)
+    _play(
+        state,
+        "Choose a Pokémon Tool or Special Energy card attached to 1 of your opponent's Pokémon, "
+        "or any Stadium card in play, and put it in the Lost Zone.",
+    )
+    assert state.opponent.active.attached_energies == []
+    assert dce not in state.opponent.discard
+
+
+def test_az_picks_up_the_damaged_pokemon_and_discards_what_was_attached(state):
+    benched = PokemonInPlay(card=mon("Hurt"), attached_energies=["Fire"], damage_counters=90)
+    state.player.bench = [benched]
+    _play(
+        state, "Put 1 of your Pokémon into your hand. (Discard all cards attached to that Pokémon.)"
+    )
+    assert [c.name for c in state.player.hand] == ["Hurt"]
+    assert [c.name for c in state.player.discard] == ["Fire Energy"]
+
+
+def test_devolution_spray_keeps_the_damage_and_drops_a_stage(state):
+    basic, evolved = mon("Abra", 50), mon("Kadabra", 80)
+    state.player.bench = [PokemonInPlay(card=evolved, prior_cards=[basic], damage_counters=40)]
+    _play(
+        state,
+        "Devolve 1 of your evolved Pokémon and put the highest Stage Evolution card on it into "
+        "your hand. (That Pokémon can't evolve this turn.)",
+    )
+    assert state.player.bench[0].card.name == "Abra"
+    assert state.player.bench[0].damage_counters == 40
+    assert [c.name for c in state.player.hand] == ["Kadabra"]
+
+
+def test_pokemon_ranger_clears_attack_effects_but_not_damage(state):
+    target = state.player.active
+    target.cannot_attack_turn, target.damage_counters = state.turn_number + 1, 30
+    state.player.items_blocked_turn = state.turn_number + 1
+    _play(state, "Remove all effects of attacks on each player and his or her Pokémon.")
+    assert target.cannot_attack_turn is None and target.damage_counters == 30
+    assert state.player.items_blocked_turn is None
+
+
+def test_hex_maniac_locks_every_ability_until_the_end_of_the_next_turn(state):
+    from pokemon_companion.cards_db.models import Ability
+
+    holder = PokemonInPlay(
+        card=dataclasses.replace(mon("Shaymin"), abilities=[Ability(name="Set Up", text="x")])
+    )
+    state.opponent.bench = [holder]
+    assert passives.ability_active(state, holder, "Set Up")
+    _play(
+        state,
+        "Until the end of your opponent's next turn, each Pokémon in play, in each player's "
+        "hand, and in each player's discard pile has no Abilities. (This includes cards that "
+        "come into play on that turn.)",
+    )
+    assert not passives.ability_active(state, holder, "Set Up")
+    state.turn_number += 2
+    assert passives.ability_active(state, holder, "Set Up")

@@ -1264,6 +1264,9 @@ def _search_bench(what: str, *_: str) -> Step | None:
 
 
 def _search(what: str, destination: str) -> Step | None:
+    either = re.fullmatch(expand(r"{N} (.+?) or {N} (.+)"), what.strip(), re.IGNORECASE)
+    if either:
+        return _search_either(either.groups(), destination)
     match = re.fullmatch(expand(r"(?:up to )?{N} (.+)"), what.strip(), re.IGNORECASE)
     if not match:
         return None
@@ -1272,6 +1275,25 @@ def _search(what: str, destination: str) -> Step | None:
         return None
     amount = num(match.group(1))
     return after(lambda run: core.search_deck(run.ctx, card_filter, amount, destination) and None)
+
+
+def _search_either(groups: tuple[str, ...], destination: str) -> Step | None:
+    """ "Search your deck for 1 X or 3 Y": fica com a opção que traz mais cartas
+    (empate: a primeira)."""
+    first_n, first_kind, second_n, second_kind = groups
+    first, second = parse_kind(first_kind), parse_kind(second_kind)
+    if first is None or second is None:
+        return None
+    options = [(first, num(first_n)), (second, num(second_n))]
+
+    def act(run: Run) -> None:
+        def found(option: tuple[CardFilter, int]) -> int:
+            return min(option[1], sum(1 for c in run.me.deck if option[0](c)))
+
+        card_filter, amount = max(options, key=found)
+        core.search_deck(run.ctx, card_filter, amount, destination)
+
+    return after(act)
 
 
 @phrase(
@@ -1892,6 +1914,26 @@ def _k_basic_typed(symbol: str) -> CardFilter:
 @kind(r"Pokémon ex")
 def _k_ex() -> CardFilter:
     return lambda card: card.is_pokemon and is_ex(card)
+
+
+@kind(r"Special Energy card", r"Special Energy")
+def _k_special_energy() -> CardFilter:
+    return lambda card: card.supertype.value == "Energy" and not is_basic_energy(card)
+
+
+@kind(r"(Basic )?(Pokémon-EX|Pokémon-GX|Pokémon V|Pokémon VMAX)")
+def _k_rule_kind(basic: str | None, name: str) -> CardFilter:
+    test = _RULE_KINDS[name.lower()]
+    return lambda card: card.is_pokemon and test(card) and (not basic or card.is_basic)
+
+
+@kind(
+    r"Pokémon that (?:aren't|isn't an?|is not an?) (Pokémon[- ](?:EX|GX|V))(?:,? or (?:an? )?"
+    r"(Pokémon[- ](?:EX|GX|V)))?"
+)
+def _k_not_rule_kind(first: str, second: str | None) -> CardFilter:
+    tests = [_RULE_KINDS[n.lower()] for n in (first, second) if n]
+    return lambda card: card.is_pokemon and not any(test(card) for test in tests)
 
 
 @kind(r"Pokémon that doesn't have a Rule Box", r"Pokémon without a Rule Box")
@@ -5246,6 +5288,144 @@ def _top_pokemon_to_hand(n: str) -> Step:
 @phrase("Switch {N} of your opponent's Benched Pokémon with their Active Pokémon")
 def _gust_switch(n: str) -> list[Step] | Step | None:
     return _gust(n)
+
+
+@phrase("Switch {N} of your opponent's Benched (.+?) with their Active Pokémon")
+def _gust_kind(_n: str, what: str) -> Step | None:
+    """Puxa só Pokémon do tipo citado ("Pokémon-GX or Pokémon-EX"); a escolha
+    do jogador vale se for desse tipo, senão a IA escolhe entre eles."""
+    names = re.split(r",? or (?:an? )?", what.lower())
+    if not all(n in _RULE_KINDS for n in names):
+        return None
+    tests = [_RULE_KINDS[n] for n in names]
+
+    def act(run: Run) -> None:
+        bench = run.opp.bench
+        valid = [i for i, m in enumerate(bench) if any(t(m.card) for t in tests)]
+        if not valid:
+            return
+        chosen = attacks.target_index(run.ctx, -2)
+        if chosen not in valid:
+            chosen = min(
+                valid, key=lambda i: (-core._prize_value(bench[i].card), bench[i].current_hp)
+            )
+        core.switch_active(run.ctx.state, run.opp, chosen)
+        run.did = True
+
+    return Step("before", act, "opp_bench")
+
+
+@phrase("When you play this card, you may discard {N} other cards from your hand")
+def _optional_hand_cost(n: str) -> Step:
+    """Custo opcional: a IA paga quando ainda sobram cartas na mão."""
+    amount = num(n)
+
+    def act(run: Run) -> None:
+        run.did = len(run.me.hand) > amount + 1
+        if run.did and not run.estimate:
+            core.discard_from_hand(run.ctx, amount)
+
+    return pre(act)
+
+
+@phrase("If you do, you may also search for {X} in this way")
+def _also_search(what: str) -> Step | None:
+    parts = [p for p in re.split(r",? and |, ", what) if p]
+    filters = [parse_kind(re.sub(r"^an? ", "", p)) for p in parts]
+    if not all(filters):
+        return None
+
+    def act(run: Run) -> None:
+        if run.did:
+            for card_filter in filters:
+                core.search_deck(run.ctx, card_filter, 1, "hand")  # type: ignore[arg-type]
+
+    return after(act)
+
+
+@phrase(
+    "Choose a Pokémon Tool or Special Energy card attached to {N} of your opponent's Pokémon, or "
+    "any Stadium card in play, and put it in the Lost Zone"
+)
+def _faba(_n: str) -> Step:
+    """Sai do jogo (não há Zona Perdida no motor: a carta só some). Ordem da
+    IA: Energia Especial do Ativo, Ferramenta do Ativo, as do Banco, Estádio
+    do oponente."""
+
+    def act(run: Run) -> None:
+        for mon in run.opp.all_pokemon_in_play():
+            if mon.special_energy_cards:
+                card = mon.special_energy_cards.pop()
+                mon.attached_energies.remove(card.name)
+                return
+            if mon.tool is not None:
+                mon.tool = None
+                return
+        state = run.ctx.state
+        if state.stadium is not None and state.stadium_owner == run.ctx.opp_id:
+            state.stadium = state.stadium_owner = None
+
+    return after(act)
+
+
+@phrase("Put {N} of your Pokémon into your hand")
+def _bounce_discarding_attached(_n: str) -> Step:
+    """AZ: o Pokémon (com os estágios de baixo) volta para a mão; Energias e
+    Ferramentas vão para o descarte. A IA escolhe o mais danificado do Banco."""
+
+    def act(run: Run) -> None:
+        damaged = [m for m in run.me.bench if m.damage_counters]
+        if not damaged or passives.hand_return_blocked(run.ctx.state, run.ctx.player_id):
+            return
+        mon = max(damaged, key=lambda m: m.damage_counters)
+        del run.me.bench[core.index_of(run.me.bench, mon)]
+        run.me.hand.extend([mon.card, *mon.prior_cards])
+        run.me.discard.extend(mon.special_energy_cards + mon.tools)
+        run.me.discard.extend(
+            core.BASIC_ENERGIES[e] for e in mon.attached_energies if e in core.BASIC_ENERGIES
+        )
+
+    return after(act)
+
+
+@phrase(
+    "Devolve {N} of your evolved Pokémon and put the highest Stage Evolution card on it into "
+    "your hand"
+)
+def _devolve_own(_n: str) -> Step:
+    """A IA devolve o evoluído mais danificado que sobrevive à volta (o dano
+    fica; o HP cai para o do estágio de baixo)."""
+
+    def act(run: Run) -> None:
+        options = [
+            m
+            for m in run.me.all_pokemon_in_play()
+            if m.prior_cards and m.damage_counters < (m.prior_cards[-1].hp or 0)
+        ]
+        if not options:
+            return
+        mon = max(options, key=lambda m: m.damage_counters)
+        run.me.hand.append(mon.card)
+        mon.card = mon.prior_cards.pop()
+        mon.turn_played = run.ctx.turn  # não evolui de novo neste turno
+
+    return after(act)
+
+
+@phrase("Remove all effects of attacks on each player and their Pokémon")
+def _ranger() -> Step:
+    return after(lambda run: core.clear_attack_effects(run.ctx.state))
+
+
+@phrase(
+    "Until the end of your opponent's next turn, each Pokémon in play, in each player's hand, "
+    "and in each player's discard pile has no Abilities"
+)
+def _hex() -> Step:
+    def act(run: Run) -> None:
+        run.ctx.state.abilities_locked_until = run.ctx.turn + 1
+
+    return after(act)
 
 
 @phrase("Your opponent draws {N} cards", "Your opponent draws {N} card")

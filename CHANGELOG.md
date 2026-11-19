@@ -36,6 +36,9 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
   Unit Energy) e Treinadores do meta do Expandido como N, Quick Ball, Trainers'
   Mail, Max Elixir, Field Blower, Hypnotoxic Laser, Colress, Acerola, Rescue
   Stretcher e Counter Catcher.
+- Os outros Treinadores do meta do Expandido também funcionam: Great Catcher,
+  Brigette, Guzma & Hala, Faba, Roxie, Devolution Spray, Hex Maniac, AZ e
+  Pokémon Ranger.
 
 ### Corrigido
 
