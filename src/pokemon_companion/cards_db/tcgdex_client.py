@@ -9,6 +9,8 @@ filtra pelo número da carta → confirma a sigla oficial do set
 
 from __future__ import annotations
 
+import re
+
 import requests
 
 from pokemon_companion import net
@@ -32,7 +34,38 @@ _CATEGORY_MAP = {
 _STAGE_MAP = {"Basic": "Basic", "Stage1": "Stage 1", "Stage2": "Stage 2"}
 
 
-def _same_number(local_id: str, number: str) -> bool:
+_SPACED_SUFFIX = re.compile(r" (GX|EX)$")
+_FLARE_GEAR = re.compile(r" Team Flare (Hyper )?Gear$")
+
+
+def official_name(name: str) -> str:
+    """O nome impresso, como o Limitless e a pokemontcg.io escrevem: a TCGdex
+    grava quase todo GX/EX com espaço ("Zoroark GX" → "Zoroark-GX") e põe o
+    subtítulo nos itens da Equipe Flare ("Battle Compressor Team Flare Gear")."""
+    return _SPACED_SUFFIX.sub(r"-\1", _FLARE_GEAR.sub("", name))
+
+
+def _tcgdex_names(name: str) -> list[str]:
+    """Os trechos de nome a procurar na TCGdex: o oficial e a grafia com
+    espaço. A busca é por trecho, então "Ditto" acha "Ditto ◇" (o Limitless
+    não escreve o ◇) e o set e o número desempatam."""
+    spaced = re.sub(r"-(GX|EX)$", r" \1", name)
+    return [name] if spaced == name else [name, spaced]
+
+
+def set_code(set_id: str, data: object) -> str | None:
+    """Sigla oficial do set; as promos sem sigla na TCGdex ("smp") usam o
+    próprio id, como o Limitless ("SMP 45")."""
+    abbreviation = data.get("abbreviation") or {} if isinstance(data, dict) else {}
+    official = abbreviation.get("official") if isinstance(abbreviation, dict) else None
+    return official or (set_id.upper() if set_id.endswith("p") else None)
+
+
+def _same_number(local_id: str, number: str, promo: bool = False) -> bool:
+    """`promo`: aceita o número sem as letras da frente ("SM45" = "45"), como
+    o Limitless escreve as promos ("SMP 45")."""
+    if promo:
+        local_id = re.sub(r"^[A-Za-z]+(?=\d)", "", local_id)
     return local_id.lstrip("0") == number.lstrip("0")
 
 
@@ -42,7 +75,7 @@ def tcgdex_card_to_card(data: dict) -> Card:
     stage = data.get("stage")
     if stage:
         subtypes.append(_STAGE_MAP.get(stage, stage))
-    name = data.get("name", "")
+    name = official_name(data.get("name", ""))
     suffix = data.get("suffix")
     if suffix:
         subtypes.append(suffix)
@@ -63,7 +96,7 @@ def tcgdex_card_to_card(data: dict) -> Card:
     image = data.get("image")
     return Card(
         id=f"tcgdex-{data['id']}",
-        name=data["name"],
+        name=name,
         supertype=_CATEGORY_MAP.get(data.get("category", ""), Supertype.TRAINER),
         subtypes=subtypes,
         hp=data.get("hp"),
@@ -115,22 +148,26 @@ class TcgdexClient:
 
     def _set_code(self, set_id: str) -> str | None:
         if set_id not in self._set_codes:
-            data = self._get(f"/sets/{set_id}")
-            abbreviation = data.get("abbreviation", {}) if isinstance(data, dict) else {}
-            self._set_codes[set_id] = abbreviation.get("official")
+            self._set_codes[set_id] = set_code(set_id, self._get(f"/sets/{set_id}"))
         return self._set_codes[set_id]
 
     def find_card(self, name: str, set_code: str, number: str) -> Card | None:
-        briefs = self._get("/cards", params={"name": f"eq:{name}"})
-        if not isinstance(briefs, list):
-            return None
-        for brief in briefs:
-            card_id = str(brief.get("id", ""))
-            if "-" not in card_id or not _same_number(str(brief.get("localId", "")), number):
-                continue
-            set_id = card_id.rsplit("-", 1)[0]
-            if (self._set_code(set_id) or "").upper() != set_code.upper():
-                continue
-            detail = self._get(f"/cards/{card_id}")
-            return tcgdex_card_to_card(detail) if isinstance(detail, dict) else None
+        briefs: list = []
+        for spelling in _tcgdex_names(name):
+            found = self._get("/cards", params={"name": spelling})
+            briefs += found if isinstance(found, list) else []
+        # número exato primeiro: "TG05" e "5" são cartas diferentes no mesmo set
+        for promo in (False, True):
+            for brief in briefs:
+                card_id = str(brief.get("id", ""))
+                local_id = str(brief.get("localId", ""))
+                if "-" not in card_id or not _same_number(local_id, number, promo):
+                    continue
+                set_id = card_id.rsplit("-", 1)[0]
+                if promo and not set_id.endswith("p"):
+                    continue
+                if (self._set_code(set_id) or "").upper() != set_code.upper():
+                    continue
+                detail = self._get(f"/cards/{card_id}")
+                return tcgdex_card_to_card(detail) if isinstance(detail, dict) else None
         return None

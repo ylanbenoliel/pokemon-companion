@@ -137,3 +137,9 @@ def test_resolve_entries_handles_basic_energy_without_api_call():
     assert len(cards) == 8
     assert all(c.name == "Fire Energy" for c in cards)
     assert api.calls == 0
+
+
+def test_basic_energy_with_a_printing_is_still_basic_energy():
+    entries, errors = parse_decklist_text("Energy (7)\n7 Psychic Energy SSH P\n")
+    assert errors == []
+    assert [(e.quantity, e.name, e.set_code) for e in entries] == [(7, "Psychic Energy", None)]

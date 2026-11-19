@@ -175,3 +175,52 @@ def test_pokemontcg_stadium_text_compiles_like_tcgdex():
         ],
     )
     assert unimplemented(garden) == []
+
+
+def test_gx_and_ex_names_use_the_printed_hyphen_and_are_found_either_way():
+    card = tcgdex_card_to_card({"id": "sm3.5-53", "name": "Zoroark GX", "category": "Pokemon"})
+    assert card.name == "Zoroark-GX"
+    assert tcgdex_card_to_card({"id": "x", "name": "Charizard ex"}).name == "Charizard ex"
+
+    asked = []
+
+    class Client(TcgdexClient):
+        def _get(self, path, params=None):
+            asked.append(params and params["name"])
+            if path == "/cards":
+                hit = params["name"] == "Zoroark GX"
+                return [{"id": "sm3.5-53", "localId": "53"}] if hit else []
+            if path.startswith("/sets/"):
+                return {"abbreviation": {"official": "SLG"}}
+            return {"id": "sm3.5-53", "name": "Zoroark GX", "category": "Pokemon"}
+
+    found = Client().find_card("Zoroark-GX", "SLG", "53")
+    assert found is not None and found.name == "Zoroark-GX"
+    assert asked[:2] == ["Zoroark-GX", "Zoroark GX"]
+    assert tcgdex_card_to_card({"id": "x", "name": "Battle Compressor Team Flare Gear"}).name == (
+        "Battle Compressor"
+    )
+
+
+def test_promo_numbers_match_without_the_letter_prefix_but_galleries_stay_exact():
+    from pokemon_companion.cards_db.catalog import split_id
+    from pokemon_companion.cards_db.tcgdex_client import set_code
+
+    class Client(TcgdexClient):
+        def _get(self, path, params=None):
+            if path == "/cards":
+                return [
+                    {"id": "smp-SM45", "localId": "SM45"},
+                    {"id": "swsh9-TG05", "localId": "TG05"},
+                ]
+            if path.startswith("/sets/"):
+                return {"abbreviation": {"official": path.rsplit("/", 1)[1].upper()}}
+            return {"id": path.rsplit("/", 1)[1], "name": "Tapu Lele GX", "category": "Pokemon"}
+
+    found = Client().find_card("Tapu Lele-GX", "SMP", "45")
+    assert found is not None and found.id == "tcgdex-smp-SM45"
+    assert Client().find_card("Tapu Lele-GX", "SWSH9", "5") is None
+    assert split_id("tcgdex-smp-SM45") == ("smp", "45")
+    assert split_id("tcgdex-swsh9-TG05") == ("swsh9", "TG05")
+    assert set_code("swshp", {"abbreviation": None}) == "SWSHP"
+    assert set_code("sma", {}) is None

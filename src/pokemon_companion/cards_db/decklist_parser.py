@@ -35,7 +35,10 @@ _SECTION_HEADER_RE = re.compile(
     r"^(Pokémon|Pokemon|Trainer|Energy)\s*(:\s*\d+|\(\s*\d+\s*\))?$", re.IGNORECASE
 )
 _CARD_LINE_RE = re.compile(r"^(\d+)\s+(.+?)\s+([A-Za-z0-9-]{2,8})\s+([A-Za-z]*\d+[A-Za-z]?)$")
-_BASIC_ENERGY_LINE_RE = re.compile(r"^(\d+)\s+(\w+)\s+Energy$", re.IGNORECASE)
+#: energia básica, com ou sem impressão ("7 Psychic Energy SSH P" no Limitless)
+_BASIC_ENERGY_LINE_RE = re.compile(
+    r"^(\d+)\s+(\w+)\s+Energy(?:\s+[A-Za-z0-9-]{2,8}\s+\w+)?$", re.IGNORECASE
+)
 _BASIC_ENERGY_NAME_RE = re.compile(r"^(?:Basic\s+)?\{?([A-Za-z]+)\}?\s+Energy$", re.IGNORECASE)
 _ENERGY_SYMBOLS = {
     "G": "Grass",

@@ -66,7 +66,9 @@ def fetch_pool(
 
     with ThreadPoolExecutor(workers) as executor:
         details = [d for d in executor.map(detail, [b["id"] for b in briefs]) if d]
-    marks = sorted({str(d["regulationMark"]) for d in details if d.get("regulationMark")})
+    # o Expanded traz "None" (Black & White, sem marca) e caixa variada ("j")
+    raw = {str(d.get("regulationMark") or "").upper() for d in details}
+    marks = sorted(raw - {"", "NONE"})
     return [tcgdex_card_to_card(d) for d in details], marks
 
 

@@ -30,6 +30,13 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
   motivo aparece ao passar o mouse. Trocar de formato mantém o deck e só
   marca o que deixou de valer.
 
+### Corrigido
+
+- Listas antigas importadas do Limitless agora acham as cartas: nomes GX/EX
+  com hífen ("Zoroark-GX"), itens da Equipe Flare ("Battle Compressor"),
+  Prism Star escrito sem o ◇, promos como "SMP 45" e energia básica com a
+  impressão no fim ("7 Psychic Energy SSH P").
+
 ## [0.2.0] - 2026-11-18
 
 ### Novo

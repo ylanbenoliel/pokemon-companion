@@ -22,6 +22,7 @@ from pokemon_companion.cards_db import updates
 from pokemon_companion.cards_db.cache import card_from_json, card_to_json
 from pokemon_companion.cards_db.models import Card
 from pokemon_companion.cards_db.standard import signature
+from pokemon_companion.cards_db.tcgdex_client import set_code
 from pokemon_companion.engine.effects.cardinfo import is_basic_energy
 
 CATALOG_FILE = Path(__file__).with_name("standard_catalog.json")
@@ -44,11 +45,13 @@ class CatalogEntry:
 
 
 def split_id(card_id: str) -> tuple[str, str] | None:
-    """ "tcgdex-me02-013" → ("me02", "13")."""
+    """ "tcgdex-me02-013" → ("me02", "13"); "tcgdex-smp-SM45" → ("smp", "45")."""
     match = _ID_RE.fullmatch(card_id)
     if not match:
         return None
     number = match.group(2)
+    if match.group(1).endswith("p"):  # promos: "SM45" → "45", como no Limitless
+        number = re.sub(r"^[A-Za-z]+(?=\d)", "", number)
     if number.isdigit():
         number = number.lstrip("0") or "0"
     return match.group(1), number
@@ -62,9 +65,9 @@ def fetch_set_codes(set_ids: set[str]) -> dict[str, str]:
             response = net.get(SETS_URL.format(set_id), timeout=20)
         except requests.HTTPError:
             continue
-        official = (response.json().get("abbreviation") or {}).get("official")
-        if official:
-            codes[set_id] = official
+        code = set_code(set_id, response.json())
+        if code:
+            codes[set_id] = code
     return codes
 
 
