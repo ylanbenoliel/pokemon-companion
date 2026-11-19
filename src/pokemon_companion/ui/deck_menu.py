@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PyQt6.QtCore import QSize, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QPixmap
+from PyQt6.QtGui import QColor, QFont, QGuiApplication, QPixmap
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -80,6 +80,13 @@ def _pretty(stem: str) -> str:
     """ "03_ns_zoroark_ex" → "NS Zoroark ex"."""
     words = [w for w in stem.split("_") if not w.isdigit()]
     return " ".join("ex" if w == "ex" else w.capitalize() for w in words)
+
+
+def export_text(text: str) -> str:
+    """Lista pronta para colar no TCG Live ou no Limitless: sem os comentários
+    `#` que os arquivos daqui carregam (nome, fonte)."""
+    lines = [line for line in text.splitlines() if not line.lstrip().startswith("#")]
+    return "\n".join(lines).strip() + "\n"
 
 
 def read_entry(path: Path) -> DeckEntry:
@@ -479,6 +486,14 @@ class DeckMenu(QWidget):
             """)
         self.import_button.clicked.connect(self._import_deck)
         row.addWidget(self.import_button)
+        self.copy_button = QPushButton("Copiar lista")
+        self.copy_button.setToolTip("Copia o seu deck para colar no TCG Live ou no Limitless")
+        self.copy_button.setFont(self.import_button.font())
+        self.copy_button.setMinimumHeight(38)
+        self.copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.copy_button.setStyleSheet(self.import_button.styleSheet())
+        self.copy_button.clicked.connect(self.copy_player_deck)
+        row.addWidget(self.copy_button)
         self.nav_row = QHBoxLayout()
         self.nav_row.setSpacing(8)
         row.addLayout(self.nav_row)
@@ -518,6 +533,21 @@ class DeckMenu(QWidget):
         self.strip.mark([h.entry for h in self.heroes.values() if h.entry is not None])
         self.versus.set_colors(self._accent(PLAYER), self._accent(OPPONENT))
         self.play_button.setEnabled(all(h.entry is not None for h in self.heroes.values()))
+
+    def copy_player_deck(self) -> None:
+        entry = self.heroes[PLAYER].entry
+        if entry is None:
+            self.status.setText("Escolha o seu deck para copiar a lista")
+            return
+        try:
+            text = export_text(entry.path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            self.status.setText(f"Não deu para ler o deck: {exc}")
+            return
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(text)
+        self.status.setText(f"Lista copiada: {entry.title}")
 
     def selection(self, side: str) -> DeckEntry | None:
         return self.heroes[side].entry

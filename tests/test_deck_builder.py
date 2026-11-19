@@ -8,6 +8,7 @@ from pokemon_companion.cards_db.cache import CardCache
 from pokemon_companion.cards_db.catalog import load_catalog, split_id
 from pokemon_companion.cards_db.decklist_parser import load_deck
 from pokemon_companion.ui.deck_builder import DeckBuilderDialog, deck_text, slugify
+from pokemon_companion.ui.deck_menu import export_text
 
 
 class _Offline:
@@ -83,6 +84,24 @@ def test_saved_deck_reopens_offline(builder, catalog, tmp_path):
     with CardCache(tmp_path / "cache.db") as cache:
         cards, errors = load_deck(path, cache, _Offline())
     assert errors == [] and len(cards) == 16
+
+
+def test_copy_list_puts_importable_text_in_clipboard(builder, catalog, qapp):
+    builder.add(_entry(catalog, "Charmander", "Live Coal"), 4)
+    builder.add(_entry(catalog, "Fire Energy"), 10)
+
+    builder.copy_list()
+
+    text = qapp.clipboard().text()
+    assert "#" not in text
+    assert text.splitlines()[0] == "Pokémon (4)"
+    assert "4 Charmander PFL 11" in text and "10 Fire Energy" in text
+
+
+def test_export_text_drops_comments():
+    assert export_text("# Nome — fonte\n# url\nPokémon (1)\n1 Pikachu SVI 1\n") == (
+        "Pokémon (1)\n1 Pikachu SVI 1\n"
+    )
 
 
 def test_open_existing_deck_into_the_builder(builder, catalog, tmp_path):

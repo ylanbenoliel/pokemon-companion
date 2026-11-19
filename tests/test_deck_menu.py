@@ -57,6 +57,17 @@ def _menu(entries: list[DeckEntry], tmp_path) -> DeckMenu:
     return DeckMenu(entries=entries, art=art)
 
 
+def test_copy_button_copies_player_deck_without_comments(qtbot, decks, tmp_path, qapp):
+    menu = _menu(discover_decks((decks / "top",)), tmp_path)
+    qtbot.addWidget(menu)
+
+    menu.copy_button.click()
+
+    assert qapp.clipboard().text().startswith("Pokémon (")
+    assert "#" not in qapp.clipboard().text()
+    assert menu.status.text() == "Lista copiada: Dragapult ex"
+
+
 def test_menu_starts_with_two_decks_and_emits_the_match(qtbot, decks, tmp_path):
     entries = discover_decks((decks / "top",))
     menu = _menu(entries, tmp_path)

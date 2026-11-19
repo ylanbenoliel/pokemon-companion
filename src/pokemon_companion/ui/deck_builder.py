@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -45,6 +45,7 @@ from pokemon_companion.engine.effects.cardinfo import is_basic_energy, stage_of,
 from pokemon_companion.engine.effects.coverage import unimplemented
 from pokemon_companion.engine.effects.descriptions import describe_card
 from pokemon_companion.paths import BUNDLED_DECKS, USER_DECKS
+from pokemon_companion.ui.deck_menu import export_text
 from pokemon_companion.ui.theme import ENERGY_NAMES_PT, ui_font
 from pokemon_companion.ui.widgets import (
     hint_label,
@@ -186,6 +187,10 @@ class DeckBuilderDialog(QDialog):
         footer = QHBoxLayout()
         self.status = hint_label("")
         footer.addWidget(self.status, 1)
+        copy = make_button("Copiar lista")
+        copy.setToolTip("Copia o deck para colar no TCG Live ou no Limitless")
+        copy.clicked.connect(self.copy_list)
+        footer.addWidget(copy)
         cancel = make_button("Cancelar")
         cancel.clicked.connect(self.reject)
         footer.addWidget(cancel)
@@ -456,6 +461,15 @@ class DeckBuilderDialog(QDialog):
         if raw:
             self.load_deck_file(Path(raw))
         self.open_combo.setCurrentIndex(0)
+
+    def copy_list(self) -> None:
+        if not self.rows:
+            self.status.setText("O deck está vazio: nada para copiar.")
+            return
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(export_text(deck_text("", self.rows)))
+        self.status.setText("Lista copiada — cole no TCG Live ou no Limitless.")
 
     def save(self) -> Path | None:
         name = self.name.text().strip()

@@ -12,6 +12,9 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
   pausa) lista tudo o que aconteceu, agrupado por turno e jogador.
 - Clicar num descarte, seu ou do oponente, mostra as cartas dele na ordem em
   que caíram.
+- Exportar deck: "Copiar lista" no menu de decks (copia o seu deck) e no
+  construtor põe a lista na área de transferência, pronta para colar no
+  Pokémon TCG Live ou no Limitless.
 
 ## [0.2.0] - 2026-11-18
 
