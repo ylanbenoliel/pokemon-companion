@@ -229,6 +229,22 @@ def test_attack_reduces_opponent_hp_and_ends_turn(controller):
     assert state.active_player == PlayerId.OPPONENT
 
 
+def test_match_log_groups_messages_by_turn_and_discard_click_names_side(controller, qtbot):
+    state = _state(_deck_card("Charmander"), _deck_card("Squirtle"))
+    state.player.active.attached_energies = ["Fire"]
+    ctrl = controller(state)
+    ctrl._ai_timer.stop()
+
+    ctrl._on_attack_clicked(0)
+
+    assert ctrl.match_log[1] == "— Turno 3 · Você —"
+    assert any("Investida" in line for line in ctrl.match_log)
+    assert not any("player" in line or "opponent" in line for line in ctrl.match_log)
+    with qtbot.waitSignal(ctrl.scene.discard_clicked) as signal:
+        ctrl.scene.opponent_discard.clicked.emit()
+    assert signal.args == [PlayerId.OPPONENT]
+
+
 def test_attack_button_ready_only_with_energy(controller):
     state = _state(_deck_card("Charmander"), _deck_card("Squirtle"))
     ctrl = controller(state)

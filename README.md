@@ -29,7 +29,8 @@ uv run python -m pokemon_companion.ui.app
 
 Controles: arraste cartas da mão para o campo (ou clique para escolher o
 destino), clique nos botões de ataque, recuo e passar o turno. **Esc** abre o
-menu da partida, **F1** as regras, **M** liga/desliga o som.
+menu da partida, **F1** as regras, **L** o registro da partida e **M**
+liga/desliga o som. Clique num descarte para ver as cartas dele.
 
 Outros modos:
 

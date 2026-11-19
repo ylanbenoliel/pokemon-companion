@@ -4,6 +4,15 @@ Mudanças que valem para quem joga. O formato segue
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões
 seguem [SemVer](https://semver.org/lang/pt-BR/).
 
+## [Não lançado]
+
+### Novo
+
+- Registro da partida: tecla **L** (ou "Registro da partida" no menu de
+  pausa) lista tudo o que aconteceu, agrupado por turno e jogador.
+- Clicar num descarte, seu ou do oponente, mostra as cartas dele na ordem em
+  que caíram.
+
 ## [0.2.0] - 2026-11-18
 
 ### Novo

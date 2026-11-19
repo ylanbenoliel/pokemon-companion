@@ -106,6 +106,7 @@ ataques. Treinadores mostram em português o que fazem.</p>
 <ul>
   <li><kbd>&nbsp;Esc&nbsp;</kbd> pausa (regras, configurações, desistir)</li>
   <li><kbd>&nbsp;F1&nbsp;</kbd> esta ajuda</li>
+  <li><kbd>&nbsp;L&nbsp;</kbd> registro da partida (clique num descarte para ver as cartas)</li>
   <li><kbd>&nbsp;M&nbsp;</kbd> liga/desliga o som &nbsp; <kbd>&nbsp;+&nbsp;</kbd>
       <kbd>&nbsp;−&nbsp;</kbd> volume</li>
 </ul>

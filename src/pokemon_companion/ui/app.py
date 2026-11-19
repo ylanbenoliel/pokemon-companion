@@ -91,9 +91,9 @@ from pokemon_companion.stats import MatchRecord, record_match
 from pokemon_companion.ui.anim import AnimationQueue, Animator, par
 from pokemon_companion.ui.app_icon import install_app_identity, set_windows_app_id
 from pokemon_companion.ui.art import ArtProvider
-from pokemon_companion.ui.battle_scene import BattleScene, Target
+from pokemon_companion.ui.battle_scene import BattleScene, Target, humanize
 from pokemon_companion.ui.deck_menu import DeckMenu, menu_size_hint, read_entry
-from pokemon_companion.ui.dialogs import PauseMenu, SettingsDialog
+from pokemon_companion.ui.dialogs import ListDialog, PauseMenu, SettingsDialog
 from pokemon_companion.ui.help import HelpDialog
 from pokemon_companion.ui.hints import next_hint
 from pokemon_companion.ui.items import HandCard, PokemonToken
@@ -184,11 +184,15 @@ class BattleController(QObject):
         self.player_ai = self._player_ai_factory() if self._player_ai_factory else None
         self.recorder = MatchRecorder() if self._history_path else None
         self._game_over_shown = False
+        #: mensagens do motor, com cabeçalho por turno (tecla L)
+        self.match_log: list[str] = []
+        self._logged_turn = -1
         self._cancel_modes()
         self.scene.reset()
         self.scene.sync(self.state, animate=False)
         starter = self.scene.name_of(self.state.active_player)
         self.scene.show_toast(f"Cara ou coroa: {starter} começa")
+        self.match_log.append(f"Cara ou coroa: {starter} começa")
         if PlayerId.PLAYER in self.state.pending_setup:
             self.scene.show_toast(
                 "Monte seu time: arraste um Básico para o Ativo e outros ao Banco"
@@ -675,6 +679,7 @@ class BattleController(QObject):
         )
         if self.recorder is not None:
             self.recorder.record(turn, actor, action, messages)
+        self._log(turn, actor, messages)
         for message in messages:
             self.scene.show_toast(message)
         animation = self.scene.sync(
@@ -686,6 +691,15 @@ class BattleController(QObject):
         if self.state.active_player != before or (was_setup and not self.state.pending_setup):
             self._push_turn_banner()
         return animation
+
+    def _log(self, turn: int, actor: PlayerId, messages: list[str]) -> None:
+        if not messages:
+            return
+        if turn != self._logged_turn:
+            self._logged_turn = turn
+            self.match_log.append(f"— Turno {turn} · {self.scene.name_of(actor)} —")
+        names = self.scene.name_of(PlayerId.PLAYER), self.scene.name_of(PlayerId.OPPONENT)
+        self.match_log.extend(humanize(m, *names) for m in messages)
 
     def _attack_step(
         self, action: UseAttack, attacker: PokemonInPlay, defender: PokemonInPlay | None
@@ -800,10 +814,12 @@ class MainWindow(QMainWindow):
             (Qt.Key.Key_Equal, lambda: self._change_volume(0.1)),
             (Qt.Key.Key_Minus, lambda: self._change_volume(-0.1)),
             (Qt.Key.Key_Space, self._toggle_replay_pause),
+            (Qt.Key.Key_L, self.open_log),
         ]
         for key, handler in shortcuts:
             shortcut = QShortcut(QKeySequence(key), self)
             shortcut.activated.connect(handler)
+        self.scene.discard_clicked.connect(self.open_discard)
 
     # -- configurações -----------------------------------------------------
     def apply_settings(self, settings: Settings) -> None:
@@ -832,6 +848,24 @@ class MainWindow(QMainWindow):
         HelpDialog(self).exec()
         self.controller.set_paused(False)
 
+    def _show_list(self, title: str, lines: list[str], empty: str) -> None:
+        paused = self.controller.paused
+        self.controller.set_paused(True)
+        ListDialog(title, lines, empty, self).exec()
+        self.controller.set_paused(paused)
+
+    def open_log(self) -> None:
+        self._show_list("Registro da partida", self.controller.match_log, "Nada aconteceu ainda.")
+
+    def open_discard(self, side: PlayerId) -> None:
+        """Clique no descarte: as cartas na ordem em que caíram, a última embaixo."""
+        cards = self.controller.state.state_of(side).discard
+        self._show_list(
+            f"Descarte — {self.scene.name_of(side)} ({len(cards)})",
+            [card.name for card in cards],
+            "O descarte está vazio.",
+        )
+
     def open_settings(self) -> None:
         dialog = SettingsDialog(self.settings, self)
         dialog.changed.connect(self.apply_settings)
@@ -852,6 +886,11 @@ class MainWindow(QMainWindow):
             menu.exec()
             if menu.choice == PauseMenu.HELP:
                 HelpDialog(self).exec()
+                continue
+            if menu.choice == PauseMenu.LOG:
+                ListDialog(
+                    "Registro da partida", self.controller.match_log, "Nada aconteceu ainda.", self
+                ).exec()
                 continue
             if menu.choice == PauseMenu.SETTINGS:
                 self.open_settings()

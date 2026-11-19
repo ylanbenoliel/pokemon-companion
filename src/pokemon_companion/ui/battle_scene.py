@@ -190,6 +190,7 @@ class BattleScene(QGraphicsScene):
     background_clicked = pyqtSignal()
     stadium_clicked = pyqtSignal()
     choice_made = pyqtSignal(int)
+    discard_clicked = pyqtSignal(object)
 
     def __init__(
         self, art: ArtProvider, opponent_label: str = "IA", player_label: str = "VOCÊ"
@@ -217,6 +218,8 @@ class BattleScene(QGraphicsScene):
         self.opponent_deck = self._board_item(CardPile("Deck"), OPPONENT_DECK)
         self.player_discard = self._board_item(DiscardPile(), PLAYER_DISCARD)
         self.opponent_discard = self._board_item(DiscardPile(), OPPONENT_DISCARD)
+        self.player_discard.clicked.connect(lambda: self.discard_clicked.emit(PlayerId.PLAYER))
+        self.opponent_discard.clicked.connect(lambda: self.discard_clicked.emit(PlayerId.OPPONENT))
         self.opponent_hand = self._board_item(OpponentHandFan(), OPPONENT_HAND)
 
         self.end_turn_button = EndTurnButton()

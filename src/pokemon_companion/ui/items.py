@@ -933,10 +933,15 @@ class CardPile(QGraphicsObject):
 
 
 class DiscardPile(QGraphicsObject):
+    """Clicar abre a lista das cartas (descarte é informação pública)."""
+
     RECT = QRectF(-40, -56, 80, 112)
+    clicked = pyqtSignal()
 
     def __init__(self) -> None:
         super().__init__()
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Ver o descarte")
         self._count = 0
         self._top: Card | None = None
         self._art: QPixmap | None = None
@@ -953,6 +958,13 @@ class DiscardPile(QGraphicsObject):
 
     def boundingRect(self) -> QRectF:
         return self.RECT.adjusted(-14, -14, 20, 34)
+
+    def mousePressEvent(self, event: QGraphicsSceneMouseEvent | None) -> None:
+        if event is not None:
+            event.accept()
+
+    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent | None) -> None:
+        self.clicked.emit()
 
     def paint(
         self,

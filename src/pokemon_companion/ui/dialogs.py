@@ -9,6 +9,7 @@ from __future__ import annotations
 import dataclasses
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -16,6 +17,7 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QListWidget,
     QPushButton,
     QSlider,
     QVBoxLayout,
@@ -182,7 +184,7 @@ class SettingsDialog(QDialog):
 class PauseMenu(QDialog):
     """Esc durante a partida: continuar, regras, configurações ou desistir."""
 
-    CONTINUE, HELP, SETTINGS, CONCEDE, LEAVE = range(5)
+    CONTINUE, HELP, SETTINGS, CONCEDE, LEAVE, LOG = range(6)
 
     def __init__(self, game_over: bool, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -196,6 +198,7 @@ class PauseMenu(QDialog):
         layout.addWidget(title_label("Fim de partida" if game_over else "Pausa"))
         options: list[tuple[str, int, bool]] = [
             ("Continuar" if not game_over else "Ver o tabuleiro", self.CONTINUE, True),
+            ("Registro da partida (L)", self.LOG, False),
             ("Como jogar", self.HELP, False),
             ("Configurações", self.SETTINGS, False),
         ]
@@ -217,3 +220,33 @@ class PauseMenu(QDialog):
     def _pick(self, code: int) -> None:
         self.choice = code
         self.accept()
+
+
+class ListDialog(QDialog):
+    """Lista só de leitura: registro da partida, cartas no descarte."""
+
+    def __init__(
+        self, title: str, lines: list[str], empty: str, parent: QWidget | None = None
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumSize(460, 520)
+        style_dialog(self)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(10)
+        layout.addWidget(title_label(title))
+        self.list = QListWidget()
+        self.list.setFont(ui_font(10.5))
+        self.list.setWordWrap(True)
+        self.list.addItems(lines or [empty])
+        for row in range(self.list.count()):
+            item = self.list.item(row)
+            if item is not None and item.text().startswith("—"):
+                item.setFont(ui_font(10.5, QFont.Weight.Bold))
+        self.list.scrollToBottom()
+        layout.addWidget(self.list)
+        close = make_button("Fechar", primary=True)
+        close.clicked.connect(self.accept)
+        close.setDefault(True)
+        layout.addWidget(close)
