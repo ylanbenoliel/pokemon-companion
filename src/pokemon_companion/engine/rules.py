@@ -43,6 +43,8 @@ from pokemon_companion.engine.effects.cardinfo import (
     is_basic_energy,
     is_fossil_item,
     is_fossil_pokemon,
+    mega_ends_turn,
+    once_per_game,
     pokemon_type,
     trainer_kind,
 )
@@ -515,6 +517,7 @@ def _after_action(
 ) -> None:
     _enforce_board(state, messages)
     _process_knockouts(state, messages, attacker, attacker_mon)
+    core.send_prism_stars_to_lost_zone(state)
     _check_winner(state, messages)
     _handle_promotions(state, messages)
 
@@ -693,6 +696,12 @@ def apply_action(state: GameState, action: Action) -> list[str]:
         evolved = core.evolve_into(state, player, target, card)
         messages.append(f"{target.card.name} evoluiu para {card.name}.")
         passives.after_evolve(state, pid, evolved)
+        if mega_ends_turn(card, evolved.tools):
+            messages.append("A Mega Evolução encerrou o turno.")
+            _after_action(state, messages)
+            if state.winner is None and state.pending_promotion is None:
+                messages.extend(_end_turn(state))
+            return messages
 
     elif isinstance(action, AttachEnergy):
         card = player.hand.pop(action.hand_index)
@@ -841,6 +850,9 @@ def _apply_attack(state: GameState, pid: PlayerId, action: UseAttack) -> list[st
     attack = passives.available_attacks(state, pid, attacker)[action.attack_index]
     messages: list[str] = []
     player.attacks_this_turn += 1
+    once = once_per_game(attack.text)
+    if once:  # conta mesmo se a confusão impedir o ataque
+        player.once_per_game_used.add(once)
     can_proceed, confusion_messages = check_confusion_self_damage(attacker)
     messages.extend(confusion_messages)
     coin_check = can_proceed and attacker.attack_coin_turn == state.turn_number

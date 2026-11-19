@@ -101,6 +101,9 @@ class PokemonInPlay:
     taxed_turn: int | None = None
     #: Ferramentas além da primeira (Habilidades como Multi Adapter)
     extra_tools: list[Card] = field(default_factory=list)
+    #: carta BREAK impressa (`card` é ela somada aos ataques, Habilidades,
+    #: Fraqueza, Resistência e recuo do estágio de baixo)
+    break_card: Card | None = None
 
     @property
     def max_hp(self) -> int:
@@ -115,11 +118,16 @@ class PokemonInPlay:
         return self.current_hp <= 0
 
     @property
+    def top_card(self) -> Card:
+        """A carta impressa no topo (a BREAK de verdade, não a visão somada)."""
+        return self.break_card or self.card
+
+    @property
     def tools(self) -> list[Card]:
         return ([self.tool] if self.tool is not None else []) + self.extra_tools
 
     def all_cards(self) -> list[Card]:
-        return [self.card, *self.prior_cards, *self.special_energy_cards, *self.tools]
+        return [self.top_card, *self.prior_cards, *self.special_energy_cards, *self.tools]
 
     def clone(self) -> PokemonInPlay:
         twin = copy.copy(self)
@@ -179,6 +187,10 @@ class PlayerState:
     last_attack: tuple[str, int] | None = None
     #: cartas de Treinador jogadas da mão neste turno
     played_this_turn: list[Card] = field(default_factory=list)
+    #: "You can't use more than 1 GX attack / VSTAR Power in a game": o que já usou
+    once_per_game_used: set[str] = field(default_factory=set)
+    #: cartas que saíram do jogo (Prism Star em vez do descarte, Faba)
+    lost_zone: list[Card] = field(default_factory=list)
 
     def all_pokemon_in_play(self) -> list[PokemonInPlay]:
         return ([self.active] if self.active else []) + self.bench
@@ -197,6 +209,8 @@ class PlayerState:
         twin.used_ability_names = set(self.used_ability_names)
         twin.damage_bonus_this_turn = list(self.damage_bonus_this_turn)
         twin.played_this_turn = list(self.played_this_turn)
+        twin.once_per_game_used = set(self.once_per_game_used)
+        twin.lost_zone = list(self.lost_zone)
         twin.knocked_out_names = list(self.knocked_out_names)
         return twin
 

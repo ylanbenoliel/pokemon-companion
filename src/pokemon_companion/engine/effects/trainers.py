@@ -797,10 +797,8 @@ def _strange_timepiece(ctx: Ctx) -> None:
     Habilidades como Psychic Draw). O Pokémon não pode evoluir neste turno."""
     mon = core.mon_at(ctx.me, target_index(ctx, -1))
     assert mon is not None and mon.prior_cards
-    ctx.me.hand.append(mon.card)
     ctx.log(f"{mon.card.name} voltou para a mão; {mon.prior_cards[0].name} fica em jogo.")
-    mon.card = mon.prior_cards[0]
-    mon.prior_cards = mon.prior_cards[1:]
+    ctx.me.hand.append(core.devolve(mon))
     mon.turn_played = ctx.turn
     mon.abilities_used = set()
 

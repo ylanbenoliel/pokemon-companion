@@ -82,6 +82,40 @@ def is_ace_spec(card: Card) -> bool:
     return "ACE SPEC" in card.subtypes or signature(card) in pack.group("ACE SPEC")
 
 
+_ONCE_PER_GAME = re.compile(r"You can['’]t use more than 1 (GX attack|VSTAR Power) in a game")
+
+
+def once_per_game(text: str) -> str | None:
+    """ "GX attack" / "VSTAR Power" quando o texto limita a uma vez por partida."""
+    match = _ONCE_PER_GAME.search(text or "")
+    return match.group(1) if match else None
+
+
+def mega_ends_turn(card: Card, tools: list[Card]) -> bool:
+    """Mega Evolução de XY ("M Venusaur-EX") encerra o turno, salvo com o
+    Spirit Link do Pokémon ("Venusaur Spirit Link") anexado."""
+    if "MEGA" not in card.subtypes:
+        return False
+    base = re.sub(r"^M |-EX$|\s+[XY]$", "", card.name.replace("-EX", ""))
+    return not any(tool.name == f"{base} Spirit Link" for tool in tools)
+
+
+def break_view(break_card: Card, below: Card) -> Card:
+    """O Pokémon BREAK em jogo: HP, nome e ataques da BREAK somados aos
+    ataques e Habilidades do estágio de baixo, com Fraqueza, Resistência e
+    recuo de baixo (livro de regras). Id próprio para não ser confundido com a
+    carta impressa ao salvar a partida."""
+    return dataclasses.replace(
+        break_card,
+        id=f"{break_card.id}#break",
+        attacks=[*below.attacks, *break_card.attacks],
+        abilities=[*below.abilities, *break_card.abilities],
+        weaknesses=below.weaknesses,
+        resistances=below.resistances,
+        retreat_cost=below.retreat_cost,
+    )
+
+
 def is_prism_star(card: Card) -> bool:
     return "◇" in card.name or "Prism Star" in card.subtypes
 

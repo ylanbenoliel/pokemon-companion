@@ -19,9 +19,11 @@ from pokemon_companion.cards_db.basic_energies import BASIC_ENERGIES
 from pokemon_companion.cards_db.models import Card, Supertype
 from pokemon_companion.engine.effects import passives
 from pokemon_companion.engine.effects.cardinfo import (
+    break_view,
     energy_type_of,
     has_rule_box,
     is_basic_energy,
+    is_prism_star,
     is_special_energy,
     is_tera,
     pokemon_type,
@@ -154,7 +156,11 @@ def evolve_into(
     marcas; remove condições especiais (livro de regras)."""
     evolved = target.clone()
     evolved.card = card
-    evolved.prior_cards = [target.card, *target.prior_cards]
+    evolved.break_card = None
+    evolved.prior_cards = [target.top_card, *target.prior_cards]
+    if "BREAK" in card.subtypes:
+        evolved.break_card = card
+        evolved.card = break_view(card, target.card)
     keep_confusion = (
         passives.stadium_is(state, "Dizzying Valley") and target.status == StatusCondition.CONFUSED
     )
@@ -507,6 +513,26 @@ _PLAYER_MARKS = (
     "attack_energy_min",
     "trainer_coin_turn",
 )
+
+
+def devolve(mon: PokemonInPlay) -> Card:
+    """Tira a carta de cima (a impressa, mesmo numa BREAK) e devolve-a; o
+    estágio de baixo fica em jogo com o dano."""
+    top = mon.top_card
+    mon.card, mon.prior_cards, mon.break_card = mon.prior_cards[0], mon.prior_cards[1:], None
+    return top
+
+
+def send_prism_stars_to_lost_zone(state: GameState) -> None:
+    """Prism Star (◇) nunca fica no descarte: vai para a Zona Perdida.
+    ponytail: varre o descarte depois de cada ação, então um efeito que
+    recupera do descarte na mesma ação ainda a enxerga."""
+    for pid in (PlayerId.PLAYER, PlayerId.OPPONENT):
+        side = state.state_of(pid)
+        prisms = [card for card in side.discard if is_prism_star(card)]
+        for card in prisms:
+            side.discard.remove(card)
+            side.lost_zone.append(card)
 
 
 def clear_attack_effects(state: GameState) -> None:

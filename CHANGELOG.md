@@ -39,6 +39,11 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
 - Os outros Treinadores do meta do Expandido também funcionam: Great Catcher,
   Brigette, Guzma & Hala, Faba, Roxie, Devolution Spray, Hex Maniac, AZ e
   Pokémon Ranger.
+- Regras de jogo do Expandido: ataque GX e VSTAR Power só uma vez por
+  partida; a Mega Evolução de XY ("M …-EX") encerra o turno, a menos que o
+  Pokémon tenha o Spirit Link dele; cartas Prism Star (◇) vão para a Zona
+  Perdida em vez do descarte; o Pokémon BREAK usa os ataques, a Habilidade, a
+  Fraqueza, a Resistência e o recuo do estágio de baixo.
 
 ### Corrigido
 

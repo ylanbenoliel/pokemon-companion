@@ -395,12 +395,23 @@ manifesto publicado, como os do Standard) e `data/expanded_pool.json`.
   sem efeito além do Ghetsis (banido no Expandido).
   O passo a passo para montar efeitos está em `EFEITOS.md` (e `AGENTS.md`
   aponta para ele).
+- **Regras de jogo do Expandido (18/11/2026)**: "You can't use more than 1
+  GX attack / VSTAR Power in a game" é lido do texto (`cardinfo.once_per_game`)
+  e guardado em `PlayerState.once_per_game_used` (ataques em
+  `passives.attack_allowed`/`rules._apply_attack`, Habilidades em
+  `abilities.usable_abilities`/`use_ability`); Mega de XY (subtipo `MEGA`)
+  encerra o turno salvo com "<Pokémon> Spirit Link" (`cardinfo.mega_ends_turn`,
+  no `Evolve` de `rules`); Prism Star vai para `PlayerState.lost_zone`
+  (`core.send_prism_stars_to_lost_zone`, depois de cada ação; Faba também usa
+  a Zona Perdida); BREAK: `mon.card` é a visão somada
+  (`cardinfo.break_view`, id `…#break`) e `mon.break_card` a carta impressa
+  (`top_card`, usada em `all_cards` e no novo `core.devolve`, que substituiu os
+  cinco desevoluir copiados). A Zona Perdida ainda não aparece na tela.
 - **Próximo passo** (se pedirem): implementar os efeitos que faltam no
   Expandido, por mecanismo genérico em `text_effects.py`/`passive_text.py`,
-  começando pelos mais frequentes do relatório; mecânicas antigas sem motor
-  (ataque GX uma vez por partida, Prism Star indo para a Zona Perdida,
-  evolução BREAK mantendo os ataques de baixo) também ficam para essa fase.
-  Prêmios e Regra já estão certos: TAG TEAM/V-UNION = 3, BREAK = 1, Mega de
+  começando pelas 319 formas de frase que aparecem 2+ vezes
+  (`tools/compile_report.py --format expanded`); depois, mostrar a Zona
+  Perdida na tela. Prêmios e Regra já estão certos: TAG TEAM/V-UNION = 3, BREAK = 1, Mega de
   XY = 2 (`rules.prize_count_for`, `cardinfo.has_rule_box`).
 
 ## Executável (PyInstaller)

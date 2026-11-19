@@ -20,6 +20,7 @@ from pokemon_companion.engine.effects.cardinfo import (
     in_group,
     is_basic_energy,
     is_evolution,
+    once_per_game,
     pokemon_type,
 )
 from pokemon_companion.engine.effects.core import Ctx
@@ -97,6 +98,9 @@ def usable_abilities(ctx: Ctx, mon: PokemonInPlay) -> list[tuple[str, AbilitySpe
             continue
         if spec.shared_limit and spec.shared_limit in ctx.me.used_ability_names:
             continue
+        once = once_per_game(ab.text)
+        if once and once in ctx.me.once_per_game_used:
+            continue
         if spec.trigger == "hand":
             continue  # só da mão: `hand_abilities`
         if spec.trigger == "bench" and mon.played_from_hand_turn != ctx.turn:
@@ -147,6 +151,9 @@ def use_ability(ctx: Ctx, name: str) -> None:
     ctx.source.abilities_used.add(used)
     if spec.shared_limit:
         ctx.me.used_ability_names.add(spec.shared_limit)
+    once = once_per_game(ability_.text)
+    if once:
+        ctx.me.once_per_game_used.add(once)
     ctx.log(f"{ctx.who()} usou a Habilidade {name} de {ctx.source.card.name}.")
     spec.fn(ctx)
 

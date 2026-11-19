@@ -2409,8 +2409,8 @@ def _self_to_deck_top() -> Step:
         if mon is None or mon not in run.me.all_pokemon_in_play():
             return
         _remove_from_play(run.me, mon, to_deck=False)
-        run.me.discard.remove(mon.card)
-        run.me.deck.insert(0, mon.card)
+        run.me.discard.remove(mon.top_card)
+        run.me.deck.insert(0, mon.top_card)
         run.ctx.log(f"{mon.card.name} voltou para o topo do deck.")
 
     return after(act)
@@ -3074,9 +3074,7 @@ def _devolve_all(where: str) -> Step:
         for mon in run.opp.all_pokemon_in_play():
             if not mon.prior_cards:
                 continue
-            (run.opp.deck if where == "deck" else run.opp.hand).append(mon.card)
-            mon.card = mon.prior_cards[0]
-            mon.prior_cards = mon.prior_cards[1:]
+            (run.opp.deck if where == "deck" else run.opp.hand).append(core.devolve(mon))
             mon.hp_bonus = passives.hp_bonus(run.ctx.state, mon)
         if where == "deck":
             core.shuffle_deck(run.opp)
@@ -3114,7 +3112,7 @@ def _self_to_hand() -> Step:
         )
         if mon.tool is not None:
             run.me.discard.append(mon.tool)
-        run.me.hand.extend([mon.card, *mon.prior_cards])
+        run.me.hand.extend([mon.top_card, *mon.prior_cards])
         run.me.active = None
         run.ctx.log(f"{mon.card.name} voltou para a mão.")
 
@@ -4707,9 +4705,7 @@ def _devolve_defender() -> Step:
             or passives.hand_return_blocked(run.ctx.state, run.ctx.opp_id)
         ):
             return
-        run.opp.hand.append(mon.card)
-        mon.card = mon.prior_cards[0]
-        mon.prior_cards = mon.prior_cards[1:]
+        run.opp.hand.append(core.devolve(mon))
         mon.hp_bonus = passives.hp_bonus(run.ctx.state, mon)
 
     return after(act)
@@ -5348,21 +5344,24 @@ def _also_search(what: str) -> Step | None:
     "any Stadium card in play, and put it in the Lost Zone"
 )
 def _faba(_n: str) -> Step:
-    """Sai do jogo (não há Zona Perdida no motor: a carta só some). Ordem da
-    IA: Energia Especial do Ativo, Ferramenta do Ativo, as do Banco, Estádio
-    do oponente."""
+    """Vai para a Zona Perdida do dono. Ordem da IA: Energia Especial do
+    Ativo, Ferramenta do Ativo, as do Banco, Estádio do oponente."""
 
     def act(run: Run) -> None:
+        lost = run.opp.lost_zone
         for mon in run.opp.all_pokemon_in_play():
             if mon.special_energy_cards:
                 card = mon.special_energy_cards.pop()
                 mon.attached_energies.remove(card.name)
+                lost.append(card)
                 return
             if mon.tool is not None:
+                lost.append(mon.tool)
                 mon.tool = None
                 return
         state = run.ctx.state
         if state.stadium is not None and state.stadium_owner == run.ctx.opp_id:
+            lost.append(state.stadium)
             state.stadium = state.stadium_owner = None
 
     return after(act)
@@ -5379,7 +5378,7 @@ def _bounce_discarding_attached(_n: str) -> Step:
             return
         mon = max(damaged, key=lambda m: m.damage_counters)
         del run.me.bench[core.index_of(run.me.bench, mon)]
-        run.me.hand.extend([mon.card, *mon.prior_cards])
+        run.me.hand.extend([mon.top_card, *mon.prior_cards])
         run.me.discard.extend(mon.special_energy_cards + mon.tools)
         run.me.discard.extend(
             core.BASIC_ENERGIES[e] for e in mon.attached_energies if e in core.BASIC_ENERGIES
@@ -5400,13 +5399,12 @@ def _devolve_own(_n: str) -> Step:
         options = [
             m
             for m in run.me.all_pokemon_in_play()
-            if m.prior_cards and m.damage_counters < (m.prior_cards[-1].hp or 0)
+            if m.prior_cards and m.damage_counters < (m.prior_cards[0].hp or 0)
         ]
         if not options:
             return
         mon = max(options, key=lambda m: m.damage_counters)
-        run.me.hand.append(mon.card)
-        mon.card = mon.prior_cards.pop()
+        run.me.hand.append(core.devolve(mon))
         mon.turn_played = run.ctx.turn  # não evolui de novo neste turno
 
     return after(act)
@@ -6571,9 +6569,7 @@ def _devolve_one(_n: str) -> Step:
         if not evolved or passives.hand_return_blocked(run.ctx.state, run.ctx.opp_id):
             return
         mon = max(evolved, key=lambda m: (core._prize_value(m.card), m.card.hp or 0))
-        run.opp.hand.append(mon.card)
-        mon.card = mon.prior_cards[0]
-        mon.prior_cards = mon.prior_cards[1:]
+        run.opp.hand.append(core.devolve(mon))
         mon.hp_bonus = passives.hp_bonus(run.ctx.state, mon)
 
     return after(act)

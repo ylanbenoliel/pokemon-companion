@@ -17,6 +17,7 @@ from pokemon_companion.engine.effects.cardinfo import (
     is_ex,
     is_future,
     is_tera,
+    once_per_game,
     pokemon_type,
     special_energy_units,
     stage_of,
@@ -275,6 +276,9 @@ def attack_allowed(state: GameState, owner: PlayerId, mon: PokemonInPlay, attack
     if mon.cannot_attack_turn == state.turn_number:
         return False
     if mon.blocked_attack == (attack.name, state.turn_number):
+        return False
+    once = once_per_game(attack.text)
+    if once and once in state.state_of(owner).once_per_game_used:
         return False
     if any(holder is mon for _, holder in compiled(state, owner, "no_attack")):
         return False
@@ -858,9 +862,9 @@ def rescue_from_knockout(
     from pokemon_companion.engine.effects.cardinfo import is_basic_energy
 
     owner = state.state_of(owner_id)
-    if ability_active(state, mon, "Infinite Shadow") and mon.card in owner.discard:
-        owner.discard.remove(mon.card)
-        owner.hand.append(mon.card)
+    if ability_active(state, mon, "Infinite Shadow") and mon.top_card in owner.discard:
+        owner.discard.remove(mon.top_card)
+        owner.hand.append(mon.top_card)
         messages.append(f"{mon.card.name} voltou para a mão (Infinite Shadow).")
     catcher = any(
         ability_active(state, other, "Diver's Catch")
