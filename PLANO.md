@@ -455,6 +455,15 @@ manifesto publicado, como os do Standard) e `data/expanded_pool.json`.
   `passives.refresh_hp_bonuses`); dano nos próprios Pokémon vai para o do
   Banco com mais HP; "Each player discards the top card" reaproveita o descarte
   com contagem; passiva "this Pokémon has full HP".
+- **Energia extra e limite de Habilidade (19/11/2026)**: 15.926 → 16.026
+  textos-impressão. Condição "this Pokémon has at least N extra [X] Energy
+  attached" (`_c_extra_energy`: Energia além do custo; para um tipo, o Incolor
+  do custo é pago primeiro pelas de outro tipo) destravou 65 de 104 ataques
+  GX/V; consequências comuns ("take N more Prize cards instead", curar todo o
+  time, "your opponent shuffles their hand into their deck", "each player draws
+  until N", embaralhar o descarte no deck). Limite "You can't use more than 1 X
+  Ability each turn" vira `shared_limit`; "You can't apply more than 1 X Ability
+  at a time" vira "doesn't stack" nas passivas.
 - **Próximo passo** (se pedirem): implementar os efeitos que faltam no
   Expandido, por mecanismo genérico em `text_effects.py`/`passive_text.py`,
   começando pelas 319 formas de frase que aparecem 2+ vezes

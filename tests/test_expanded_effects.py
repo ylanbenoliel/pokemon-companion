@@ -923,3 +923,71 @@ def test_full_hp_damage_reduction_passive():
         "reduced by 20."
     )
     assert found and found[0].kind == "reduce" and found[0].amount == 20
+
+
+# --- limite de Habilidade e energia extra dos GX -----------------------------
+
+
+def test_each_turn_ability_limit_is_shared(state):
+    from pokemon_companion.cards_db.models import Ability
+    from pokemon_companion.engine.effects import abilities
+
+    text = (
+        "Once during your turn (before your attack), you may draw a card. You can't use more "
+        "than 1 Fast Draw Ability each turn."
+    )
+    spec = text_effects.compiled_ability(text)
+    assert spec is not None and spec.shared_limit == "Fast Draw"
+    first = PokemonInPlay(
+        card=dataclasses.replace(mon("A"), abilities=[Ability("Fast Draw", text)])
+    )
+    second = PokemonInPlay(
+        card=dataclasses.replace(mon("B"), abilities=[Ability("Fast Draw", text)])
+    )
+    state.player.bench = [first, second]
+    ctx = core.Ctx(state, PlayerId.PLAYER, first)
+    abilities.use_ability(ctx, "Fast Draw")
+    assert abilities.usable_abilities(core.Ctx(state, PlayerId.PLAYER, second), second) == []
+
+
+def test_apply_limit_means_the_passive_does_not_stack():
+    from pokemon_companion.engine.effects import passive_text
+
+    found = passive_text.compile_passive(
+        "Your Pokémon's attacks do 10 more damage to your opponent's Active Pokémon. You can't "
+        "apply more than 1 Fight Song Ability at a time."
+    )
+    assert found and not found[0].stacks
+
+
+def test_extra_energy_counts_beyond_the_attack_cost(state):
+    from pokemon_companion.engine.effects import attacks
+
+    text = (
+        "If this Pokémon has at least 2 extra Fire Energy attached to it (in addition to this "
+        "attack's cost), this attack does 100 more damage."
+    )
+    attack_with(state, text, "50+")
+    attack = dataclasses.replace(state.player.active.card.attacks[0], cost=["Fire", "Colorless"])
+    state.player.active.card = dataclasses.replace(state.player.active.card, attacks=[attack])
+    active = state.player.active
+
+    active.attached_energies = ["Fire", "Fire", "Fire"]  # 1 Fire e 1 do Incolor pagam o custo
+    assert attacks.estimated_damage(state, PlayerId.PLAYER, active, attack) == 50
+    active.attached_energies = ["Fire", "Fire", "Fire", "Water"]  # Água paga o Incolor
+    assert attacks.estimated_damage(state, PlayerId.PLAYER, active, attack) == 150
+
+
+def test_extra_energy_consequences_compile():
+    for text in [
+        "Heal all damage from each of your Pokémon. If this Pokémon has at least 2 extra Energy "
+        "attached to it, heal all damage from all of your Pokémon.",
+        "If your opponent's Pokémon is Knocked Out by damage from this attack, take 1 more Prize "
+        "card. If this Pokémon has at least 7 extra Energy attached to it, take 3 more Prize "
+        "cards instead.",
+        "If this Pokémon has at least 1 extra Energy attached to it, prevent all effects of "
+        "attacks, including damage, done to it during your opponent's next turn.",
+        "If this Pokémon has at least 1 extra Fairy Energy attached to it, your opponent "
+        "shuffles their hand into their deck.",
+    ]:
+        assert text_effects.compile_text(text) is not None, text_effects.unknown_sentences(text)

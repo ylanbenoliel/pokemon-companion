@@ -76,8 +76,9 @@ OLD_WORDING: list[tuple[str, str | Callable[[re.Match[str]], str]]] = [
     ),
     (r"^If tails, that attack does nothing$", "If tails, that attack doesn't happen"),
     (
-        r"^Put (\d+) damage counters instead of (\d+) on that Pokémon between turns$",
-        r"During Pokémon Checkup, put \1 damage counters on that Pokémon instead of \2",
+        r"([Pp])ut (\d+) damage counters instead of (\d+) on that Pokémon between turns$",
+        lambda m: f"{'D' if m.group(1) == 'P' else 'd'}uring Pokémon Checkup, put {m.group(2)} "
+        f"damage counters on that Pokémon instead of {m.group(3)}",
     ),
     (
         r"([Yy])our opponent switches the Defending Pokémon with",
@@ -119,7 +120,10 @@ OLD_WORDING: list[tuple[str, str | Callable[[re.Match[str]], str]]] = [
         r"and all cards attached to it into (your|their) (deck|hand)",
         r"and all attached cards into \1 \2",
     ),
-    (r"^Heal all damage from all of your Pokémon$", "Heal all damage from each of your Pokémon"),
+    (
+        r"([Hh])eal all damage from all of your Pokémon$",
+        r"\1eal all damage from each of your Pokémon",
+    ),
     (r"\bthat Stadium card\b", "that Stadium"),
     (
         r"^This damage isn't affected by Weakness, Resistance, or any other effects on that Pokémon$",
@@ -260,6 +264,12 @@ OLD_WORDING: list[tuple[str, str | Callable[[re.Match[str]], str]]] = [
         "Discard the top card of each player's deck",
     ),
     (r"\bEnergy card discarded in this way\b", "Energy card discarded in this way"),
+    (
+        r"prevent all (?:effects of attacks, including damage,|damage from and effects of attacks) "
+        r"done to it during your opponent's next turn$",
+        "during your opponent's next turn, prevent all damage from and effects of attacks done to "
+        "this Pokémon",
+    ),
     # passivas antigas
     (r"\bits attacks do (\d+) more damage", r"attacks used by this Pokémon do \1 more damage"),
     (

@@ -74,6 +74,10 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
   mandar o próprio Pokémon para a Zona Perdida, curar os Pokémon com Energia,
   e Habilidades antigas de "com HP cheio, recebe menos dano" e "com pouco HP,
   bate mais".
+- Ataques GX e V com "se este Pokémon tiver pelo menos N Energias extras"
+  agora funcionam (a Energia além do custo do ataque, com o Incolor pago
+  primeiro pelas de outro tipo), e Habilidades antigas com o limite "só 1 por
+  turno" ou "não acumula" deixaram de ficar sem efeito.
 - A Zona Perdida aparece na mesa: uma pílula roxa com a contagem junto ao
   descarte de cada jogador, e o clique no descarte lista também as cartas que
   estão nela.

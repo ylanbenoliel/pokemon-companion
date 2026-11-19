@@ -123,8 +123,13 @@ _SPELLED_ENERGY = re.compile(
 _LETTER = {name: letter for letter, name in SYMBOLS.items()}
 
 
+#: "You can't apply more than 1 X Ability at a time" = o efeito não acumula
+_APPLY_LIMIT = re.compile(r"You can't apply more than 1 .+? Abilit(?:y|ies) at a time\.?")
+
+
 def _clean(text: str) -> str:
     text = re.sub(r"\s*\([^)]*\)", "", text).replace("’", "'")
+    text = _APPLY_LIMIT.sub("The effect of this Ability doesn't stack.", text)
     # "6 or more Grass Energy" (tipo por extenso, em alguns sets) = "6 or more {G} Energy"
     text = _SPELLED_ENERGY.sub(lambda m: f"{m.group(1)} {{{_LETTER[m.group(2)]}}} Energy", text)
     return text.strip()
@@ -954,7 +959,7 @@ def compile_passive(text: str) -> tuple[Passive, ...] | None:
             if match:
                 result = build(*match.groups())
                 if result is not None:
-                    stacks = "doesn't stack" not in text
+                    stacks = "doesn't stack" not in _clean(text)
                     items = result if isinstance(result, list) else [result]
                     return tuple(Passive(**{**p.__dict__, "stacks": stacks}) for p in items)
     for sentence in _sentences(text):

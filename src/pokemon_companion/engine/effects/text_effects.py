@@ -1801,6 +1801,32 @@ def _n_my_remaining() -> Counter_:
     return lambda run: len(run.me.prizes)
 
 
+@condition(
+    r"this Pokémon has at least {N} extra Energy attached(?: to it)?",
+    r"this Pokémon has at least {N} extra (\w+|[\[{]\w[\]}]) Energy attached(?: to it)?",
+)
+def _c_extra_energy(n: str, kind_word: str | None = None) -> Predicate:
+    """Energia além do custo do ataque (GX/V): o Incolor do custo é pago
+    primeiro com as Energias de outro tipo."""
+    wanted = num(n)
+    kind_ = None
+    if kind_word:
+        kind_ = energy(kind_word[1]) if kind_word[0] in "[{" else kind_word
+
+    def extra(run: Run) -> int:
+        if run.source is None:
+            return 0
+        attached, cost = run.source.attached_energies, run.attack.cost
+        if kind_ is None:
+            return len(attached) - len(cost)
+        mine = attached.count(kind_)
+        others = len(attached) - mine
+        colorless_left = max(0, cost.count("Colorless") - others)
+        return mine - cost.count(kind_) - colorless_left
+
+    return lambda run: extra(run) >= wanted
+
+
 @condition(r"this Pokémon evolved during this turn")
 def _c_evolved_now() -> Predicate:
     return lambda run: run.source is not None and run.source.evolved_this_turn
@@ -3897,9 +3923,12 @@ def _ability_parts(text: str) -> AbilityParts | None:
         cost, early_check, text = early
         checks.append(early_check)
     shared: str | None = None
-    limit = re.search(r"\s*You can't use more than 1 (.+?) Ability during your turn\.?$", text)
+    limit = re.search(
+        r"\s*You can't use more than 1 (.+?) Abilit(?:y|ies) (?:during your turn|each turn)\.?",
+        text,
+    )
     if limit:
-        shared, text = limit.group(1), text[: limit.start()]
+        shared, text = limit.group(1), (text[: limit.start()] + text[limit.end() :]).strip()
     trigger, repeatable = "turn", False
     also_ko = re.search(
         r"\s*You may also use this Ability if this Pokémon is in the Active Spot and is Knocked "
@@ -6122,6 +6151,30 @@ def _cure_that() -> Step:
     return after(act)
 
 
+@phrase("Your opponent shuffles their hand into their deck")
+def _opp_hand_to_deck() -> Step:
+    return after(lambda run: core.shuffle_hand_into_deck(run.opp))
+
+
+@phrase("Shuffle all cards from your discard pile into your deck")
+def _discard_to_deck() -> Step:
+    def act(run: Run) -> None:
+        run.me.deck.extend(run.me.discard)
+        run.me.discard.clear()
+        core.shuffle_deck(run.me)
+
+    return after(act)
+
+
+@phrase("Each player draws cards until they have {N} cards in their hand")
+def _both_draw_until(n: str) -> Step:
+    def act(run: Run) -> None:
+        core.draw_until(run.me, num(n))
+        core.draw_until(run.opp, num(n))
+
+    return after(act)
+
+
 @phrase("Your opponent draws {N} cards", "Your opponent draws {N} card")
 def _opp_draws(n: str) -> Step:
     return after(lambda run: core.draw(run.opp, num(n)) and None)
@@ -8150,7 +8203,7 @@ def _bounty(n: str) -> Step:
     return after(act)
 
 
-@phrase("take {N} more Prize cards?")
+@phrase("take {N} more Prize cards?", "take {N} more Prize cards? instead")
 def _bounty_now(n: str) -> Step:
     """Depois de "If your opponent's Pokémon is Knocked Out by damage from this attack"."""
 
