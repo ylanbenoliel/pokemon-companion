@@ -103,7 +103,9 @@ def refresh_hp_bonuses(state: GameState) -> None:
         locked = bool(compiled(state, pid.other, "no_heal"))
         for mon in player.all_pokemon_in_play():
             mon.hp_bonus = hp_bonus(state, mon)
-            mon.heal_locked = locked and mon is player.active
+            mon.heal_locked = (locked and mon is player.active) or (
+                mon.no_heal_turn == state.turn_number
+            )
 
 
 def weakness_multiplier(state: GameState) -> int:

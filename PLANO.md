@@ -449,6 +449,12 @@ manifesto publicado, como os do Standard) e `data/expanded_pool.json`.
   pelo Pokémon Ranger); "Choose up to N of your Benched Pokémon" agora filtra
   o Banco; "For each of those Pokémon, search your deck for a X and attach
   it" genérico (Energia ou Ferramenta); demais frases sem estado novo.
+- **Lote 7 (19/11/2026)**: 15.926 textos-impressão (82%; 164 formas 2+).
+  `PokemonInPlay.sleep_coins` (moedas do Adormecido, em
+  `status_conditions.try_wake_up`) e `no_heal_turn` (vira `heal_locked` em
+  `passives.refresh_hp_bonuses`); dano nos próprios Pokémon vai para o do
+  Banco com mais HP; "Each player discards the top card" reaproveita o descarte
+  com contagem; passiva "this Pokémon has full HP".
 - **Próximo passo** (se pedirem): implementar os efeitos que faltam no
   Expandido, por mecanismo genérico em `text_effects.py`/`passive_text.py`,
   começando pelas 319 formas de frase que aparecem 2+ vezes

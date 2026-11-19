@@ -249,7 +249,23 @@ OLD_WORDING: list[tuple[str, str | Callable[[re.Match[str]], str]]] = [
         "During your opponent's next turn, Pokémon can't be played from your opponent's hand to "
         "evolve the Defending Pokémon",
     ),
+    (
+        r"^During your opponent's next turn, if this Pokémon would be damaged by an attack, "
+        r"prevent that attack's damage done to this Pokémon if that damage is (\d+) or less$",
+        r"During your opponent's next turn, prevent all damage done to this Pokémon by attacks if "
+        r"that damage is \1 or less",
+    ),
+    (
+        r"^Each player discards the top card of their deck$",
+        "Discard the top card of each player's deck",
+    ),
+    (r"\bEnergy card discarded in this way\b", "Energy card discarded in this way"),
     # passivas antigas
+    (r"\bits attacks do (\d+) more damage", r"attacks used by this Pokémon do \1 more damage"),
+    (
+        r"any damage done to this Pokémon by an opponent's attack is reduced by (\d+)$",
+        r"it takes \1 less damage from attacks from your opponent's Pokémon",
+    ),
     (
         r"^Any damage done to this Pokémon by attacks from your opponent's (.+) is reduced by (\d+)$",
         r"This Pokémon takes \2 less damage from attacks from your opponent's \1",

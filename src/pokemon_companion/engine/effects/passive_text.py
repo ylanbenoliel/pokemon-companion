@@ -244,6 +244,8 @@ def _self_condition(text: str) -> HolderTest | None:
         test = pokemon_filter(any_in_play.group(1))
         if test is not None:
             return lambda s, o, h: any(test(m) for m in s.state_of(o).all_pokemon_in_play())
+    if text == "this Pokémon has full HP":
+        return lambda s, o, h: h.damage_counters == 0
     if text in ("a Stadium is in play", "there is any Stadium in play"):
         return lambda s, o, h: s.stadium is not None
     opp_any = re.fullmatch(r"your opponent has any (.+?) in play", text)
@@ -310,7 +312,10 @@ def _reduce_self(n: str) -> Passive:
     return Passive("reduce", int(n))
 
 
-@rule(rf"This Pokémon takes {N} less damage from attacks from your opponent's (.+)")
+@rule(
+    rf"This Pokémon takes {N} less damage from attacks from your opponent's (.+)",
+    rf"[Ii]t takes {N} less damage from attacks from your opponent's (.+)",
+)
 def _reduce_self_from(n: str, who: str) -> Passive | None:
     attacker = _attacker_filter(who)
     return None if attacker is None else Passive("reduce", int(n), attacker=attacker)

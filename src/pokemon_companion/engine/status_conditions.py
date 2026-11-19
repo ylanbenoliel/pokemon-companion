@@ -57,8 +57,10 @@ def try_wake_up(pokemon: PokemonInPlay, flip_coin: CoinFlip = default_coin_flip)
     """Moeda do Adormecido, feita em todo Pokémon Checkup."""
     if pokemon.status != StatusCondition.ASLEEP:
         return []
-    if flip_coin():
+    # "flips 2 coins instead of 1": acorda só com todas cara
+    if all([flip_coin() for _ in range(max(pokemon.sleep_coins, 1))]):
         pokemon.status = StatusCondition.NONE
+        pokemon.sleep_coins = 1
         return [f"{pokemon.card.name} acordou (cara)."]
     return [f"{pokemon.card.name} continua dormindo (coroa)."]
 

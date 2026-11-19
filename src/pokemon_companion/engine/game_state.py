@@ -103,6 +103,10 @@ class PokemonInPlay:
     extra_tools: list[Card] = field(default_factory=list)
     #: turno em que este Pokémon não pode ser evoluído da mão
     no_evolve_turn: int | None = None
+    #: turno em que este Pokémon não pode ser curado
+    no_heal_turn: int | None = None
+    #: moedas do Adormecido no Checkup (todas cara para acordar)
+    sleep_coins: int = 1
     #: carta BREAK impressa (`card` é ela somada aos ataques, Habilidades,
     #: Fraqueza, Resistência e recuo do estágio de baixo)
     break_card: Card | None = None

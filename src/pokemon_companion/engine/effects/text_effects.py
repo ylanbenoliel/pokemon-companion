@@ -5994,6 +5994,134 @@ def _heal_both_active(n: str) -> Step:
     return after(act)
 
 
+@phrase(
+    "During Pokémon Checkup, your opponent flips {N} coins instead of {N}",
+    "Your opponent flips {N} coins instead of {N} between turns",
+)
+def _sleep_coins(n: str, _base: str) -> Step:
+    """Para acordar, todas as moedas precisam dar cara.
+    ponytail: a marca só volta a 1 quando ele acorda pela moeda."""
+
+    def act(run: Run) -> None:
+        defender = run.exposed_defender
+        if defender is not None:
+            defender.sleep_coins = num(n)
+
+    return after(act)
+
+
+@phrase(
+    "If either of them is tails, that Pokémon is still Asleep",
+    "If any of them are tails, that Pokémon is still Asleep",
+)
+def _sleep_coins_note() -> Step:
+    return after(lambda run: None)  # aplicado em `status_conditions.try_wake_up`
+
+
+@phrase("During your opponent's next turn, the Defending Pokémon can't be healed")
+def _no_heal_defender() -> Step:
+    def act(run: Run) -> None:
+        defender = run.exposed_defender
+        if defender is not None:
+            defender.no_heal_turn = run.ctx.turn + 1
+
+    return after(act)
+
+
+@phrase("Heal {N} damage from each of your Pokémon that has any Energy attached to it")
+def _heal_charged(n: str) -> Step:
+    def act(run: Run) -> None:
+        for mon in run.me.all_pokemon_in_play():
+            if mon.attached_energies:
+                core.heal(mon, num(n))
+
+    return after(act)
+
+
+@phrase("Put this Pokémon and all cards attached to it in the Lost Zone")
+def _self_to_lost_zone() -> Step:
+    def act(run: Run) -> None:
+        mon = run.source
+        if mon is None or mon not in run.me.all_pokemon_in_play():
+            return
+        _remove_from_play(run.me, mon, to_deck=False)
+        for card in mon.all_cards():
+            if card in run.me.discard:
+                run.me.discard.remove(card)
+                run.me.lost_zone.append(card)
+
+    return after(act)
+
+
+def _sturdiest_own(run: Run) -> PokemonInPlay | None:
+    """Onde a IA põe dano nos próprios Pokémon: o do Banco com mais HP restante."""
+    pool = run.me.bench or run.me.all_pokemon_in_play()
+    return max(pool, key=lambda m: m.current_hp) if pool else None
+
+
+@phrase("This attack does {N} damage to {N} of your Pokémon")
+def _damage_own(n: str, _k: str) -> Step:
+    def act(run: Run) -> None:
+        mon = _sturdiest_own(run)
+        if mon is not None:
+            mon.damage_counters += num(n)
+
+    return after(act)
+
+
+@phrase("Put {N} damage counters on {N} of your Pokémon")
+def _counters_own(n: str, _k: str) -> Step:
+    def act(run: Run) -> None:
+        mon = _sturdiest_own(run)
+        if mon is not None:
+            mon.damage_counters += 10 * num(n)
+
+    return after(act)
+
+
+@count(r"different type of Basic Energy attached to this Pokémon")
+def _n_own_basic_types() -> Counter_:
+    return lambda run: (
+        len(set(run.source.attached_energies) & set(BASIC_TYPES)) if run.source else 0
+    )
+
+
+@phrase("Move {N} damage counters from each of your Pokémon to your opponent's Active Pokémon")
+def _gather_counters(n: str) -> Step:
+    def act(run: Run) -> None:
+        moved = 0
+        for mon in run.me.all_pokemon_in_play():
+            take = min(num(n), mon.damage_counters // 10)
+            mon.damage_counters -= 10 * take
+            moved += take
+        if run.defender is not None and moved:
+            core.place_counters(run.ctx, run.ctx.opp_id, run.defender, moved)
+
+    return after(act)
+
+
+@phrase("Switch all damage counters on this Pokémon with those on your opponent's Active Pokémon")
+def _swap_counters() -> Step:
+    def act(run: Run) -> None:
+        mon, defender = run.source, run.defender
+        if mon is not None and defender is not None:
+            mon.damage_counters, defender.damage_counters = (
+                defender.damage_counters,
+                mon.damage_counters,
+            )
+
+    return after(act)
+
+
+@phrase("Remove all Special Conditions from that Pokémon")
+def _cure_that() -> Step:
+    def act(run: Run) -> None:
+        if run.last_target is not None:
+            run.last_target.status = StatusCondition.NONE
+
+    return after(act)
+
+
 @phrase("Your opponent draws {N} cards", "Your opponent draws {N} card")
 def _opp_draws(n: str) -> Step:
     return after(lambda run: core.draw(run.opp, num(n)) and None)
@@ -6417,7 +6545,11 @@ def _choose_own(qualifier: str, limit: int) -> Act:
     return act
 
 
-@phrase("Choose up to {N} of your (.*?)Pokémon", "Choose {N} of your (.*?)Pokémon in play")
+@phrase(
+    "Choose up to {N} of your (.*?)Pokémon",
+    "Choose {N} of your (.*?)Pokémon in play",
+    "Choose {N} of your ((?:Benched )?)Pokémon",
+)
 def _choose_own_phrase(n: str, qualifier: str) -> Step | None:
     from pokemon_companion.engine.effects.passive_text import pokemon_filter
 

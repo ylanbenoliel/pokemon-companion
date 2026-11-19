@@ -845,3 +845,81 @@ def test_discard_all_items_from_the_revealed_hand(state):
     state.opponent.hand = [item, item, mon("Keep")]
     _attack(state, "Your opponent reveals their hand. Discard all Item cards you find there.")
     assert [c.name for c in state.opponent.hand] == ["Keep"]
+
+
+# --- lote 7 -----------------------------------------------------------------
+
+
+def test_sleep_with_two_coins_needs_both_heads(state, monkeypatch):
+    from pokemon_companion.engine.status_conditions import try_wake_up
+
+    _attack(
+        state,
+        "Your opponent's Active Pokémon is now Asleep. Your opponent flips 2 coins instead of 1 "
+        "between turns. If either of them is tails, that Pokémon is still Asleep.",
+    )
+    sleeper = state.opponent.active
+    assert sleeper.status == StatusCondition.ASLEEP and sleeper.sleep_coins == 2
+    coins = iter([True, False])
+    try_wake_up(sleeper, lambda: next(coins))
+    assert sleeper.status == StatusCondition.ASLEEP
+    try_wake_up(sleeper, lambda: True)
+    assert sleeper.status == StatusCondition.NONE and sleeper.sleep_coins == 1
+
+
+def test_defender_cannot_be_healed_next_turn(state):
+    _attack(state, "The Defending Pokémon can't be healed during your opponent's next turn.")
+    target = state.opponent.active
+    target.damage_counters = 50
+    state.turn_number += 1
+    passives.refresh_hp_bonuses(state)
+    assert core.heal(target, 30) == 0
+
+
+def test_damage_counter_shuffles(state):
+    from pokemon_companion.engine.effects import attacks
+
+    def run(text: str) -> None:
+        attack_with(state, text)
+        state.player.active.damage_counters = 40
+        ctx = core.Ctx(state, PlayerId.PLAYER, state.player.active)
+        attacks.resolve_attack(ctx, state.player.active.card.attacks[0])
+
+    state.opponent.active.damage_counters = 10
+    run("Switch all damage counters on this Pokémon with those on your opponent's Active Pokémon.")
+    assert state.player.active.damage_counters == 10
+    assert state.opponent.active.damage_counters == 40
+
+    state.player.bench = [PokemonInPlay(card=mon("Hurt"), damage_counters=30)]
+    run("Move 1 damage counters from each of your Pokémon to your opponent's Active Pokémon.")
+    assert state.player.bench[0].damage_counters == 20
+    assert state.opponent.active.damage_counters == 60
+
+
+def test_self_damage_goes_to_the_sturdiest_benched_pokemon(state):
+    big, small = PokemonInPlay(card=mon("Big", 200)), PokemonInPlay(card=mon("Small", 50))
+    state.player.bench = [small, big]
+    _attack(state, "Does 30 damage to 1 of your Pokémon.")
+    assert big.damage_counters == 30 and small.damage_counters == 0
+
+
+def test_put_self_in_the_lost_zone_and_heal_charged_pokemon(state):
+    state.player.bench = [
+        PokemonInPlay(card=mon("Charged"), attached_energies=["Fire"], damage_counters=40),
+        PokemonInPlay(card=mon("Empty"), damage_counters=40),
+    ]
+    _attack(state, "Heal 30 damage from each of your Pokémon that has any Energy attached to it.")
+    assert [m.damage_counters for m in state.player.bench] == [10, 40]
+    _attack(state, "Put this Pokémon and all cards attached to it in the Lost Zone.")
+    assert state.player.active is None
+    assert [c.name for c in state.player.lost_zone] == ["Attacker"]
+
+
+def test_full_hp_damage_reduction_passive():
+    from pokemon_companion.engine.effects import passive_text
+
+    found = passive_text.compile_passive(
+        "If this Pokémon has full HP, any damage done to this Pokémon by an opponent's attack is "
+        "reduced by 20."
+    )
+    assert found and found[0].kind == "reduce" and found[0].amount == 20

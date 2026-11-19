@@ -68,6 +68,12 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
   a evolução e a Energia anexada ao Ativo do oponente no próximo turno,
   condições de Resistência e de "já usou o ataque GX", descartar todos os
   Itens da mão revelada e curar os dois Ativos.
+- Mais efeitos do Expandido (82%, lote 7): Adormecido com 2 moedas (só acorda
+  com as duas cara), "o Defending não pode ser curado no próximo turno",
+  trocar e juntar contadores de dano, dano e contadores nos próprios Pokémon,
+  mandar o próprio Pokémon para a Zona Perdida, curar os Pokémon com Energia,
+  e Habilidades antigas de "com HP cheio, recebe menos dano" e "com pouco HP,
+  bate mais".
 - A Zona Perdida aparece na mesa: uma pílula roxa com a contagem junto ao
   descarte de cada jogador, e o clique no descarte lista também as cartas que
   estão nela.
