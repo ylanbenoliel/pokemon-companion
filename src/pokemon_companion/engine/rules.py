@@ -142,6 +142,8 @@ def _can_evolve_onto(state: GameState, pid: PlayerId, card: Card, mon: PokemonIn
     )
     if (mon.card.name != card.evolves_from and not rainbow) or mon.evolved_this_turn:
         return False
+    if mon.no_evolve_turn == state.turn_number:
+        return False
     if passives.no_normal_play(card):
         return False
     if passives.can_evolve_early(state, pid, mon):

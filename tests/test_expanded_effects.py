@@ -762,3 +762,86 @@ def test_type_lists_mean_types_not_card_names(state):
         "attach them to 1 of your Benched Pokémon. Then, shuffle your deck.",
     )
     assert sorted(state.player.bench[0].attached_energies) == ["Psychic", "Water"]
+
+
+# --- lote 6 -----------------------------------------------------------------
+
+
+def test_choose_benched_pokemon_and_attach_from_the_deck(state):
+    from pokemon_companion.cards_db.basic_energies import BASIC_ENERGIES
+
+    state.player.bench = [PokemonInPlay(card=mon("A")), PokemonInPlay(card=mon("B"))]
+    state.player.deck = [BASIC_ENERGIES["Water"], BASIC_ENERGIES["Fire"]] + state.player.deck
+    _attack(
+        state,
+        "Choose up to 2 of your Benched Pokémon. For each of those Pokémon, search your deck for a "
+        "basic Energy card and attach it to that Pokémon. Then, shuffle your deck.",
+    )
+    assert all(len(m.attached_energies) == 1 for m in state.player.bench)
+    assert state.player.active.attached_energies == ["Colorless"]  # o Ativo não foi escolhido
+
+
+def test_both_active_pokemon_are_knocked_out(state):
+    _attack(state, "Both Active Pokémon are Knocked Out.")
+    assert state.player.active.is_knocked_out and state.opponent.active.is_knocked_out
+
+
+def test_counters_move_and_mirror(state):
+    from pokemon_companion.engine.effects import attacks
+
+    def run(text: str, own_damage: int) -> None:
+        attack_with(state, text)
+        state.player.active.damage_counters = own_damage
+        ctx = core.Ctx(state, PlayerId.PLAYER, state.player.active)
+        attacks.resolve_attack(ctx, state.player.active.card.attacks[0])
+
+    run("Move all damage counters from this Pokémon to your opponent's Active Pokémon.", 50)
+    assert state.player.active.damage_counters == 0
+    assert state.opponent.active.damage_counters == 50
+    run(
+        "Put damage counters on 1 of your opponent's Pokémon equal to the number of damage "
+        "counters on this Pokémon.",
+        30,
+    )
+    assert state.opponent.active.damage_counters == 80
+
+
+def test_defender_cannot_be_evolved_or_charged_next_turn(state):
+    _attack(
+        state,
+        "Your opponent can't play any Pokémon from his or her hand to evolve the Defending "
+        "Pokémon during his or her next turn.",
+    )
+    assert state.opponent.active.no_evolve_turn == state.turn_number + 1
+    _attack(
+        state,
+        "Your opponent can't attach Energy from his or her hand to the Defending Pokémon during "
+        "his or her next turn.",
+    )
+    assert state.opponent.active.attach_trap == ("lock", state.turn_number + 1)
+
+
+def test_resistance_and_used_gx_conditions(state):
+    from pokemon_companion.cards_db.models import WeaknessResistance
+    from pokemon_companion.engine.effects import attacks
+
+    tough = dataclasses.replace(mon("Tough"), resistances=[WeaknessResistance("Fighting", "-20")])
+    state.opponent.active = PokemonInPlay(card=tough)
+    attack_with(
+        state,
+        "If your opponent's Active Pokémon has Fighting Resistance, this attack does 60 more damage.",
+        "20+",
+    )
+    attack = state.player.active.card.attacks[0]
+    assert attacks.estimated_damage(state, PlayerId.PLAYER, state.player.active, attack) == 80
+    state.player.once_per_game_used.add("GX attack")
+    attack_with(state, "If you have used your GX attack, this attack does 60 more damage.", "20+")
+    attack = state.player.active.card.attacks[0]
+    assert attacks.estimated_damage(state, PlayerId.PLAYER, state.player.active, attack) == 80
+
+
+def test_discard_all_items_from_the_revealed_hand(state):
+    item = Card(id="i", name="Ultra Ball", supertype=Supertype.TRAINER, subtypes=["Item"])
+    state.opponent.hand = [item, item, mon("Keep")]
+    _attack(state, "Your opponent reveals their hand. Discard all Item cards you find there.")
+    assert [c.name for c in state.opponent.hand] == ["Keep"]

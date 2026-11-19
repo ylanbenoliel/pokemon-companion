@@ -62,6 +62,12 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
   oponente tiver Pokémon-GX ou EX") e ataques com requisito ("You can use this
   attack only if …") só aparecem quando o requisito é cumprido.
 
+- Mais efeitos do Expandido (82%): escolher Pokémon do Banco e anexar Energia
+  ou Ferramenta do deck a cada um, "os dois Ativos são nocauteados", mover ou
+  espelhar contadores de dano, dano em cada Básico do Banco do oponente, travar
+  a evolução e a Energia anexada ao Ativo do oponente no próximo turno,
+  condições de Resistência e de "já usou o ataque GX", descartar todos os
+  Itens da mão revelada e curar os dois Ativos.
 - A Zona Perdida aparece na mesa: uma pílula roxa com a contagem junto ao
   descarte de cada jogador, e o clique no descarte lista também as cartas que
   estão nela.

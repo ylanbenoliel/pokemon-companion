@@ -503,6 +503,7 @@ _ATTACK_MARKS = (
     "weakness_to",
     "taxed_turn",
     "no_weakness_turn",
+    "no_evolve_turn",
 )
 #: e as que deixam num jogador
 _PLAYER_MARKS = (

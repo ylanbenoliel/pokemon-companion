@@ -101,6 +101,8 @@ class PokemonInPlay:
     taxed_turn: int | None = None
     #: Ferramentas além da primeira (Habilidades como Multi Adapter)
     extra_tools: list[Card] = field(default_factory=list)
+    #: turno em que este Pokémon não pode ser evoluído da mão
+    no_evolve_turn: int | None = None
     #: carta BREAK impressa (`card` é ela somada aos ataques, Habilidades,
     #: Fraqueza, Resistência e recuo do estágio de baixo)
     break_card: Card | None = None

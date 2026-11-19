@@ -444,6 +444,11 @@ manifesto publicado, como os do Standard) e `data/expanded_pool.json`.
   "{E} or/and {E} Energy" e "in any combination of {E} and {E} Energy cards", e
   `tools/compile_report.py` lista os nomes lidos em textos compilados que não
   existem no pool (hoje só Maushold ex e Unfezant ex, nomes reais fora do pool).
+- **Lote 6 (19/11/2026)**: 15.856 textos-impressão (82%; 183 formas 2+).
+  `PokemonInPlay.no_evolve_turn` (checado em `rules._can_evolve_onto`, limpo
+  pelo Pokémon Ranger); "Choose up to N of your Benched Pokémon" agora filtra
+  o Banco; "For each of those Pokémon, search your deck for a X and attach
+  it" genérico (Energia ou Ferramenta); demais frases sem estado novo.
 - **Próximo passo** (se pedirem): implementar os efeitos que faltam no
   Expandido, por mecanismo genérico em `text_effects.py`/`passive_text.py`,
   começando pelas 319 formas de frase que aparecem 2+ vezes

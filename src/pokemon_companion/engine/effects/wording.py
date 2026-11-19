@@ -232,6 +232,23 @@ OLD_WORDING: list[tuple[str, str | Callable[[re.Match[str]], str]]] = [
         r"put them back on top of that player's deck in any order",
         "put them back in any order",
     ),
+    (r"^The new Defending Pokémon is now", "Your opponent's Active Pokémon is now"),
+    (
+        r"^Your opponent shuffles that Pokémon and all attached cards into their deck$",
+        "Shuffle that Pokémon and all attached cards into their deck",
+    ),
+    (
+        r"^Your opponent can't attach Energy from their hand to the Defending Pokémon during their "
+        r"next turn$",
+        "During your opponent's next turn, Energy can't be attached from your opponent's hand to "
+        "the Defending Pokémon",
+    ),
+    (
+        r"^Your opponent can't play any Pokémon from their hand to evolve the Defending Pokémon "
+        r"during their next turn$",
+        "During your opponent's next turn, Pokémon can't be played from your opponent's hand to "
+        "evolve the Defending Pokémon",
+    ),
     # passivas antigas
     (
         r"^Any damage done to this Pokémon by attacks from your opponent's (.+) is reduced by (\d+)$",
