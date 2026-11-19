@@ -340,6 +340,43 @@ novidade não abre PR. Prompt:
 > Nunca faça push na `main` nem force push. Se não houver nada a fazer, não
 > abra PR.
 
+## Formato Expandido (18/11/2026)
+
+O Expanded (no TCG Live, Expandido: Black & White em diante) roda ao lado do
+Standard. A TCGdex marca `legal.expanded` e já tira as banidas, então não há
+lista de banidas própria: `standard.fetch_pool(fmt="expanded")` grava
+`cards_db/expanded_legal.json` e `expanded_catalog.json` (no pacote e no
+manifesto publicado, como os do Standard) e `data/expanded_pool.json`.
+
+- **Formato no deck**: comentário `# formato: expanded` no arquivo
+  (`deck_rules.deck_format`/`format_header`); sem ele, Standard. O "Copiar
+  lista" já tira os comentários.
+- **Regras**: `validate_deck(..., fmt)`; Prism Star (◇) no máximo 1 cópia;
+  as ACE SPEC de Black & White não vêm marcadas na TCGdex e entram pelo grupo
+  "ACE SPEC" do `effects.json` (`cardinfo.is_ace_spec`, preenchido por
+  `maintenance.update_groups` a partir da pokemontcg.io).
+- **Nomes GX/EX**: a TCGdex grava quase todos com espaço ("Zoroark GX");
+  `tcgdex_client.official_name` passa para o nome impresso ("Zoroark-GX"), e
+  `find_card` procura as duas grafias.
+- **UI** (inspirada no seletor Padrão/Livre do Hearthstone e no de formato do
+  MTG Arena): seletor em pílula `widgets.FormatToggle` no construtor e na
+  importação (que busca em `limitlesstcg.com/decks?format=expanded`); selo
+  "EXPANDIDO" na tela inicial; no construtor, ⛔ (fora do formato) e ⚠
+  (efeito não implementado) em cada carta do deck. Trocar de formato mantém
+  o deck e só marca o que deixou de valer.
+- **Números (18/11/2026)**: 15.267 impressões, ~10,2 mil cartas distintas no
+  catálogo (6,6 MB); cobertura 13.129 de 19.437 textos-impressão (68%), com
+  4.105 textos distintos faltando. O relatório da manutenção tem a seção
+  "Expandido" (os 50 textos que mais faltam), só informativa.
+- **Fora do catálogo**: promos sem sigla oficial na TCGdex (SWSH Black Star
+  Promos, Shiny Vault de Hidden Fates, Yellow A Alternate): ~135 cartas, quase
+  todas reimpressões que existem em outro set.
+- **Próximo passo** (se pedirem): implementar os efeitos que faltam no
+  Expandido, por mecanismo genérico em `text_effects.py`/`passive_text.py`,
+  começando pelos mais frequentes do relatório; mecânicas antigas sem motor
+  (GX uma vez por partida, Prism Star para a Zona Perdida, BREAK, TAG TEAM)
+  também ficam para essa fase.
+
 ## Executável (PyInstaller)
 
 **Versões e aviso de atualização (25/09/2026).** O app não se substitui
