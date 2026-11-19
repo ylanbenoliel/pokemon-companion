@@ -1970,6 +1970,17 @@ def _k_ex() -> CardFilter:
     return lambda card: card.is_pokemon and is_ex(card)
 
 
+@kind(r"{E},? (?:or|and) {E} Energy(?: cards?)?", r"Basic {E},? (?:or|and) {E} Energy(?: cards?)?")
+def _k_either_energy(first: str, second: str) -> CardFilter:
+    kinds = {energy(first), energy(second)}
+    basic_only = _current[0].find("Basic ") >= 0
+    return lambda card: (
+        card.supertype.value == "Energy"
+        and energy_type_of(card) in kinds
+        and (is_basic_energy(card) or not basic_only)
+    )
+
+
 @kind(r"{E} or {E} Pokémon")
 def _k_either_type(first: str, second: str) -> CardFilter:
     kinds = {energy(first), energy(second)}
@@ -2049,6 +2060,10 @@ GENERIC_WORDS = {
 }
 
 
+#: tipos por extenso: sozinhos nunca são nome de carta
+_TYPE_WORDS = frozenset({*BASIC_TYPES, "Dragon", "Colorless", "Fairy"})
+
+
 def card_name(text: str) -> str | None:
     """`text` se parecer nome de carta ("Froakie", "Iono's Bellibolt ex",
     "Mr. Mime"): palavras com maiúscula (ou "ex"), sem números nem ícones, e
@@ -2056,6 +2071,8 @@ def card_name(text: str) -> str | None:
     words = text.strip().split()
     if not words or any(w in GENERIC_WORDS for w in words):
         return None
+    if len(words) == 1 and words[0] in _TYPE_WORDS:
+        return None  # "a Psychic or Dragon Pokémon": é tipo, não carta
     if any(not (w[0].isupper() or w == "ex") or re.search(r"[\d{}\[\]]", w) for w in words):
         return None
     return text.strip()
@@ -3729,7 +3746,12 @@ def _combo_filter(what: str) -> CardFilter | None:
 
 @kind(r"in any combination of {X}")
 def _k_combination(what: str) -> CardFilter | None:
-    return _combo_filter(what)
+    # "{W} and {P} Energy cards": um tipo de carta inteiro, não dois
+    return (
+        parse_kind(what)
+        if re.match(expand(r"{E},? (?:or|and) {E} "), what)
+        else _combo_filter(what)
+    )
 
 
 @phrase("Search your deck for {X}, reveal them, and put them into your hand")

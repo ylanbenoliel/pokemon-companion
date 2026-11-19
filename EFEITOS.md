@@ -44,7 +44,10 @@ motor. Leia inteiro antes de mexer em `src/pokemon_companion/engine/effects/`.
 
    O `compile_report` agrupa frases por forma (números viram `N`, ícones viram
    `{X}`) e também *executa* cada efeito compilado num estado sintético: a
-   linha "Execuções com erro" tem de continuar em 0.
+   linha "Execuções com erro" tem de continuar em 0. A linha "Nomes de carta
+   lidos que não existem no pool" mostra textos compilados que citam uma carta
+   inexistente: quase sempre é uma palavra lida como nome por engano (um tipo,
+   um grupo), ou seja, efeito com o significado errado. Confira cada nome novo.
 2. **Teste a frase moderna primeiro.** Muitas frases "novas" são só redação
    diferente de algo que já existe. Teste rápido:
 

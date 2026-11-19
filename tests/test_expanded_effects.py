@@ -741,3 +741,24 @@ def test_search_for_either_of_two_types(state):
         "Pokémon, reveal it, and put it into your hand. Then, shuffle your deck.",
     )
     assert any(c.name in ("Mew", "Dratini") for c in state.player.hand)
+
+
+# --- auditoria de nomes de carta --------------------------------------------
+
+
+@pytest.mark.parametrize("word", ["Psychic", "Fire", "Water", "Dragon", "Colorless", "Fairy"])
+def test_a_lone_type_word_is_never_a_card_name(word):
+    assert text_effects.card_name(word) is None
+
+
+def test_type_lists_mean_types_not_card_names(state):
+    from pokemon_companion.cards_db.basic_energies import BASIC_ENERGIES
+
+    state.player.deck = [BASIC_ENERGIES["Water"], BASIC_ENERGIES["Psychic"], BASIC_ENERGIES["Fire"]]
+    state.player.bench = [PokemonInPlay(card=mon("Bencher"))]
+    _play(
+        state,
+        "Search your deck for up to 3 in any combination of Water and Psychic Energy cards and "
+        "attach them to 1 of your Benched Pokémon. Then, shuffle your deck.",
+    )
+    assert sorted(state.player.bench[0].attached_energies) == ["Psychic", "Water"]

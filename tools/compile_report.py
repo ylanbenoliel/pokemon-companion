@@ -72,6 +72,54 @@ def exercise_passives(state: GameState, rng: random.Random) -> None:
     rules.legal_actions(state)
 
 
+def false_card_names(pool: list[Card]) -> dict[str, set[str]]:
+    """Nomes de carta que o compilador leu num texto compilado e que não existem
+    no pool (ex.: "Psychic" em "a Psychic or Dragon Pokémon"): sinal de efeito
+    compilado com o significado errado."""
+    names = {card.name for card in pool}
+    made: list[str] = []
+    original = text_effects._k_named
+
+    def spy(text: str) -> object:
+        found = original(text)
+        if found is not None:
+            made.append(str(text_effects.card_name(text)))
+        return found
+
+    table = text_effects.KINDS
+    saved = list(table)
+    table[:] = [(pattern, spy if fn is original else fn) for pattern, fn in table]
+    caches = (
+        text_effects.compile_text,
+        text_effects.compiled_trainer,
+        text_effects.compiled_stadium,
+        text_effects.compiled_ability,
+    )
+    for fn in caches:
+        fn.cache_clear()
+    wrong: dict[str, set[str]] = {}
+    try:
+        for card in pool:
+            texts = [a.text for a in card.attacks if a.text] + [a.text for a in card.abilities]
+            if card.supertype.value == "Trainer" and card.rules:
+                texts.append(" ".join(card.rules))
+            for text in texts:
+                made.clear()
+                compiled = (
+                    text_effects.compile_text(text)
+                    or text_effects.compiled_ability(text)
+                    or text_effects.compiled_trainer(text)
+                )
+                for name in made if compiled else []:
+                    if name not in names:
+                        wrong.setdefault(name, set()).add(text)
+    finally:
+        table[:] = saved
+        for fn in caches:
+            fn.cache_clear()
+    return wrong
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--top", type=int, default=40)
@@ -196,6 +244,10 @@ def main() -> None:
     print(f"Execuções com erro: {sum(errors.values())}")
     for line, n in errors.most_common(20):
         print(f"  {n}× {line}")
+    wrong_names = false_card_names(pool)
+    print(f"\nNomes de carta lidos que não existem no pool: {len(wrong_names)}")
+    for name, texts in sorted(wrong_names.items()):
+        print(f"  {name!r}: {sorted(texts)[0][:140]}")
     print(f"\nFrases não reconhecidas ({len(unknown)} formas):")
     for sentence, n in unknown.most_common(args.top):
         print(f"{n:4d} {sentence[:160]}")

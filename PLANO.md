@@ -438,6 +438,12 @@ manifesto publicado, como os do Standard) e `data/expanded_pool.json`.
   "{E} or {E} Pokémon" (corrigiu Mysterious Treasure, que antes lia "Psychic"
   como nome de carta). Torneio difícil com 8 decks do Expandido: ~4 min, igual
   ao lote anterior (a IA difícil simula turnos inteiros; o médio leva segundos).
+- **Auditoria de nomes de carta (19/11/2026)**: `card_name` aceitava um tipo
+  sozinho ("Psychic") como nome de carta, e 5 textos compilavam com o
+  significado errado. Agora um tipo sozinho nunca é nome, há os tipos de carta
+  "{E} or/and {E} Energy" e "in any combination of {E} and {E} Energy cards", e
+  `tools/compile_report.py` lista os nomes lidos em textos compilados que não
+  existem no pool (hoje só Maushold ex e Unfezant ex, nomes reais fora do pool).
 - **Próximo passo** (se pedirem): implementar os efeitos que faltam no
   Expandido, por mecanismo genérico em `text_effects.py`/`passive_text.py`,
   começando pelas 319 formas de frase que aparecem 2+ vezes

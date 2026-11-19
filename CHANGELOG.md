@@ -68,6 +68,11 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
 
 ### Corrigido
 
+- Cartas que citam tipos em lista ("a Psychic or Dragon Pokémon", "Water or
+  Lightning Energy cards") tratavam o primeiro tipo como nome de carta e
+  buscavam a carta errada. Agora buscam pelo tipo (Mysterious Treasure,
+  Dragonite VSTAR, Starmie, Metagross-GX e Haxorus).
+
 - Listas antigas importadas do Limitless agora acham as cartas: nomes GX/EX
   com hífen ("Zoroark-GX"), itens da Equipe Flare ("Battle Compressor"),
   Prism Star escrito sem o ◇, promos como "SMP 45" e energia básica com a
