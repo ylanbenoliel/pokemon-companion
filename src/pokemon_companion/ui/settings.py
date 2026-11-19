@@ -18,6 +18,8 @@ STORE_FILE: Path | None = None
 #: velocidade das animações oferecida na tela (rótulo, multiplicador)
 SPEEDS = (("Lenta", 0.75), ("Normal", 1.0), ("Rápida", 1.5), ("Muito rápida", 2.5))
 DIFFICULTIES = (("easy", "Fácil"), ("medium", "Média"), ("hard", "Difícil"))
+#: relógio de turno oferecido na tela (rótulo, segundos; 0 = desligado)
+TURN_CLOCKS = (("Desligado", 0), ("1 minuto", 60), ("2 minutos", 120), ("3 minutos", 180))
 
 
 @dataclass
@@ -34,6 +36,8 @@ class Settings:
     difficulty: str = "medium"
     #: dicas contextuais para quem está começando
     hints: bool = True
+    #: segundos por turno seu; ao zerar, o turno passa sozinho (0 = sem relógio)
+    turn_clock: int = 0
 
 
 def _store() -> QSettings:

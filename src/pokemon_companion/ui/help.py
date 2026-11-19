@@ -102,6 +102,9 @@ O botão de recuo mostra o custo; o botão grande passa o turno.</p>
 <h3>Ver uma carta</h3>
 <p>Passe o mouse sobre qualquer carta ou Pokémon para ver o texto completo, o HP e os
 ataques. Treinadores mostram em português o que fazem.</p>
+<h3>Relógio de turno</h3>
+<p>Opcional, nas Configurações. O tempo aparece no botão de passar o turno e só corre
+na sua vez; quando zera, o turno passa sozinho.</p>
 <h3>Atalhos</h3>
 <ul>
   <li><kbd>&nbsp;Esc&nbsp;</kbd> pausa (regras, configurações, desistir)</li>

@@ -245,6 +245,31 @@ def test_match_log_groups_messages_by_turn_and_discard_click_names_side(controll
     assert signal.args == [PlayerId.OPPONENT]
 
 
+def test_turn_clock_counts_only_while_playing_and_passes_the_turn(controller):
+    state = _state(_deck_card("Charmander"), _deck_card("Squirtle"))
+    ctrl = controller(state)
+    ctrl._ai_timer.stop()
+    ctrl._clock_timer.stop()
+    button = ctrl.scene.end_turn_button
+
+    ctrl._clock_tick()
+    assert button.clock is None  # relógio desligado
+
+    ctrl.turn_clock = 2
+    ctrl._clock_tick()
+    assert button.clock == 1
+    ctrl.set_paused(True)
+    ctrl._clock_tick()
+    assert button.clock == 1  # pausado não conta
+    ctrl.set_paused(False)
+    ctrl._ai_timer.stop()
+    ctrl._clock_tick()
+
+    assert state.active_player == PlayerId.OPPONENT
+    ctrl._clock_tick()
+    assert button.clock is None  # vez da IA
+
+
 def test_attack_button_ready_only_with_energy(controller):
     state = _state(_deck_card("Charmander"), _deck_card("Squirtle"))
     ctrl = controller(state)

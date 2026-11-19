@@ -154,6 +154,15 @@ class BattleController(QObject):
         self._ai_timer = QTimer(self)
         self._ai_timer.setSingleShot(True)
         self._ai_timer.timeout.connect(self._ai_step)
+        #: relógio de turno em segundos (0 = desligado; a janela liga conforme
+        #: as configurações). Só corre na sua vez, fora de animação e pausa.
+        self.turn_clock = 0
+        self._clock_left = 0
+        self._clock_turn = -1
+        self._clock_timer = QTimer(self)
+        self._clock_timer.setInterval(1000)
+        self._clock_timer.timeout.connect(self._clock_tick)
+        self._clock_timer.start()
 
         scene.hand_drag_started.connect(self._on_drag_started)
         scene.hand_card_dropped.connect(self._on_dropped)
@@ -184,6 +193,7 @@ class BattleController(QObject):
         self.player_ai = self._player_ai_factory() if self._player_ai_factory else None
         self.recorder = MatchRecorder() if self._history_path else None
         self._game_over_shown = False
+        self._clock_turn = -1
         #: mensagens do motor, com cabeçalho por turno (tecla L)
         self.match_log: list[str] = []
         self._logged_turn = -1
@@ -692,6 +702,31 @@ class BattleController(QObject):
             self._push_turn_banner()
         return animation
 
+    def _clock_tick(self) -> None:
+        button = self.scene.end_turn_button
+        if not self.turn_clock or not self.is_player_turn or self.state.pending_setup:
+            button.set_clock(None)
+            return
+        if self.state.turn_number != self._clock_turn:
+            self._clock_turn = self.state.turn_number
+            self._clock_left = self.turn_clock
+        if not (self.busy or self.paused):
+            self._clock_left = max(0, self._clock_left - 1)
+        button.set_clock(self._clock_left)
+        if self._clock_left == 0 and not (self.busy or self.paused):
+            self._time_up()
+
+    def _time_up(self) -> None:
+        """Tempo esgotado: passa o turno; numa escolha obrigatória (novo Ativo,
+        alvo de efeito), fica com a primeira opção, como no TCG Live."""
+        legal = self.legal_actions()
+        if not legal:
+            return
+        end = next((a for a in legal if isinstance(a, EndTurn)), None)
+        self.scene.hide_hint()
+        self.scene.show_toast("Tempo esgotado!")
+        self.perform(end or legal[0])
+
     def _log(self, turn: int, actor: PlayerId, messages: list[str]) -> None:
         if not messages:
             return
@@ -805,6 +840,7 @@ class MainWindow(QMainWindow):
                 match_info,
             )
         self.controller.set_hints(self.settings.hints)
+        self.controller.turn_clock = self.settings.turn_clock
         self.sounds.play_music("battle")
         shortcuts: list[tuple[Qt.Key, Callable[[], None]]] = [
             (Qt.Key.Key_Escape, self.open_pause_menu),
@@ -825,6 +861,7 @@ class MainWindow(QMainWindow):
     def apply_settings(self, settings: Settings) -> None:
         self.settings = settings
         self.controller.set_hints(settings.hints)
+        self.controller.turn_clock = settings.turn_clock
         apply_settings(settings, self.sounds)
         self.settings_changed.emit(settings)
 

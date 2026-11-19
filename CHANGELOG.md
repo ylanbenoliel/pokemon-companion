@@ -15,6 +15,9 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
 - Exportar deck: "Copiar lista" no menu de decks (copia o seu deck) e no
   construtor põe a lista na área de transferência, pronta para colar no
   Pokémon TCG Live ou no Limitless.
+- Relógio de turno opcional (Configurações → Partida: 1, 2 ou 3 minutos). O
+  tempo aparece no botão de passar o turno, só corre na sua vez (para nas
+  animações e na pausa) e, ao zerar, passa o turno sozinho.
 
 ## [0.2.0] - 2026-11-18
 

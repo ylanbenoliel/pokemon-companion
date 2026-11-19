@@ -27,6 +27,7 @@ from PyQt6.QtWidgets import (
 from pokemon_companion.ui.settings import (
     DIFFICULTIES,
     SPEEDS,
+    TURN_CLOCKS,
     Settings,
     reset_hints,
     save_settings,
@@ -127,6 +128,20 @@ class SettingsDialog(QDialog):
         self.speed.setCurrentIndex(closest)
         self.speed.currentIndexChanged.connect(lambda i: self._set(speed=self.speed.itemData(i)))
         grid.addWidget(self.speed, row, 1)
+        row += 1
+        grid.addWidget(label("Relógio de turno"), row, 0)
+        self.turn_clock = QComboBox()
+        for text, seconds in TURN_CLOCKS:
+            self.turn_clock.addItem(text, seconds)
+        clocks = [seconds for _, seconds in TURN_CLOCKS]
+        current_clock = self.settings.turn_clock
+        self.turn_clock.setCurrentIndex(
+            clocks.index(current_clock) if current_clock in clocks else 0
+        )
+        self.turn_clock.currentIndexChanged.connect(
+            lambda i: self._set(turn_clock=self.turn_clock.itemData(i))
+        )
+        grid.addWidget(self.turn_clock, row, 1)
         row += 1
         self.hints = QCheckBox("Dicas para iniciantes durante a partida")
         self.hints.setChecked(self.settings.hints)

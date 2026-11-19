@@ -1391,6 +1391,17 @@ class EndTurnButton(GameButton):
     def __init__(self) -> None:
         super().__init__(176, 62)
         self._mode = "play"
+        #: segundos restantes do relógio de turno (None = sem relógio)
+        self._clock: int | None = None
+
+    def set_clock(self, seconds: int | None) -> None:
+        if seconds != self._clock:
+            self._clock = seconds
+            self.update()
+
+    @property
+    def clock(self) -> int | None:
+        return self._clock
 
     def set_mode(self, mode: str) -> None:
         self._mode = mode
@@ -1421,7 +1432,17 @@ class EndTurnButton(GameButton):
         dark = self._mode in ("play", "done", "setup")
         painter.setPen(INK if dark else QColor(240, 245, 243, 210))
         painter.setFont(display_font(11.5 if len(text) < 18 else 9.5))
-        draw_text(painter, self.rect(), text)
+        if self._clock is None:
+            draw_text(painter, self.rect(), text)
+            return
+        rect = self.rect()
+        draw_text(painter, rect.adjusted(0, 4, 0, -rect.height() / 2 + 4), text)
+        minutes, seconds = divmod(self._clock, 60)
+        painter.setPen(QColor("#c0392b") if self._clock <= 15 else painter.pen().color())
+        painter.setFont(display_font(12))
+        draw_text(
+            painter, rect.adjusted(0, rect.height() / 2 - 6, 0, -4), f"{minutes}:{seconds:02d}"
+        )
 
 
 # --------------------------------------------------------------------------
