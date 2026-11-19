@@ -409,6 +409,18 @@ manifesto publicado, como os do Standard) e `data/expanded_pool.json`.
   cinco desevoluir copiados). A Zona Perdida aparece como pílula roxa junto
   ao descarte (`items.DiscardPile`, acima da pilha do lado do oponente) e na
   lista do clique no descarte.
+- **Formas repetidas (lote 3, 18/11/2026)**: cobertura 78% → 80% (15.155 →
+  15.640 textos-impressão; 319 → ~230 formas 2+). Reescritas novas em
+  `wording.py` (passivas antigas inclusive); `cardinfo.RULE_KINDS`/`rule_tests`
+  ("Pokémon-GX or Pokémon-EX", "Pokémon V"...) usados em condições, contagens,
+  alvos de dano, escudos (`shield` "rule:…"/"all") e no `_attacker_filter` das
+  passivas; frases: olhar o topo e ficar com K, cartas aleatórias da mão do
+  oponente, dano em quem tem contadores, trava de Treinadores, teto de dano
+  extra, contadores no Banco; passivas: imunidade a todas as Condições (também
+  por Energia anexada), recuo grátis do time, Ativo do oponente sem recuo
+  (recuo 99), bônus contra um tipo. O que sobra das formas 2+ é mecânica
+  própria (turno extra, Pedra-Papel-Tesoura, mexer nos prêmios, copiar ataques
+  de evoluções, limite de Banco do oponente, várias Ferramentas).
 - **Próximo passo** (se pedirem): implementar os efeitos que faltam no
   Expandido, por mecanismo genérico em `text_effects.py`/`passive_text.py`,
   começando pelas 319 formas de frase que aparecem 2+ vezes

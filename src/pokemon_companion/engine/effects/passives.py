@@ -19,6 +19,7 @@ from pokemon_companion.engine.effects.cardinfo import (
     is_tera,
     once_per_game,
     pokemon_type,
+    rule_tests,
     special_energy_units,
     stage_of,
 )
@@ -473,6 +474,11 @@ def shield_blocks(
         kind = kind.removesuffix("|anchored")
     if kind == "ex":
         return is_ex(attacker.card)
+    if kind == "all":
+        return True
+    if kind.startswith("rule:"):
+        tests = rule_tests(kind[5:]) or []
+        return any(test(attacker.card) for test in tests)
     if kind == "evolution":
         return attacker.card.evolves_from is not None
     if kind.startswith("less:"):
@@ -672,7 +678,7 @@ def survival(state: GameState, owner: PlayerId, defender: PokemonInPlay) -> set[
 def immune_to(state: GameState, mon: PokemonInPlay, status: object) -> bool:
     owner = owner_of(state, mon)
     return any(
-        holder is mon and p.status == status  # type: ignore[attr-defined]
+        _applies(p, holder, mon) and p.status in (None, status)  # type: ignore[attr-defined]
         for p, holder in compiled(state, owner, "immune")
     )
 

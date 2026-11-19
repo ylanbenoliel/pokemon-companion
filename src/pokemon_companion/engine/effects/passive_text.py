@@ -28,6 +28,7 @@ from pokemon_companion.engine.effects.cardinfo import (
     is_mega,
     is_tera,
     pokemon_type,
+    rule_tests,
     stage_of,
 )
 from pokemon_companion.engine.game_state import GameState, PlayerId, PokemonInPlay, StatusCondition
@@ -203,6 +204,10 @@ def _attacker_filter(text: str) -> MonTest | None:
     if single:
         kind_ = energy(single.group(1))
         return lambda m: pokemon_type(m.card) == kind_
+    rule_kinds = rule_tests(text)
+    if rule_kinds is not None:
+        found = rule_kinds
+        return lambda m: any(test(m.card) for test in found)
     return None
 
 
@@ -590,6 +595,23 @@ def _cheaper_retreat(symbols: str) -> Passive:
     return Passive("retreat", -amount, scope="own_active")
 
 
+@rule(
+    r"Your opponent's Active Pokémon can't retreat", r"your opponent's Active Pokémon can't retreat"
+)
+def _opp_no_retreat() -> Passive:
+    # ponytail: "não pode recuar" como recuo impagável; trocas por efeito continuam valendo
+    return Passive("retreat", 99, scope="opp_active")
+
+
+@rule(
+    rf"(?:This Pokémon's attacks do|Attacks used by this Pokémon do) {N} more damage to your "
+    r"opponent's (?:Active )?(.+?)Pokémon"
+)
+def _bonus_self_vs(n: str, who: str) -> Passive | None:
+    against = pokemon_filter(who)
+    return None if against is None else Passive("bonus", int(n), defender=against)
+
+
 @rule(r"Your opponent's Active (.*?)Pokémon's Retreat Cost is ((?:[\[{]C[\]}])+) more")
 def _pricier_retreat(who: str, symbols: str) -> Passive | None:
     target = pokemon_filter(who)
@@ -762,6 +784,24 @@ def _when_team_hit(who: str, action: str) -> Passive | None:
 )
 def _when_knocked_out_in_active(n: str) -> Passive:
     return Passive("on_knocked_out", counters=int(n), holder_at="active")
+
+
+@rule(r"This Pokémon can't be affected by any Special Conditions")
+def _immune_all() -> Passive:
+    return Passive("immune")
+
+
+@rule(
+    rf"Each of your Pokémon that has any {E} Energy attached can't be affected by any Special Conditions"
+)
+def _immune_team(symbol: str) -> Passive:
+    kind_ = energy(symbol)
+    return Passive("immune", scope="team", target=lambda m: kind_ in m.attached_energies)
+
+
+@rule(r"Your (Basic )?Pokémon in play have no Retreat Cost")
+def _free_retreat_all(basic: str | None) -> Passive:
+    return Passive("no_retreat", scope="team", target=lambda m: not basic or m.card.is_basic)
 
 
 @rule(r"This Pokémon can't be (\w+)")

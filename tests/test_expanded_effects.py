@@ -355,3 +355,167 @@ def test_hex_maniac_locks_every_ability_until_the_end_of_the_next_turn(state):
     assert not passives.ability_active(state, holder, "Set Up")
     state.turn_number += 2
     assert passives.ability_active(state, holder, "Set Up")
+
+
+# --- formas que se repetem (2+ cartas) -------------------------------------
+
+
+@pytest.mark.parametrize(
+    "old",
+    [
+        "Put 1 damage counter on your opponent's Active Pokémon.",
+        "If any of your Pokémon were Knocked Out by damage from an opponent's attack during their "
+        "last turn, this attack does 60 more damage.",
+        "Both this Pokémon and the Defending Pokémon are now Asleep.",
+        "Look at the top 4 cards of your deck and put them back on top of your deck in any order.",
+        "Discard all Energy from both Active Pokémon.",
+        "Flip a coin. If heads, switch 1 of your opponent's Benched Pokémon with the Defending "
+        "Pokémon.",
+        "Before doing damage, discard a Pokémon Tool card attached to the Defending Pokémon.",
+        "Heal all damage from all of your Pokémon.",
+        "If the Defending Pokémon is a Pokémon V, it can't attack during your opponent's next turn.",
+        "During your opponent's next turn, prevent all damage done to this Pokémon by attacks from "
+        "Pokémon-GX and Pokémon-EX.",
+    ],
+)
+def test_repeated_old_forms_compile(old):
+    assert text_effects.compile_text(old) is not None, text_effects.unknown_sentences(old)
+
+
+def test_look_at_top_and_keep_some(state):
+    state.player.deck = [mon(f"Top{i}") for i in range(5)] + state.player.deck
+    _play(
+        state,
+        "Look at the top 5 cards of your deck and put 2 of them into your hand. Shuffle the other "
+        "cards back into your deck.",
+    )
+    assert len(state.player.hand) == 2
+
+
+def test_random_cards_from_the_opponents_hand_go_back_to_their_deck(state):
+    state.opponent.hand = [mon("X"), mon("Y"), mon("Z")]
+    attack_with(
+        state,
+        "Choose 2 random cards from your opponent's hand. Your opponent reveals those cards and "
+        "shuffles them into their deck.",
+    )
+    ctx = core.Ctx(state, PlayerId.PLAYER, state.player.active)
+    from pokemon_companion.engine.effects import attacks
+
+    attacks.resolve_attack(ctx, state.player.active.card.attacks[0])
+    assert len(state.opponent.hand) == 1
+
+
+def test_damage_to_a_damaged_or_rule_box_target_only(state):
+    from pokemon_companion.engine.effects import attacks
+
+    hurt = PokemonInPlay(card=mon("Hurt", 100), damage_counters=60)
+    healthy = PokemonInPlay(card=mon("Healthy", 60))
+    v = PokemonInPlay(card=_rule_mon("Zacian V", "V"))
+    state.opponent.bench = [healthy, hurt, v]
+    attack_with(
+        state,
+        "This attack does 40 damage to 1 of your opponent's Pokémon that has any damage counters "
+        "on it.",
+    )
+    ctx = core.Ctx(state, PlayerId.PLAYER, state.player.active)
+    attacks.resolve_attack(ctx, state.player.active.card.attacks[0])
+    assert hurt.damage_counters == 100 and healthy.damage_counters == 0
+
+    attack_with(state, "This attack does 50 damage to 1 of your opponent's Pokémon V.")
+    attacks.resolve_attack(ctx, state.player.active.card.attacks[0])
+    assert v.damage_counters == 50 and healthy.damage_counters == 0
+
+
+def test_trainer_lock_and_damage_cap(state):
+    _play(
+        state, "Your opponent can't play any Trainer cards from their hand during their next turn."
+    )
+    turn = state.turn_number + 1
+    assert state.opponent.items_blocked_turn == state.opponent.supporters_blocked_turn == turn
+
+    from pokemon_companion.engine.effects import attacks
+
+    state.opponent.bench = [PokemonInPlay(card=mon(f"B{i}")) for i in range(5)]
+    attack_with(
+        state,
+        "This attack does 20 more damage for each of your opponent's Benched Pokémon. You can't "
+        "add more than 40 damage in this way.",
+        "10+",
+    )
+    attack = state.player.active.card.attacks[0]
+    assert attacks.estimated_damage(state, PlayerId.PLAYER, state.player.active, attack) == 50
+
+
+def test_new_conditions_and_counts(state):
+    from pokemon_companion.engine.effects import attacks
+
+    state.player.active.evolved_this_turn = True
+    attack_with(state, "If this Pokémon evolved during this turn, this attack does nothing.", "50")
+    state.player.active.evolved_this_turn = True
+    ctx = core.Ctx(state, PlayerId.PLAYER, state.player.active)
+    attacks.resolve_attack(ctx, state.player.active.card.attacks[0])
+    assert state.opponent.active.damage_counters == 0
+
+    fire = make_basic_pokemon("Fire", 60, "Fire")
+    state.player.bench = [PokemonInPlay(card=fire), PokemonInPlay(card=mon("Plain"))]
+    state.opponent.bench = [PokemonInPlay(card=_rule_mon("Eternatus VMAX", "VMAX"))]
+    for text, expected in [
+        ("This attack does 10 more damage for each of your Benched {R} Pokémon.", 20),
+        ("This attack does 10 more damage for each different type of Pokémon on your Bench.", 30),
+        ("If your opponent has any Pokémon VMAX in play, this attack does 50 more damage.", 60),
+    ]:
+        attack_with(state, text, "10+")
+        attack = state.player.active.card.attacks[0]
+        assert attacks.estimated_damage(state, PlayerId.PLAYER, state.player.active, attack) == (
+            expected
+        ), text
+
+
+def test_old_passives_now_work(state):
+    from pokemon_companion.engine.effects import passive_text
+
+    holder = PokemonInPlay(
+        card=dataclasses.replace(
+            mon("Holder"),
+            abilities=[
+                passive_ability("This Pokémon can't be affected by any Special Conditions.")
+            ],
+        )
+    )
+    state.player.active = holder
+    assert passives.immune_to(state, holder, StatusCondition.ASLEEP)
+
+    for text in [
+        "Your Basic Pokémon in play have no Retreat Cost.",
+        "As long as this Pokémon is your Active Pokémon, your opponent's Active Pokémon can't "
+        "retreat.",
+        "This Pokémon's attacks do 30 more damage to your opponent's {W} Pokémon.",
+        "Prevent all effects of attacks, including damage, done to this Pokémon by your "
+        "opponent's Pokémon-GX or Pokémon-EX.",
+        "If this Pokémon is your Active Pokémon and is damaged by an opponent's attack, put 3 "
+        "damage counters on the Attacking Pokémon.",
+        "As long as this Pokémon is on your Bench, prevent all damage done to this Pokémon by "
+        "attacks.",
+    ]:
+        assert passive_text.compile_passive(text), text
+
+
+def passive_ability(text: str):
+    from pokemon_companion.cards_db.models import Ability
+
+    return Ability(name="Old Passive", text=text)
+
+
+def test_rule_kind_shield_blocks_only_those_attackers(state):
+    _play_attack = text_effects.compile_text(
+        "During your opponent's next turn, prevent all damage done to this Pokémon by attacks "
+        "from Pokémon-GX and Pokémon-EX."
+    )
+    assert _play_attack is not None
+    me = state.player.active
+    me.shield = ("rule:Pokémon-GX and Pokémon-EX", state.turn_number)
+    gx = PokemonInPlay(card=_rule_mon("Zoroark-GX", "GX"))
+    plain = PokemonInPlay(card=mon("Plain"))
+    assert passives.shield_blocks(state, me, gx, 100)
+    assert not passives.shield_blocks(state, me, plain, 100)

@@ -1480,24 +1480,10 @@ def _c_ex_v() -> Predicate:
     return _defender_is(lambda m: is_ex(m.card) or "V" in m.card.subtypes)
 
 
-#: tipos de Pokémon com Regra citados por nome nas condições antigas
-#: ("If your opponent's Active Pokémon is a Pokémon-GX or a Pokémon-EX, ...")
-_RULE_KINDS: dict[str, Callable[[Card], bool]] = {
-    "pokémon-ex": lambda c: "EX" in c.subtypes,
-    "pokémon-gx": lambda c: any("GX" in sub for sub in c.subtypes),
-    "pokémon ex": is_ex,
-    "pokémon v": cardinfo.is_pokemon_v,
-    "pokémon vmax": lambda c: "VMAX" in c.subtypes,
-    "pokémon vstar": lambda c: "VSTAR" in c.subtypes,
-    "evolution pokémon": is_evolution,
-    "basic pokémon": lambda c: c.is_basic,
-}
-
-
 @condition(r"your opponent's Active Pokémon is (?:an? )?(.+)")
 def _c_rule_kind(kinds: str) -> Predicate | None:
     names = re.split(r",? or (?:an? )?", kinds.lower())
-    tests = [_RULE_KINDS.get(name.strip()) for name in names]
+    tests = [cardinfo.RULE_KINDS.get(name.strip()) for name in names]
     if not all(tests):
         return None
     return _defender_is(lambda m: any(test(m.card) for test in tests if test))
@@ -1803,6 +1789,62 @@ def _n_my_remaining() -> Counter_:
     return lambda run: len(run.me.prizes)
 
 
+@condition(r"this Pokémon evolved during this turn")
+def _c_evolved_now() -> Predicate:
+    return lambda run: run.source is not None and run.source.evolved_this_turn
+
+
+@condition(
+    r"this Pokémon didn't move from (?:the|your) Bench to the Active Spot this turn",
+)
+def _c_not_moved_in() -> Predicate:
+    return lambda run: (run.source is None or run.source.moved_to_active_turn != run.ctx.turn)
+
+
+@condition(
+    r"this Pokémon and your opponent's Active Pokémon have the same amount of Energy attached "
+    r"to them"
+)
+def _c_same_energy_as_defender() -> Predicate:
+    return lambda run: (
+        run.source is not None
+        and run.defender is not None
+        and len(run.source.attached_energies) == len(run.defender.attached_energies)
+    )
+
+
+@condition(r"this Pokémon has fewer remaining HP than your opponent's Active Pokémon")
+def _c_fewer_hp() -> Predicate:
+    return lambda run: (
+        run.source is not None
+        and run.defender is not None
+        and run.source.current_hp < run.defender.current_hp
+    )
+
+
+@condition(r"your opponent has any (.+?) in play")
+def _c_opp_has_kind(what: str) -> Predicate | None:
+    tests = cardinfo.rule_tests(what)
+    if tests is None:
+        return None
+    return lambda run: any(any(t(m.card) for t in tests) for m in run.opp.all_pokemon_in_play())
+
+
+@count(r"different type of Pokémon on your Bench")
+def _n_bench_types() -> Counter_:
+    return lambda run: len({t for m in run.me.bench for t in m.card.types})
+
+
+@count(r"of your opponent's (.+?) in play")
+def _n_opp_kind(what: str) -> Counter_ | None:
+    tests = cardinfo.rule_tests(what)
+    if tests is None:
+        return None
+    return lambda run: sum(
+        1 for m in run.opp.all_pokemon_in_play() if any(t(m.card) for t in tests)
+    )
+
+
 @condition(r"this Pokémon has (?:at least )?{N}(?: or more)? damage counters on it")
 def _c_self_counters(n: str) -> Predicate:
     return lambda run: run.source is not None and run.source.damage_counters >= 10 * num(n)
@@ -1923,7 +1965,7 @@ def _k_special_energy() -> CardFilter:
 
 @kind(r"(Basic )?(Pokémon-EX|Pokémon-GX|Pokémon V|Pokémon VMAX)")
 def _k_rule_kind(basic: str | None, name: str) -> CardFilter:
-    test = _RULE_KINDS[name.lower()]
+    test = cardinfo.RULE_KINDS[name.lower()]
     return lambda card: card.is_pokemon and test(card) and (not basic or card.is_basic)
 
 
@@ -1932,7 +1974,7 @@ def _k_rule_kind(basic: str | None, name: str) -> CardFilter:
     r"(Pokémon[- ](?:EX|GX|V)))?"
 )
 def _k_not_rule_kind(first: str, second: str | None) -> CardFilter:
-    tests = [_RULE_KINDS[n.lower()] for n in (first, second) if n]
+    tests = [cardinfo.RULE_KINDS[n.lower()] for n in (first, second) if n]
     return lambda card: card.is_pokemon and not any(test(card) for test in tests)
 
 
@@ -5086,6 +5128,12 @@ def _n_bench_named_part(text: str) -> Counter_ | None:
     return lambda run: sum(1 for m in run.me.bench if any(p in m.card.name for p in parts))
 
 
+@count(r"of your Benched {E} Pokémon")
+def _n_bench_typed(symbol: str) -> Counter_:
+    kind_ = energy(symbol)
+    return lambda run: sum(1 for m in run.me.bench if pokemon_type(m.card) == kind_)
+
+
 @count(r"of your Benched {X}")
 def _n_bench_named(name: str) -> Counter_ | None:
     found = card_name(name)
@@ -5291,9 +5339,9 @@ def _gust_kind(_n: str, what: str) -> Step | None:
     """Puxa só Pokémon do tipo citado ("Pokémon-GX or Pokémon-EX"); a escolha
     do jogador vale se for desse tipo, senão a IA escolhe entre eles."""
     names = re.split(r",? or (?:an? )?", what.lower())
-    if not all(n in _RULE_KINDS for n in names):
+    if not all(n in cardinfo.RULE_KINDS for n in names):
         return None
-    tests = [_RULE_KINDS[n] for n in names]
+    tests = [cardinfo.RULE_KINDS[n] for n in names]
 
     def act(run: Run) -> None:
         bench = run.opp.bench
@@ -5422,6 +5470,151 @@ def _ranger() -> Step:
 def _hex() -> Step:
     def act(run: Run) -> None:
         run.ctx.state.abilities_locked_until = run.ctx.turn + 1
+
+    return after(act)
+
+
+@phrase("Choose {N} random cards from your opponent's hand")
+def _pick_random_many(n: str) -> Step:
+    def act(run: Run) -> None:
+        left = [c for c in run.opp.hand if not any(c is p for p in run.picked)]
+        run.picked.extend(random.sample(left, min(num(n), len(left))))
+
+    return after(act)
+
+
+@phrase("Look at the top {N} cards of your deck and put {N} of them into your hand")
+def _look_take(n: str, k: str) -> Step:
+    def act(run: Run) -> None:
+        top = run.me.deck[: num(n)]
+        chosen = core.choose_cards(run.ctx.state, run.ctx.player_id, top, num(k))
+        for card in chosen:
+            run.me.deck.remove(card)
+            run.me.hand.append(card)
+        run.picked = [c for c in top if c not in chosen]
+
+    return after(act)
+
+
+def _hit_filtered(amount: int, test: Callable[[PokemonInPlay], bool], bench_only: bool) -> Act:
+    """Dano num Pokémon do oponente que passa no filtro: o que dá para
+    nocautear (mais prêmios), senão o de menos HP."""
+
+    def act(run: Run) -> None:
+        pool = run.opp.bench if bench_only else run.opp.all_pokemon_in_play()
+        options = [m for m in pool if test(m)]
+        if not options:
+            return
+        mon = min(
+            options,
+            key=lambda m: (m.current_hp > amount, -core._prize_value(m.card), m.current_hp),
+        )
+        attacks.hit(run.ctx, core.position_of(run.opp, mon), amount)
+
+    return act
+
+
+@phrase(
+    "This attack does {N} damage to {N} of your opponent's (Benched )?Pokémon that has any "
+    "damage counters on it",
+    "This attack does {N} damage to {N} of your opponent's (Benched )?(.+?)",
+)
+def _damage_filtered(
+    n: str, _k: str, benched: str | None, what: str | None = None
+) -> list[Step] | None:
+    if what is None:
+        test: Callable[[PokemonInPlay], bool] = lambda m: m.damage_counters > 0  # noqa: E731
+    else:
+        tests = cardinfo.rule_tests(what)
+        if tests is None:
+            return None
+        rule_tests = tests
+        test = lambda m: any(t(m.card) for t in rule_tests)  # noqa: E731
+    amount = num(n)
+
+    def replace(run: Run) -> None:
+        run.main_hit = False
+        run.damage = amount
+
+    return [pre(replace), after(_hit_filtered(amount, test, bool(benched)))]
+
+
+@phrase(
+    "This attack does {N} damage to each of your opponent's Benched Pokémon that has any damage "
+    "counters on it",
+    "This attack also does {N} damage to each of your opponent's Benched Pokémon that has any "
+    "damage counters on it",
+)
+def _damage_each_damaged(n: str) -> Step:
+    def act(run: Run) -> None:
+        for mon in [m for m in run.opp.bench if m.damage_counters > 0]:
+            attacks.hit(run.ctx, core.position_of(run.opp, mon), num(n))
+
+    return after(act)
+
+
+@phrase(
+    "Your opponent can't play any Trainer cards from their hand during their next turn",
+    "During your opponent's next turn, they can't play any Trainer cards from their hand",
+)
+def _trainer_lock() -> Step:
+    def act(run: Run) -> None:
+        turn = run.ctx.turn + 1
+        run.opp.items_blocked_turn = run.opp.supporters_blocked_turn = turn
+        run.opp.stadiums_blocked_turn = turn
+
+    return after(act)
+
+
+@phrase("You can't add more than {N} damage in this way")
+def _cap_bonus(n: str) -> Step:
+    def act(run: Run) -> None:
+        run.damage = min(run.damage, run.attack.base_damage + num(n))
+
+    return pre(act)
+
+
+@phrase("You can't do more than {N} damage in this way")
+def _cap_total(n: str) -> Step:
+    def act(run: Run) -> None:
+        run.damage = min(run.damage, num(n))
+
+    return pre(act)
+
+
+@phrase("Heal {N} damage from that Pokémon")
+def _heal_last_target(n: str) -> Step:
+    def act(run: Run) -> None:
+        if run.last_target is not None:
+            core.heal(run.last_target, num(n))
+
+    return after(act)
+
+
+@phrase("Put {N} damage counters on {N} of your opponent's Benched Pokémon")
+def _counters_bench(n: str, k: str) -> Step:
+    def act(run: Run) -> None:
+        for _ in range(num(k)):
+            options = list(run.opp.bench)
+            if not options:
+                return
+            kills = [m for m in options if m.current_hp <= 10 * num(n)]
+            target = (
+                max(kills, key=lambda m: core._prize_value(m.card))
+                if kills
+                else min(options, key=lambda m: m.current_hp)
+            )
+            core.place_counters(run.ctx, run.ctx.opp_id, target, num(n))
+
+    return after(act)
+
+
+@phrase("Discard an Energy from each of your opponent's Pokémon")
+def _discard_each_opp() -> Step:
+    def act(run: Run) -> None:
+        for mon in run.opp.all_pokemon_in_play():
+            if mon.attached_energies:
+                core.discard_energy(run.opp, mon)
 
     return after(act)
 
@@ -6899,6 +7092,28 @@ def _team_shield_ex(what: str) -> Step | None:
     return after(act)
 
 
+@phrase(
+    "During your opponent's next turn, prevent all damage done to this Pokémon by attacks from "
+    "(.+)",
+    "During your opponent's next turn, prevent all damage from and effects of attacks done to "
+    "this Pokémon by (.+)",
+    "During your opponent's next turn, prevent all damage from attacks done to this Pokémon()",
+)
+def _shield_rule_kind(who: str) -> Step | None:
+    """Escudo contra um tipo de Pokémon com Regra ("Pokémon-GX and Pokémon-EX",
+    "Pokémon VMAX"), ou contra todo dano de ataque (sem tipo).
+    ponytail: a versão "damage from and effects" só previne o dano."""
+    if who and cardinfo.rule_tests(who) is None:
+        return None
+    kind_ = f"rule:{who}" if who else "all"
+
+    def act(run: Run) -> None:
+        if run.source is not None:
+            run.source.shield = (kind_, run.ctx.turn + 1)
+
+    return after(act)
+
+
 @phrase("If this Pokémon is no longer your Active Pokémon, this effect ends")
 def _anchor_shields() -> Step:
     def act(run: Run) -> None:
@@ -7603,13 +7818,16 @@ def _search_counted() -> Step:
     return after(act)
 
 
-@phrase(
-    "If the Defending Pokémon is a Basic Pokémon, it can't attack during your opponent's next turn"
-)
-def _stomp() -> Step:
+@phrase("If the Defending Pokémon is an? (.+?), it can't attack during your opponent's next turn")
+def _stomp(what: str) -> Step | None:
+    tests = cardinfo.rule_tests(what)
+    if tests is None:
+        return None
+    kinds = tests
+
     def act(run: Run) -> None:
         defender = run.exposed_defender
-        if defender is not None and stage_of(defender.card) == "Basic":
+        if defender is not None and any(t(defender.card) for t in kinds):
             defender.cannot_attack_turn = run.ctx.turn + 1
 
     return after(act)

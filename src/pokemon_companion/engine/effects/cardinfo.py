@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import dataclasses
 import re
+from collections.abc import Callable
 
 from pokemon_companion.cards_db.models import Card, Supertype, signature
 from pokemon_companion.engine.effects import pack
@@ -74,6 +75,29 @@ def is_future(card: Card) -> bool:
 def is_pokemon_v(card: Card) -> bool:
     """Pokémon V inclui VMAX, VSTAR e V-UNION."""
     return bool({"V", "VMAX", "VSTAR", "V-UNION"} & set(card.subtypes))
+
+
+#: tipos de Pokémon com Regra citados por nome nos textos antigos
+#: ("If your opponent's Active Pokémon is a Pokémon-GX or a Pokémon-EX, ...")
+RULE_KINDS: dict[str, Callable[[Card], bool]] = {
+    "pokémon-ex": lambda c: "EX" in c.subtypes,
+    "pokémon-gx": lambda c: any("GX" in sub for sub in c.subtypes),
+    "pokémon ex": lambda c: is_ex(c),
+    "pokémon v": lambda c: is_pokemon_v(c),
+    "pokémon vmax": lambda c: "VMAX" in c.subtypes,
+    "pokémon vstar": lambda c: "VSTAR" in c.subtypes,
+    "evolution pokémon": lambda c: c.is_pokemon and c.evolves_from is not None,
+    "basic pokémon": lambda c: c.is_basic,
+}
+
+
+def rule_tests(what: str) -> list[Callable[[Card], bool]] | None:
+    """ "Pokémon-GX or Pokémon-EX" / "Pokémon V and Pokémon-GX" → um teste por
+    tipo citado; None se algum não for conhecido."""
+    names = [n.strip() for n in re.split(r",? (?:or|and) (?:an? )?", what.lower())]
+    if not all(n in RULE_KINDS for n in names):
+        return None
+    return [RULE_KINDS[n] for n in names]
 
 
 def is_ace_spec(card: Card) -> bool:

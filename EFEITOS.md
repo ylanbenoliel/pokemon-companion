@@ -28,7 +28,7 @@ motor. Leia inteiro antes de mexer em `src/pokemon_companion/engine/effects/`.
 | Compilador de frases | `text_effects.py` | Ataques, Treinadores (Item/Apoiador), Estádios e Habilidades ativas. Cada frase vira `Step`s. |
 | Passivas | `passive_text.py` | Habilidades e Ferramentas contínuas (dano recebido/causado, HP, recuo, travas). Cada frase vira `Passive` (dados). |
 | Redação antiga | `wording.py` | Traduz a redação de Black & White a Sol e Lua para a atual ("the Defending Pokémon", "his or her", "Does 30 damage", "times the number of heads"). Só é usada quando a frase original não é reconhecida. |
-| Classificação | `cardinfo.py` | Perguntas sobre a carta: Regra, Tera, ACE SPEC, Prism Star, Pokémon V, energia que uma Especial fornece (`special_energy_units`). |
+| Classificação | `cardinfo.py` | Perguntas sobre a carta: Regra, Tera, ACE SPEC, Prism Star, Pokémon V, energia que uma Especial fornece (`special_energy_units`), tipos com Regra citados no texto (`RULE_KINDS`/`rule_tests`: "Pokémon-GX or Pokémon-EX"). |
 | Dados publicados | `effects.json` (`pack.py`) | `rewrites` (texto original → texto que compila) e `groups` (marcas que a API não traz: Tera, Ancient, Future, ACE SPEC). |
 | Cobertura | `coverage.py` | `unimplemented(card)`: a única resposta para "esta carta tem efeito?" (construtor, carta ampliada, relatórios). |
 
