@@ -933,31 +933,49 @@ class CardPile(QGraphicsObject):
 
 
 class DiscardPile(QGraphicsObject):
-    """Clicar abre a lista das cartas (descarte é informação pública)."""
+    """Clicar abre a lista das cartas (descarte é informação pública). Embaixo,
+    quando há cartas na Zona Perdida (Prism Star, Faba), uma pílula roxa com a
+    contagem; o mesmo clique lista as duas zonas."""
 
     RECT = QRectF(-40, -56, 80, 112)
     clicked = pyqtSignal()
 
-    def __init__(self) -> None:
+    def __init__(self, lost_above: bool = False) -> None:
+        """`lost_above`: a pílula da Zona Perdida vai acima da pilha (do lado
+        do oponente, o deck fica logo abaixo do descarte)."""
         super().__init__()
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip("Ver o descarte")
         self._count = 0
+        self._lost = 0
+        self._lost_above = lost_above
         self._top: Card | None = None
         self._art: QPixmap | None = None
 
-    def set_top(self, card: Card | None, art: QPixmap | None, count: int) -> None:
+    def set_top(self, card: Card | None, art: QPixmap | None, count: int, lost: int = 0) -> None:
         self._top = card
         self._art = scaled_art(art, 70, 70)
         self._count = count
+        if lost != self._lost:
+            self.prepareGeometryChange()
+        self._lost = lost
+        self.setToolTip("Ver o descarte e a Zona Perdida" if lost else "Ver o descarte")
         self.update()
+
+    @property
+    def lost(self) -> int:
+        return self._lost
 
     @property
     def count(self) -> int:
         return self._count
 
     def boundingRect(self) -> QRectF:
-        return self.RECT.adjusted(-14, -14, 20, 34)
+        if not self._lost:
+            return self.RECT.adjusted(-14, -14, 20, 34)
+        if self._lost_above:
+            return self.RECT.adjusted(-14, -36, 20, 34)
+        return self.RECT.adjusted(-14, -14, 20, 56)
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent | None) -> None:
         if event is not None:
@@ -1005,6 +1023,15 @@ class DiscardPile(QGraphicsObject):
             QRectF(self.RECT.left() - 10, self.RECT.bottom() + 8, self.RECT.width() + 20, 16),
             "Descarte",
         )
+        if self._lost:
+            top = self.RECT.top() - 28 if self._lost_above else self.RECT.bottom() + 28
+            pill = QRectF(self.RECT.left() - 12, top, self.RECT.width() + 24, 20)
+            painter.setPen(QPen(QColor(205, 170, 255, 200), 1.0))
+            painter.setBrush(QColor(74, 38, 120, 220))
+            painter.drawRoundedRect(pill, 10, 10)
+            painter.setPen(QColor(240, 228, 255))
+            painter.setFont(ui_font(7.5, QFont.Weight.DemiBold))
+            draw_text(painter, pill, f"Zona Perdida {self._lost}")
 
 
 class PrizeGrid(QGraphicsObject):

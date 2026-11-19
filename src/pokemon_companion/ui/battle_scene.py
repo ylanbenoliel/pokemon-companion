@@ -217,7 +217,7 @@ class BattleScene(QGraphicsScene):
         self.player_deck = self._board_item(CardPile("Deck"), PLAYER_DECK)
         self.opponent_deck = self._board_item(CardPile("Deck"), OPPONENT_DECK)
         self.player_discard = self._board_item(DiscardPile(), PLAYER_DISCARD)
-        self.opponent_discard = self._board_item(DiscardPile(), OPPONENT_DISCARD)
+        self.opponent_discard = self._board_item(DiscardPile(lost_above=True), OPPONENT_DISCARD)
         self.player_discard.clicked.connect(lambda: self.discard_clicked.emit(PlayerId.PLAYER))
         self.opponent_discard.clicked.connect(lambda: self.discard_clicked.emit(PlayerId.OPPONENT))
         self.opponent_hand = self._board_item(OpponentHandFan(), OPPONENT_HAND)
@@ -758,6 +758,7 @@ class BattleScene(QGraphicsScene):
             top,
             self._art_unless_energy(top) if top is not None else None,
             len(player.discard),
+            len(player.lost_zone),
         )
         return animation
 

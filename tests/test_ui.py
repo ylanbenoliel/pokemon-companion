@@ -619,3 +619,15 @@ def test_animation_queue_moves_on_when_a_step_is_stopped_externally(qapp):
 
     assert ran == ["next"]
     assert not queue.busy
+
+
+def test_lost_zone_shows_under_the_discard_only_when_it_has_cards(controller):
+    state = _state(_deck_card("Charmander"), _deck_card("Squirtle"))
+    ctrl = controller(state)
+    ctrl._ai_timer.stop()
+    pile = ctrl.scene.player_discard
+    assert pile.lost == 0
+    state.player.lost_zone.append(_deck_card("Squirtle"))
+    ctrl.scene.sync(state, animate=False)
+    assert pile.lost == 1
+    assert "Zona Perdida" in pile.toolTip()

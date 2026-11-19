@@ -406,12 +406,13 @@ manifesto publicado, como os do Standard) e `data/expanded_pool.json`.
   a Zona Perdida); BREAK: `mon.card` é a visão somada
   (`cardinfo.break_view`, id `…#break`) e `mon.break_card` a carta impressa
   (`top_card`, usada em `all_cards` e no novo `core.devolve`, que substituiu os
-  cinco desevoluir copiados). A Zona Perdida ainda não aparece na tela.
+  cinco desevoluir copiados). A Zona Perdida aparece como pílula roxa junto
+  ao descarte (`items.DiscardPile`, acima da pilha do lado do oponente) e na
+  lista do clique no descarte.
 - **Próximo passo** (se pedirem): implementar os efeitos que faltam no
   Expandido, por mecanismo genérico em `text_effects.py`/`passive_text.py`,
   começando pelas 319 formas de frase que aparecem 2+ vezes
-  (`tools/compile_report.py --format expanded`); depois, mostrar a Zona
-  Perdida na tela. Prêmios e Regra já estão certos: TAG TEAM/V-UNION = 3, BREAK = 1, Mega de
+  (`tools/compile_report.py --format expanded`). Prêmios e Regra já estão certos: TAG TEAM/V-UNION = 3, BREAK = 1, Mega de
   XY = 2 (`rules.prize_count_for`, `cardinfo.has_rule_box`).
 
 ## Executável (PyInstaller)

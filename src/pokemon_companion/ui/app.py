@@ -895,11 +895,16 @@ class MainWindow(QMainWindow):
         self._show_list("Registro da partida", self.controller.match_log, "Nada aconteceu ainda.")
 
     def open_discard(self, side: PlayerId) -> None:
-        """Clique no descarte: as cartas na ordem em que caíram, a última embaixo."""
-        cards = self.controller.state.state_of(side).discard
+        """Clique no descarte: as cartas na ordem em que caíram, a última
+        embaixo; depois, se houver, as da Zona Perdida."""
+        player = self.controller.state.state_of(side)
+        lines = [card.name for card in player.discard]
+        if player.lost_zone:
+            lines += ["", f"Zona Perdida ({len(player.lost_zone)}):"]
+            lines += [card.name for card in player.lost_zone]
         self._show_list(
-            f"Descarte — {self.scene.name_of(side)} ({len(cards)})",
-            [card.name for card in cards],
+            f"Descarte — {self.scene.name_of(side)} ({len(player.discard)})",
+            lines,
             "O descarte está vazio.",
         )
 

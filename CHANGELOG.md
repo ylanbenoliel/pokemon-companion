@@ -44,6 +44,9 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
   Pokémon tenha o Spirit Link dele; cartas Prism Star (◇) vão para a Zona
   Perdida em vez do descarte; o Pokémon BREAK usa os ataques, a Habilidade, a
   Fraqueza, a Resistência e o recuo do estágio de baixo.
+- A Zona Perdida aparece na mesa: uma pílula roxa com a contagem junto ao
+  descarte de cada jogador, e o clique no descarte lista também as cartas que
+  estão nela.
 
 ### Corrigido
 
