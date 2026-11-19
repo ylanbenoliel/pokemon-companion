@@ -81,6 +81,9 @@ def tcgdex_card_to_card(data: dict) -> Card:
         subtypes.append(suffix)
     if name.endswith(" ex") and "ex" not in subtypes:
         subtypes.append("ex")  # Megas vêm sem `suffix` na TCGdex
+    for rule in ("EX", "GX"):  # alguns "M …-EX" também vêm sem `suffix`
+        if name.endswith(f"-{rule}") and not any(rule in sub for sub in subtypes):
+            subtypes.append(rule)
     if name.startswith("Mega "):
         subtypes.append("Mega")
     trainer_type = data.get("trainerType")

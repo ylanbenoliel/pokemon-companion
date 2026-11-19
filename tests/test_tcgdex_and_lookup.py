@@ -6,6 +6,7 @@ import requests
 from pokemon_companion.cards_db.lookup import FallbackLookup
 from pokemon_companion.cards_db.models import Card, Supertype
 from pokemon_companion.cards_db.tcgdex_client import TcgdexClient, tcgdex_card_to_card
+from pokemon_companion.engine.effects.cardinfo import has_rule_box
 from pokemon_companion.engine.rules import prize_count_for
 
 DRAGAPULT_JSON = {
@@ -224,3 +225,16 @@ def test_promo_numbers_match_without_the_letter_prefix_but_galleries_stay_exact(
     assert split_id("tcgdex-swsh9-TG05") == ("swsh9", "TG05")
     assert set_code("swshp", {"abbreviation": None}) == "SWSHP"
     assert set_code("sma", {}) is None
+
+
+def test_expanded_prize_counts_from_tcgdex_subtypes():
+    def card(name: str, suffix: str | None = None, stage: str = "Basic") -> Card:
+        data = {"id": "x-1", "name": name, "category": "Pokemon", "stage": stage}
+        return tcgdex_card_to_card({**data, "suffix": suffix} if suffix else data)
+
+    assert prize_count_for(card("Pikachu & Zekrom GX", "TAG TEAM-GX")) == 3
+    assert prize_count_for(card("Pikachu V-UNION", "V-UNION")) == 3
+    assert prize_count_for(card("Greninja BREAK", "BREAK", "BREAK")) == 1
+    assert prize_count_for(card("M Venusaur EX", stage="MEGA")) == 2  # Mega de XY: 2
+    assert prize_count_for(card("Lunala ◇")) == 1
+    assert has_rule_box(card("Lunala ◇")) and has_rule_box(card("Greninja BREAK", "BREAK"))

@@ -374,8 +374,10 @@ manifesto publicado, como os do Standard) e `data/expanded_pool.json`.
 - **Próximo passo** (se pedirem): implementar os efeitos que faltam no
   Expandido, por mecanismo genérico em `text_effects.py`/`passive_text.py`,
   começando pelos mais frequentes do relatório; mecânicas antigas sem motor
-  (GX uma vez por partida, Prism Star para a Zona Perdida, BREAK, TAG TEAM)
-  também ficam para essa fase.
+  (ataque GX uma vez por partida, Prism Star indo para a Zona Perdida,
+  evolução BREAK mantendo os ataques de baixo) também ficam para essa fase.
+  Prêmios e Regra já estão certos: TAG TEAM/V-UNION = 3, BREAK = 1, Mega de
+  XY = 2 (`rules.prize_count_for`, `cardinfo.has_rule_box`).
 
 ## Executável (PyInstaller)
 

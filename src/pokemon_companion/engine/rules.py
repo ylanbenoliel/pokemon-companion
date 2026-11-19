@@ -62,17 +62,19 @@ from pokemon_companion.engine.status_conditions import (
     recover_from_paralysis,
 )
 
-_TRIPLE_PRIZE_SUBTYPES = {"VMAX", "VSTAR"}
-_DOUBLE_PRIZE_SUBTYPES = {"ex", "EX", "GX", "V", "BREAK"}
+#: a TCGdex marca TAG TEAM como "TAG TEAM-GX"; a pokemontcg.io, como "TAG TEAM"
+_TRIPLE_PRIZE_SUBTYPES = {"VMAX", "VSTAR", "V-UNION", "TAG TEAM", "TAG TEAM-GX"}
+#: BREAK não está aqui: o Pokémon BREAK vale 1 prêmio (salvo se for EX/GX)
+_DOUBLE_PRIZE_SUBTYPES = {"ex", "EX", "GX", "V"}
 
 
 def prize_count_for(card: Card) -> int:
-    """Quantos prêmios o oponente leva ao nocautear esta carta (ex/GX/V = 2,
-    VMAX/VSTAR/Mega Evolução ex = 3)."""
+    """Quantos prêmios o oponente leva ao nocautear esta carta (ex/EX/GX/V = 2;
+    VMAX/VSTAR/V-UNION/TAG TEAM/Mega Evolução ex = 3; BREAK e Prism Star = 1)."""
     subtypes = set(card.subtypes)
     if subtypes & _TRIPLE_PRIZE_SUBTYPES:
         return 3
-    if "Mega" in subtypes and ("ex" in subtypes or "EX" in subtypes):
+    if "Mega" in subtypes and "ex" in subtypes:  # Mega de XY ("MEGA", EX) vale 2
         return 3
     if subtypes & _DOUBLE_PRIZE_SUBTYPES:
         return 2

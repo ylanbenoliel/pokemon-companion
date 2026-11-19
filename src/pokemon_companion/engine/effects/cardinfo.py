@@ -27,11 +27,28 @@ BASIC_TYPES = (
     "Metal",
     "Fairy",
 )
-RULE_BOX_SUBTYPES = {"ex", "EX", "V", "VMAX", "VSTAR", "GX"}
+RULE_BOX_SUBTYPES = {
+    "ex",
+    "EX",
+    "V",
+    "VMAX",
+    "VSTAR",
+    "GX",
+    "TAG TEAM",
+    "TAG TEAM-GX",
+    "V-UNION",
+    "BREAK",
+    "MEGA",
+    "Legend",
+}
 
 
 def has_rule_box(card: Card) -> bool:
-    return bool(set(card.subtypes) & RULE_BOX_SUBTYPES) or card.name.startswith("Radiant ")
+    return (
+        bool(set(card.subtypes) & RULE_BOX_SUBTYPES)
+        or card.name.startswith("Radiant ")
+        or is_prism_star(card)
+    )
 
 
 def is_ex(card: Card) -> bool:

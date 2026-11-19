@@ -36,6 +36,10 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
   com hífen ("Zoroark-GX"), itens da Equipe Flare ("Battle Compressor"),
   Prism Star escrito sem o ◇, promos como "SMP 45" e energia básica com a
   impressão no fim ("7 Psychic Energy SSH P").
+- Prêmios das cartas do Expandido: TAG TEAM e V-UNION valem 3 (TAG TEAM
+  valia 1), Pokémon BREAK vale 1 (valia 2) e os Mega de XY ("M …-EX") valem 2.
+  TAG TEAM, V-UNION, BREAK, Mega de XY, LEGEND e Prism Star contam como
+  Pokémon com Regra.
 
 ## [0.2.0] - 2026-11-18
 
