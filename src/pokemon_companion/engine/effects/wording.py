@@ -39,6 +39,11 @@ OLD_WORDING: list[tuple[str, str | Callable[[re.Match[str]], str]]] = [
     (r"damage times the number of heads", "damage for each heads"),
     (r"\bColorless in (.+?)'s Retreat Cost", r"{C} in \1's Retreat Cost"),
     (rf"\bbasic ({_TYPES}) Energy\b", r"Basic \1 Energy"),
+    # "Fire or {W} Pokémon", "Grass, Fire, and Water Energy": tipos em lista
+    (
+        rf"\b({_TYPES})(,| or| and)(?= (?:[{{\[]\w[}}\]]|(?:{_TYPES}|and|or)\b))",
+        lambda m: f"{{{_SYMBOL[m.group(1)]}}}{m.group(2)}",
+    ),
     (rf"\b({_TYPES}) (Energy|Pokémon)\b", lambda m: f"{{{_SYMBOL[m.group(1)]}}} {m.group(2)}"),
     (rf"\b({_TYPES}) (less|more)\b", lambda m: f"{{{_SYMBOL[m.group(1)]}}} {m.group(2)}"),
     (r"(?i)^((?:.*?)discard .*?Energy(?: cards?)?) attached to\b", r"\1 from"),
@@ -75,8 +80,8 @@ OLD_WORDING: list[tuple[str, str | Callable[[re.Match[str]], str]]] = [
         r"During Pokémon Checkup, put \1 damage counters on that Pokémon instead of \2",
     ),
     (
-        r"^Your opponent switches the Defending Pokémon with",
-        "Your opponent switches their Active Pokémon with",
+        r"([Yy])our opponent switches the Defending Pokémon with",
+        r"\1our opponent switches their Active Pokémon with",
     ),
     (
         r"([Ss])witch (?:the Defending Pokémon with (\d+) of your opponent's Benched Pokémon|(\d+) "
@@ -101,7 +106,7 @@ OLD_WORDING: list[tuple[str, str | Callable[[re.Match[str]], str]]] = [
         r"This attack does \2 less damage for each",
     ),
     (r"\bPokémon Tool cards\b", "Pokémon Tools"),
-    (r"\b(discard an? )Pokémon Tool card\b", r"\1Pokémon Tool"),
+    (r"\b([Dd]iscard an? )Pokémon Tool card\b", r"\1Pokémon Tool"),
     (r"(?i)^((?:.*?)discard (?:all |a |an )?Pokémon Tools?) attached to\b", r"\1 from"),
     (r"([Dd])iscard any Stadium card in play", r"\1iscard a Stadium in play"),
     (
@@ -205,7 +210,41 @@ OLD_WORDING: list[tuple[str, str | Callable[[re.Match[str]], str]]] = [
         "Discard all Energy from this Pokémon, and discard all Energy from your opponent's Active "
         "Pokémon",
     ),
+    (
+        r"^(If your opponent's Active Pokémon .+?), that Pokémon is Knocked Out$",
+        r"\1, your opponent's Active Pokémon is Knocked Out",
+    ),
+    (
+        r"^If, before doing damage, your opponent's Active Pokémon has more remaining HP than this "
+        r"Pokémon, ",
+        "If this Pokémon has fewer remaining HP than your opponent's Active Pokémon, ",
+    ),
+    (
+        r"Prize card your opponent took on their last turn",
+        "Prize card your opponent took during their last turn",
+    ),
+    (
+        r"look at the top (\d+) cards of your opponent's deck and put them back on top of their "
+        r"deck in any order",
+        r"look at the top \1 cards of your opponent's deck and put them back in any order",
+    ),
+    (
+        r"put them back on top of that player's deck in any order",
+        "put them back in any order",
+    ),
     # passivas antigas
+    (
+        r"^Any damage done to this Pokémon by attacks from your opponent's (.+) is reduced by (\d+)$",
+        r"This Pokémon takes \2 less damage from attacks from your opponent's \1",
+    ),
+    (
+        r"attacks used by your opponent's Active Pokémon cost",
+        "attacks used by your opponent's Pokémon cost",
+    ),
+    (
+        r"your opponent's (.*?)Pokémon's attacks cost",
+        r"attacks used by your opponent's \1Pokémon cost",
+    ),
     (
         r"^Prevent all effects of your opponent's attacks, except damage, done to this Pokémon$",
         "Prevent all effects of attacks used by your opponent's Pokémon done to this Pokémon",

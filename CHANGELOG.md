@@ -55,6 +55,13 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
   consegue pagar, revelar a mão do oponente e descartar um Treinador dela,
   dano por cara em todos os Pokémon do oponente, descartar Energias do
   oponente e ataques que podem ser usados no primeiro turno de quem começa.
+- Mais efeitos do Expandido: nocaute quando o Ativo do oponente tem
+  exatamente N contadores (ou N ou mais), escolher uma carta da mão revelada
+  do oponente para o fundo do deck dele, dano extra num Pokémon V do Banco,
+  Habilidades antigas condicionais ("se houver um Estádio em jogo", "se o
+  oponente tiver Pokémon-GX ou EX") e ataques com requisito ("You can use this
+  attack only if …") só aparecem quando o requisito é cumprido.
+
 - A Zona Perdida aparece na mesa: uma pílula roxa com a contagem junto ao
   descarte de cada jogador, e o clique no descarte lista também as cartas que
   estão nela.

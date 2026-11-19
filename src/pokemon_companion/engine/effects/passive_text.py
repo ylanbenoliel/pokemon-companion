@@ -244,6 +244,16 @@ def _self_condition(text: str) -> HolderTest | None:
         test = pokemon_filter(any_in_play.group(1))
         if test is not None:
             return lambda s, o, h: any(test(m) for m in s.state_of(o).all_pokemon_in_play())
+    if text in ("a Stadium is in play", "there is any Stadium in play"):
+        return lambda s, o, h: s.stadium is not None
+    opp_any = re.fullmatch(r"your opponent has any (.+?) in play", text)
+    if opp_any:
+        kinds = rule_tests(opp_any.group(1))
+        if kinds is not None:
+            found = kinds
+            return lambda s, o, h: any(
+                any(t(m.card) for t in found) for m in s.state_of(o.other).all_pokemon_in_play()
+            )
     if text == "you have more Prize cards remaining than your opponent":
         return lambda s, o, h: len(s.state_of(o).prizes) > len(s.state_of(o.other).prizes)
     if text == "you have the same number of cards in your hand as your opponent":
@@ -920,7 +930,8 @@ def _parse_sentence(sentence: str) -> list[Passive] | None:
     conditional = re.fullmatch(r"If (.+?), (.+)", sentence)
     if conditional:
         when = _self_condition(conditional.group(1))
-        inner = _parse_sentence(conditional.group(2))
+        rest = conditional.group(2)
+        inner = _parse_sentence(rest) or _parse_sentence(rest[0].upper() + rest[1:])
         if when is not None and inner is not None:
             return _with_when(inner, when)
     return None

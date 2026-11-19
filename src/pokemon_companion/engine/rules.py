@@ -37,7 +37,14 @@ from pokemon_companion.engine.actions import (
     UseHandAbility,
     UseStadium,
 )
-from pokemon_companion.engine.effects import abilities, attacks, core, passives, trainers
+from pokemon_companion.engine.effects import (
+    abilities,
+    attacks,
+    core,
+    passives,
+    text_effects,
+    trainers,
+)
 from pokemon_companion.engine.effects.cardinfo import (
     fossil_pokemon,
     in_group,
@@ -256,6 +263,8 @@ def _attack_actions(state: GameState, pid: PlayerId) -> list[Action]:
         if first_turn and not _FIRST_TURN_ATTACK.search(attack.text or ""):
             continue
         if not passives.attack_allowed(state, pid, active, attack):
+            continue
+        if not text_effects.attack_requirement_met(Ctx(state, pid, active), attack):
             continue
         if not passives.can_pay(state, pid, active, attack):
             continue

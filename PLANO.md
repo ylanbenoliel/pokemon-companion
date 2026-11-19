@@ -428,6 +428,16 @@ manifesto publicado, como os do Standard) e `data/expanded_pool.json`.
   (`Run.copy_needs_energy`), "Your opponent reveals their hand" agora preenche
   `run.picked` (para "Discard a X you find there"), ataques liberados no 1º
   turno de quem começa (`rules._FIRST_TURN_ATTACK`).
+- **Lote 5 (18/11/2026)**: 15.804 textos-impressão (81%; 198 formas 2+).
+  Requisito de ataque lido do texto (`text_effects.attack_requirement_met`,
+  checado em `rules._attack_actions`); condições de contadores exatos/mínimos
+  no Ativo do oponente; "Choose a X you find there and put it on the bottom of
+  their deck"; reordenar o topo vira passo sem efeito (manter a ordem é
+  válido); passivas condicionais com Estádio em jogo ou tipos com Regra do
+  oponente; tipos em lista ("Fire or {W} Pokémon") e o tipo de carta
+  "{E} or {E} Pokémon" (corrigiu Mysterious Treasure, que antes lia "Psychic"
+  como nome de carta). Torneio difícil com 8 decks do Expandido: ~4 min, igual
+  ao lote anterior (a IA difícil simula turnos inteiros; o médio leva segundos).
 - **Próximo passo** (se pedirem): implementar os efeitos que faltam no
   Expandido, por mecanismo genérico em `text_effects.py`/`passive_text.py`,
   começando pelas 319 formas de frase que aparecem 2+ vezes

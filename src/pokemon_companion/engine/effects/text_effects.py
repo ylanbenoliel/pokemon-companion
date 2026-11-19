@@ -1970,6 +1970,12 @@ def _k_ex() -> CardFilter:
     return lambda card: card.is_pokemon and is_ex(card)
 
 
+@kind(r"{E} or {E} Pokémon")
+def _k_either_type(first: str, second: str) -> CardFilter:
+    kinds = {energy(first), energy(second)}
+    return lambda card: card.is_pokemon and pokemon_type(card) in kinds
+
+
 @kind(r"Special Energy card", r"Special Energy")
 def _k_special_energy() -> CardFilter:
     return lambda card: card.supertype.value == "Energy" and not is_basic_energy(card)
@@ -5743,6 +5749,92 @@ def _discard_opp_energy(n: str) -> Step:
                 left -= 1
 
     return after(act)
+
+
+@phrase("Choose an? (.+?) you find there and put it on the bottom of their deck")
+def _found_to_bottom(what: str) -> Step | None:
+    card_filter = parse_kind(what)
+    if card_filter is None:
+        return None
+    test = card_filter
+
+    def act(run: Run) -> None:
+        theirs = [c for c in run.picked if test(c) and c in run.opp.hand]
+        if theirs:
+            best = core.choose_cards(run.ctx.state, run.ctx.opp_id, theirs, 1)[0]
+            run.opp.hand.remove(best)
+            run.opp.deck.append(best)
+
+    return after(act)
+
+
+@phrase(
+    "Look at the top {N} cards of either player's deck and put them back in any order",
+    "Look at the top {N} cards of your opponent's deck and put them back in any order",
+    "Put the other cards back in any order",
+)
+def _reorder_top(*_: str) -> Step:
+    # ponytail: a IA não reordena o topo (manter a ordem é uma escolha válida)
+    return after(lambda run: None)
+
+
+@phrase("You can use this attack only if (.+)")
+def _attack_requirement(text: str) -> Step | None:
+    """Sem a condição o ataque não faz nada (a ação continua listada)."""
+    predicate = parse_condition(text)
+    if predicate is None:
+        return None
+    check = predicate
+
+    def gate(run: Run) -> None:
+        if not check(run):
+            run.cancelled = True
+
+    return pre(gate)
+
+
+_ATTACK_REQUIREMENT = re.compile(r"You can use this attack only if ([^.]+)\.")
+
+
+def attack_requirement_met(ctx: Ctx, attack_: Attack) -> bool:
+    """ "You can use this attack only if ..." checado antes de listar o ataque."""
+    match = _ATTACK_REQUIREMENT.search(_clean(attack_.text or ""))
+    if match is None:
+        return True
+    predicate = parse_condition(match.group(1))
+    return predicate is None or bool(predicate(Run(ctx, attack_, 0, estimate=True)))
+
+
+@condition(r"your opponent's Active Pokémon has exactly {N} damage counters on it")
+def _c_exact_counters(n: str) -> Predicate:
+    return _defender_is(lambda m: m.damage_counters == 10 * num(n))
+
+
+@condition(r"your opponent's Active Pokémon has {N} or more damage counters on it")
+def _c_many_counters(n: str) -> Predicate:
+    return _defender_is(lambda m: m.damage_counters >= 10 * num(n))
+
+
+@condition(
+    r"your opponent's Active Pokémon has any Abilities",
+    r"your opponent's Active Pokémon has an Ability",
+)
+def _c_defender_ability() -> Predicate:
+    return _defender_is(lambda m: bool(m.card.abilities))
+
+
+@count(r"of your opponent's Pokémon in play that has an Ability")
+def _n_opp_abilities() -> Counter_:
+    return lambda run: sum(1 for m in run.opp.all_pokemon_in_play() if m.card.abilities)
+
+
+@phrase("This attack also does {N} damage to {N} of your opponent's Benched (.+)")
+def _also_damage_kind(n: str, _k: str, what: str) -> Step | None:
+    tests = cardinfo.rule_tests(what)
+    if tests is None:
+        return None
+    kinds = tests
+    return after(_hit_filtered(num(n), lambda m: any(t(m.card) for t in kinds), True))
 
 
 @phrase("Your opponent draws {N} cards", "Your opponent draws {N} card")

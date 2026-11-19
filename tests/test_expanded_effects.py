@@ -652,3 +652,92 @@ def test_go_first_attack_is_the_only_one_on_turn_one():
     state.turn_number = 1
     attacks_now = [a for a in rules.legal_actions(state) if isinstance(a, UseAttack)]
     assert [a.attack_index for a in attacks_now] == [0]
+
+
+# --- lote 5 -----------------------------------------------------------------
+
+
+def test_knock_out_when_the_defender_has_exactly_n_counters(state):
+    state.opponent.active.damage_counters = 30
+    _attack(
+        state,
+        "If your opponent's Active Pokémon has exactly 3 damage counters on it, that Pokémon is "
+        "Knocked Out.",
+    )
+    assert state.opponent.active.is_knocked_out
+
+
+def test_put_a_card_from_the_revealed_hand_on_the_bottom(state):
+    supporter = Card(
+        id="s", name="Boss's Orders", supertype=Supertype.TRAINER, subtypes=["Supporter"]
+    )
+    state.opponent.hand = [mon("Keep"), supporter]
+    _attack(
+        state,
+        "Your opponent reveals their hand. Choose a Supporter card you find there and put it on "
+        "the bottom of their deck.",
+    )
+    assert state.opponent.deck[-1] is supporter and supporter not in state.opponent.hand
+
+
+def test_attack_requirement_hides_the_attack_until_it_is_met():
+    from pokemon_companion.cards_db.models import Attack
+    from pokemon_companion.engine import rules
+    from pokemon_companion.engine.actions import UseAttack
+
+    from .test_rules import build_state as fresh
+
+    gated = Attack(
+        name="Comeback",
+        cost=[],
+        damage="100",
+        text="You can use this attack only if you have more Prize cards remaining than your "
+        "opponent.",
+    )
+    state = fresh(
+        player_active=dataclasses.replace(mon("Underdog"), attacks=[gated]),
+        opponent_active=mon("Target"),
+        player_deck=[mon(f"D{i}") for i in range(5)],
+    )
+    assert not [a for a in rules.legal_actions(state) if isinstance(a, UseAttack)]
+    state.opponent.prizes = state.opponent.prizes[:2]
+    assert [a for a in rules.legal_actions(state) if isinstance(a, UseAttack)]
+
+
+def test_old_passive_conditions_and_damage_reduction(state):
+    from pokemon_companion.engine.effects import passive_text
+
+    for text in [
+        "If there is any Stadium card in play, this Pokémon has no Retreat Cost.",
+        "If your opponent has any Pokémon-GX or Pokémon-EX in play, this Pokémon has no Retreat "
+        "Cost.",
+        "Any damage done to this Pokémon by attacks from your opponent's Fire or {W} Pokémon is "
+        "reduced by 20.",
+        "As long as this Pokémon is your Active Pokémon, your opponent's Basic Pokémon's attacks "
+        "cost Colorless more.",
+    ]:
+        assert passive_text.compile_passive(text), text
+
+
+def test_also_damage_a_benched_pokemon_v(state):
+    v = PokemonInPlay(card=_rule_mon("Zacian V", "V"))
+    plain = PokemonInPlay(card=mon("Plain"))
+    state.opponent.bench = [plain, v]
+    _attack(
+        state, "This attack also does 30 damage to 1 of your opponent's Benched Pokémon V.", "10"
+    )
+    assert v.damage_counters == 30 and plain.damage_counters == 0
+    assert state.opponent.active.damage_counters == 10
+
+
+def test_search_for_either_of_two_types(state):
+    psychic = make_basic_pokemon("Mew", 60, "Psychic")
+    dragon = make_basic_pokemon("Dratini", 60, "Dragon")
+    state.player.deck = [mon("Plain"), dragon, psychic]
+    state.player.hand = [mon("Fodder"), mon("Card itself")]
+    _play(
+        state,
+        "Discard a card from your hand. If you do, search your deck for a Psychic or Dragon "
+        "Pokémon, reveal it, and put it into your hand. Then, shuffle your deck.",
+    )
+    assert any(c.name in ("Mew", "Dratini") for c in state.player.hand)
