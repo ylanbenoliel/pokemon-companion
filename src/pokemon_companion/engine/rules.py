@@ -18,6 +18,8 @@ por heurística na hora. `decision_player()` diz quem deve agir.
 
 from __future__ import annotations
 
+import re
+
 from pokemon_companion.cards_db.models import Card, Supertype
 from pokemon_companion.engine.actions import (
     Action,
@@ -235,17 +237,24 @@ def _ability_actions(state: GameState, pid: PlayerId) -> list[Action]:
     return actions
 
 
+#: "If you go first, you can use this attack during/on your first turn"
+_FIRST_TURN_ATTACK = re.compile(
+    r"If you go first, you can use this attack (?:during|on) your first turn"
+)
+
+
 def _attack_actions(state: GameState, pid: PlayerId) -> list[Action]:
     player = state.state_of(pid)
     active = player.active
     if active is None or not can_attack(active):
         return []
-    if state.turn_number <= 1 and not passives.attacks_on_first_turn(state, pid, active):
-        return []
+    first_turn = state.turn_number <= 1 and not passives.attacks_on_first_turn(state, pid, active)
     if player.attacks_this_turn >= _attacks_allowed(state, pid):
         return []
     actions: list[Action] = []
     for index, attack in enumerate(passives.available_attacks(state, pid, active)):
+        if first_turn and not _FIRST_TURN_ATTACK.search(attack.text or ""):
+            continue
         if not passives.attack_allowed(state, pid, active, attack):
             continue
         if not passives.can_pay(state, pid, active, attack):
@@ -649,8 +658,15 @@ def _reset_turn_flags(state: GameState, pid: PlayerId) -> None:
 def _start_next_turn(state: GameState) -> list[str]:
     state.resume_phase = ""
     _reset_turn_flags(state, state.active_player)
-    state.active_player = state.active_player.other
-    state.turn_number += 1
+    if state.extra_turn_for == state.active_player:
+        # turno extra: o mesmo jogador joga de novo. ponytail: o número do turno
+        # pula 2 para manter a paridade de "seu turno"/"turno do oponente"
+        # usada pelos efeitos com duração
+        state.extra_turn_for = None
+        state.turn_number += 2
+    else:
+        state.active_player = state.active_player.other
+        state.turn_number += 1
     _reset_turn_flags(state, state.active_player)
     new_player = state.state_of(state.active_player)
     if not new_player.deck:

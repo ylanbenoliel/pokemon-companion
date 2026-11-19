@@ -50,6 +50,11 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
   Treinadores, limite de dano extra e Habilidades antigas como imunidade a
   Condições Especiais, recuo grátis para o time e "o Ativo do oponente não pode
   recuar".
+- Mais efeitos do Expandido (cobertura de 80% para 81%): Timeless GX (turno
+  extra), Intrepid Sword (Zacian V), Copy Anything (Ditto) só copia ataques que
+  consegue pagar, revelar a mão do oponente e descartar um Treinador dela,
+  dano por cara em todos os Pokémon do oponente, descartar Energias do
+  oponente e ataques que podem ser usados no primeiro turno de quem começa.
 - A Zona Perdida aparece na mesa: uma pílula roxa com a contagem junto ao
   descarte de cada jogador, e o clique no descarte lista também as cartas que
   estão nela.

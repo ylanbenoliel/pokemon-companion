@@ -185,7 +185,17 @@ OLD_WORDING: list[tuple[str, str | Callable[[re.Match[str]], str]]] = [
         "draw a card for each card in your opponent's hand",
     ),
     (r"put them back on top of your deck in any order", "put them back in any order"),
-    (r"\bonly on your first turn\b", "only during your first turn"),
+    (r"\bon your first turn\b", "during your first turn"),
+    (
+        r"^Choose 1 of your opponent's Pokémon's attacks and use it as this attack$",
+        "Choose an attack from 1 of your opponent's Pokémon in play and use it as this attack",
+    ),
+    (
+        r"^Discard any amount of Energy from your Pokémon$",
+        "Discard any amount of Energy from among your Pokémon",
+    ),
+    (r"\bPokémon Tool card attached to\b", "Pokémon Tool attached to"),
+    (r"damage times the number of heads to each of", "damage for each heads to each of"),
     (
         r"(\S+) Energy attached to it can't be affected by any Special Conditions",
         r"\1 Energy attached can't be affected by any Special Conditions",

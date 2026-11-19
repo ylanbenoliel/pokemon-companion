@@ -239,6 +239,8 @@ class GameState:
     prize_count: int = PRIZE_COUNT
     #: último turno em que nenhuma Habilidade funciona (Hex Maniac)
     abilities_locked_until: int | None = None
+    #: jogador que joga outro turno depois deste (Timeless GX)
+    extra_turn_for: PlayerId | None = None
 
     def state_of(self, player_id: PlayerId) -> PlayerState:
         return self.player if player_id is PlayerId.PLAYER else self.opponent

@@ -519,3 +519,136 @@ def test_rule_kind_shield_blocks_only_those_attackers(state):
     plain = PokemonInPlay(card=mon("Plain"))
     assert passives.shield_blocks(state, me, gx, 100)
     assert not passives.shield_blocks(state, me, plain, 100)
+
+
+# --- lote 4 -----------------------------------------------------------------
+
+
+def _attack(state, text: str, damage: str = "") -> None:
+    from pokemon_companion.engine.effects import attacks
+
+    attack_with(state, text, damage)
+    ctx = core.Ctx(state, PlayerId.PLAYER, state.player.active)
+    attacks.resolve_attack(ctx, state.player.active.card.attacks[0])
+
+
+def test_timeless_gx_gives_the_same_player_another_turn():
+    from pokemon_companion.cards_db.models import Attack
+    from pokemon_companion.engine import rules
+    from pokemon_companion.engine.actions import UseAttack
+
+    from .test_rules import build_state as fresh
+
+    timeless = Attack(
+        name="Timeless GX",
+        cost=[],
+        damage="",
+        text="Take another turn after this one. (Skip the between-turns step.) (You can't use "
+        "more than 1 GX attack in a game.)",
+    )
+    state = fresh(
+        player_active=dataclasses.replace(mon("Dialga-GX"), attacks=[timeless]),
+        opponent_active=mon("Target"),
+        player_deck=[mon(f"D{i}") for i in range(5)],
+    )
+    turn = state.turn_number
+    rules.apply_action(state, UseAttack(attack_index=0))
+    assert state.active_player == PlayerId.PLAYER
+    assert state.turn_number == turn + 2  # mantém a paridade dos efeitos com duração
+    assert state.extra_turn_for is None
+
+
+def test_intrepid_sword_attaches_metal_and_keeps_the_rest(state):
+    from pokemon_companion.cards_db.basic_energies import BASIC_ENERGIES
+    from pokemon_companion.cards_db.models import Ability
+    from pokemon_companion.engine.effects import abilities
+
+    sword = Ability(
+        name="Intrepid Sword",
+        text="Once during your turn, you may look at the top 3 cards of your deck and attach any "
+        "number of Metal Energy cards you find there to this Pokémon. Put the other cards into "
+        "your hand. If you use this Ability, your turn ends.",
+    )
+    zacian = dataclasses.replace(mon("Zacian V"), abilities=[sword])
+    state.player.active = PokemonInPlay(card=zacian)
+    state.player.deck = [BASIC_ENERGIES["Metal"], mon("Other"), BASIC_ENERGIES["Metal"]]
+    state.player.deck += [mon(f"Deep{i}") for i in range(5)]
+    ctx = core.Ctx(state, PlayerId.PLAYER, state.player.active)
+    abilities.use_ability(ctx, "Intrepid Sword")
+    assert state.player.active.attached_energies == ["Metal", "Metal"]
+    assert [c.name for c in state.player.hand] == ["Other"]
+    assert ctx.ends_turn
+
+
+def test_copy_anything_only_copies_what_it_can_pay(state):
+    from pokemon_companion.cards_db.models import Attack
+
+    big = Attack(name="Big", cost=["Fire", "Fire"], damage="200")
+    small = Attack(name="Small", cost=["Colorless"], damage="30")
+    state.opponent.active = PokemonInPlay(
+        card=dataclasses.replace(mon("Foe"), attacks=[big, small])
+    )
+    attack_with(
+        state,
+        "Choose 1 of your opponent's Pokémon's attacks and use it as this attack. If this Pokémon "
+        "doesn't have the necessary Energy to use that attack, this attack does nothing.",
+    )
+    state.player.active.attached_energies = ["Colorless"]
+    from pokemon_companion.engine.effects import attacks
+
+    ctx = core.Ctx(state, PlayerId.PLAYER, state.player.active)
+    attacks.resolve_attack(ctx, state.player.active.card.attacks[0])
+    assert state.opponent.active.damage_counters == 30
+
+
+def test_reveal_and_discard_a_trainer_from_the_opponents_hand(state):
+    item = Card(id="i", name="Ultra Ball", supertype=Supertype.TRAINER, subtypes=["Item"])
+    state.opponent.hand = [mon("Keep"), item]
+    _attack(state, "Your opponent reveals his or her hand. Discard a Trainer card you find there.")
+    assert [c.name for c in state.opponent.discard] == ["Ultra Ball"]
+
+
+def test_heads_to_each_opponent_pokemon_and_discarding_their_energy(state, monkeypatch):
+    heads(monkeypatch, True)
+    state.opponent.bench = [PokemonInPlay(card=mon("Benched"), attached_energies=["Fire"])]
+    state.opponent.active.attached_energies = ["Water"]
+    _attack(
+        state,
+        "Flip 3 coins. This attack does 10 damage times the number of heads to each of your "
+        "opponent's Pokémon.",
+    )
+    assert state.opponent.active.damage_counters == 30
+    assert state.opponent.bench[0].damage_counters == 30
+    _attack(state, "Discard 2 Energy from your opponent's Pokémon.")
+    assert state.opponent.active.attached_energies == []
+    assert state.opponent.bench[0].attached_energies == []
+
+
+def test_discard_card_back_on_top_of_the_deck(state):
+    state.player.discard = [mon("Fallen")]
+    _attack(state, "Put a card from your discard pile on top of your deck.")
+    assert state.player.deck[0].name == "Fallen"
+
+
+def test_go_first_attack_is_the_only_one_on_turn_one():
+    from pokemon_companion.cards_db.models import Attack
+    from pokemon_companion.engine import rules
+    from pokemon_companion.engine.actions import UseAttack
+
+    from .test_rules import build_state as fresh
+
+    early = Attack(
+        name="Close Encounter",
+        cost=[],
+        damage="",
+        text="If you go first, you can use this attack on your first turn. Draw 2 cards.",
+    )
+    late = Attack(name="Hit", cost=[], damage="30")
+    state = fresh(
+        player_active=dataclasses.replace(mon("Deoxys"), attacks=[early, late]),
+        opponent_active=mon("Target"),
+        player_deck=[mon(f"D{i}") for i in range(5)],
+    )
+    state.turn_number = 1
+    attacks_now = [a for a in rules.legal_actions(state) if isinstance(a, UseAttack)]
+    assert [a.attack_index for a in attacks_now] == [0]

@@ -93,6 +93,9 @@ class Run:
     milled: str = "opp"
     #: moeda de cada jogador ("each player flips a coin")
     coins_by_player: dict[PlayerId, bool] = field(default_factory=dict)
+    #: "If this Pokémon doesn't have the necessary Energy to use that attack": a
+    #: cópia só vale para ataques que o Pokémon consegue pagar
+    copy_needs_energy: bool = False
 
     @property
     def me(self) -> PlayerState:
@@ -1189,10 +1192,19 @@ def _shuffle() -> Step:
     "Your opponent reveals their hand",
     "Look at your opponent's hand",
     "Your opponent reveals their hand to you",
-    "If you go first, you can use this attack during your first turn",
 )
+def _reveal_opp_hand() -> Step:
+    """A mão do oponente vira "you find there" para a frase seguinte."""
+
+    def act(run: Run) -> None:
+        run.picked = list(run.opp.hand)
+
+    return after(act)
+
+
+@phrase("If you go first, you can use this attack during your first turn")
 def _no_op() -> Step:
-    return after(lambda run: None)
+    return after(lambda run: None)  # liberado em `rules._attack_actions`
 
 
 def _mill(player: Callable[[Run], PlayerState], amount: int) -> Act:
@@ -4775,6 +4787,9 @@ def _copy_best(pool: Callable[[Run], list[PokemonInPlay]]) -> Act:
             for atk in mon.card.attacks
             if atk.name not in attacks.COPY_ATTACKS
         ]
+        if run.copy_needs_energy and run.source is not None:
+            units = passives.provided_energy(run.ctx.state, run.ctx.player_id, run.source)
+            candidates = [a for a in candidates if passives.energy_satisfies(units, a.cost)]
         if not candidates:
             return
         best = max(candidates, key=lambda a: a.base_damage)
@@ -5615,6 +5630,117 @@ def _discard_each_opp() -> Step:
         for mon in run.opp.all_pokemon_in_play():
             if mon.attached_energies:
                 core.discard_energy(run.opp, mon)
+
+    return after(act)
+
+
+@phrase(
+    "If this Pokémon doesn't have the necessary Energy to use that attack, this attack does nothing"
+)
+def _copy_needs_energy() -> Step:
+    def act(run: Run) -> None:
+        run.copy_needs_energy = True
+
+    return pre(act)
+
+
+@phrase("Take another turn after this one")
+def _extra_turn() -> Step:
+    def act(run: Run) -> None:
+        run.ctx.state.extra_turn_for = run.ctx.player_id
+
+    return after(act)
+
+
+@phrase(
+    "Look at the top {N} cards of your deck and attach any number of {E} Energy cards you find "
+    "there to this Pokémon"
+)
+def _energy_from_top_to_self(n: str, symbol: str) -> Step:
+    kind_ = energy(symbol)
+
+    def act(run: Run) -> None:
+        top = run.me.deck[: num(n)]
+        run.picked = list(top)
+        if run.source is None:
+            return
+        for card in [c for c in top if is_basic_energy(c) and energy_type_of(c) == kind_]:
+            run.me.deck.remove(card)
+            core.attach_energy_card(run.source, card)
+            run.did = True
+
+    return after(act)
+
+
+@phrase("Put the other cards into your hand")
+def _rest_to_hand() -> Step:
+    def act(run: Run) -> None:
+        for card in [c for c in run.picked if c in run.me.deck]:
+            run.me.deck.remove(card)
+            run.me.hand.append(card)
+
+    return after(act)
+
+
+@phrase("Discard an? (.+?) you find there")
+def _discard_found_kind(what: str) -> Step | None:
+    """ "there" é a mão revelada do oponente (a carta que mais ajuda ele) ou as
+    cartas olhadas do seu deck."""
+    card_filter = parse_kind(what)
+    if card_filter is None:
+        return None
+    test = card_filter
+
+    def act(run: Run) -> None:
+        theirs = [c for c in run.picked if test(c) and c in run.opp.hand]
+        if theirs:
+            best = core.choose_cards(run.ctx.state, run.ctx.opp_id, theirs, 1)[0]
+            run.opp.hand.remove(best)
+            run.opp.discard.append(best)
+            return
+        mine = [c for c in run.picked if test(c) and c in run.me.deck]
+        if mine:
+            run.me.deck.remove(mine[0])
+            run.me.discard.append(mine[0])
+
+    return after(act)
+
+
+@phrase("Put a card from your discard pile on top of your deck")
+def _discard_to_top() -> Step:
+    def act(run: Run) -> None:
+        if run.me.discard:
+            best = core.choose_cards(run.ctx.state, run.ctx.player_id, run.me.discard, 1)[0]
+            run.me.discard.remove(best)
+            run.me.deck.insert(0, best)
+
+    return after(act)
+
+
+@phrase("This attack does {N} damage for each heads to each of your opponent's Pokémon")
+def _heads_to_each(n: str) -> list[Step]:
+    def replace(run: Run) -> None:
+        run.main_hit = False
+        run.damage = num(n) * run.heads
+
+    def act(run: Run) -> None:
+        amount = num(n) * run.heads
+        for position in core.positions(run.opp):
+            attacks.hit(run.ctx, position, amount)
+
+    return [pre(replace), after(act)]
+
+
+@phrase("Discard {N} Energy from your opponent's Pokémon")
+def _discard_opp_energy(n: str) -> Step:
+    """Do Ativo primeiro, depois do Banco."""
+
+    def act(run: Run) -> None:
+        left = num(n)
+        for mon in run.opp.all_pokemon_in_play():
+            while left and mon.attached_energies:
+                core.discard_energy(run.opp, mon)
+                left -= 1
 
     return after(act)
 

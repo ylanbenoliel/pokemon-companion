@@ -421,6 +421,13 @@ manifesto publicado, como os do Standard) e `data/expanded_pool.json`.
   (recuo 99), bônus contra um tipo. O que sobra das formas 2+ é mecânica
   própria (turno extra, Pedra-Papel-Tesoura, mexer nos prêmios, copiar ataques
   de evoluções, limite de Banco do oponente, várias Ferramentas).
+- **Lote 4 (18/11/2026)**: 81% (15.709 textos-impressão; 218 formas 2+).
+  Turno extra (`GameState.extra_turn_for`; o número do turno pula 2 para manter
+  a paridade dos efeitos com duração), olhar o topo e anexar Energia ao próprio
+  Pokémon + "Put the other cards into your hand", cópia com checagem de energia
+  (`Run.copy_needs_energy`), "Your opponent reveals their hand" agora preenche
+  `run.picked` (para "Discard a X you find there"), ataques liberados no 1º
+  turno de quem começa (`rules._FIRST_TURN_ATTACK`).
 - **Próximo passo** (se pedirem): implementar os efeitos que faltam no
   Expandido, por mecanismo genérico em `text_effects.py`/`passive_text.py`,
   começando pelas 319 formas de frase que aparecem 2+ vezes
