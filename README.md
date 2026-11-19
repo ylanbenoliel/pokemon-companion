@@ -61,7 +61,8 @@ uv run mypy src           # tipos (o CI roda os quatro)
 O [PLANO.md](PLANO.md) descreve a arquitetura, as decisões e o que falta.
 Efeitos novos devem ser mecanismos genéricos (uma frase de texto → um passo
 do compilador em `engine/effects/text_effects.py`), nunca código para uma
-carta específica.
+carta específica: o passo a passo está em [EFEITOS.md](EFEITOS.md). Agentes
+de IA leem as regras do projeto em [AGENTS.md](AGENTS.md).
 
 ## Comandos
 

@@ -371,6 +371,21 @@ manifesto publicado, como os do Standard) e `data/expanded_pool.json`.
 - **Fora do catálogo**: promos sem sigla oficial na TCGdex (SWSH Black Star
   Promos, Shiny Vault de Hidden Fates, Yellow A Alternate): ~135 cartas, quase
   todas reimpressões que existem em outro set.
+- **Efeitos do Expandido (lote 1, 18/11/2026)**: cobertura 68% → 78%
+  (13.129 → 15.126 textos-impressão; 4.105 → 2.721 textos distintos
+  faltando), Standard intacto (100% dos ataques). Mecanismos:
+  `engine/effects/wording.py` traduz a redação antiga para a atual e só entra
+  quando a frase original não é reconhecida (`text_effects.parse_sentence`,
+  `passive_text.compile_passive`, requisitos de Treinador); condições de
+  Pokémon-EX/GX/V, Special Condition própria, mão maior, sem Banco, contadores
+  em si; Energias Especiais pelo texto (`cardinfo.special_energy_units`);
+  família N/Marnie/Iono; bônus de time no turno por tipo; Field Blower,
+  Target Whistle, Max Elixir, "reveal a X you find there", "Choose 1:" (IA fica
+  com a 1ª opção). Torneio com 8 decks do Expandido: 168 partidas, 0 erros.
+  Faltam no meta: Great Catcher (gust filtrado), Brigette, Guzma & Hala, Faba,
+  Roxie, Devolution Spray, Hex Maniac, AZ, Pokémon Ranger e Ghetsis.
+  O passo a passo para montar efeitos está em `EFEITOS.md` (e `AGENTS.md`
+  aponta para ele).
 - **Próximo passo** (se pedirem): implementar os efeitos que faltam no
   Expandido, por mecanismo genérico em `text_effects.py`/`passive_text.py`,
   começando pelos mais frequentes do relatório; mecânicas antigas sem motor
