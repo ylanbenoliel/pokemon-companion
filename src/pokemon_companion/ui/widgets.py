@@ -3,10 +3,11 @@ para os diálogos novos falarem a mesma língua do menu e da importação."""
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import QDialog, QLabel, QPushButton, QWidget
+from PyQt6.QtWidgets import QButtonGroup, QDialog, QHBoxLayout, QLabel, QPushButton, QWidget
 
+from pokemon_companion.cards_db.standard import FORMATS
 from pokemon_companion.ui.theme import FELT_DEEP, FELT_LIT, display_font, ui_font
 
 FIELD_STYLE = """
@@ -104,3 +105,44 @@ def make_button(text: str, primary: bool = False, parent: QWidget | None = None)
             "QPushButton:disabled { color: rgba(247,239,225,90); }"
         )
     return button
+
+
+class FormatToggle(QWidget):
+    """Seletor de formato em pílula (Standard | Expandido), como o seletor
+    Padrão/Livre do Hearthstone: um clique troca catálogo e validação."""
+
+    changed = pyqtSignal(str)
+
+    def __init__(self, fmt: str = "standard", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self._group = QButtonGroup(self)
+        self.buttons: dict[str, QPushButton] = {}
+        for index, (key, label) in enumerate(FORMATS.items()):
+            button = QPushButton(label)
+            button.setCheckable(True)
+            button.setFont(ui_font(10, QFont.Weight.DemiBold))
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            left = 8 if index == 0 else 0
+            right = 8 if index == len(FORMATS) - 1 else 0
+            button.setStyleSheet(
+                "QPushButton { color: #f7efe1; background: rgba(247,239,225,16);"
+                " border: 1px solid rgba(247,239,225,45); padding: 6px 14px;"
+                f" border-top-left-radius: {left}px; border-bottom-left-radius: {left}px;"
+                f" border-top-right-radius: {right}px; border-bottom-right-radius: {right}px; }}"
+                "QPushButton:checked { color: #20242b; background: #ffe03d; border-color: #ffe03d; }"
+            )
+            self._group.addButton(button)
+            self.buttons[key] = button
+            layout.addWidget(button)
+            button.clicked.connect(lambda _=False, key=key: self.changed.emit(key))
+        self.buttons[fmt].setChecked(True)
+
+    def value(self) -> str:
+        return next(key for key, button in self.buttons.items() if button.isChecked())
+
+    def set_value(self, fmt: str) -> None:
+        """Muda sem emitir `changed` (quem chama já sabe o formato)."""
+        self.buttons[fmt].setChecked(True)

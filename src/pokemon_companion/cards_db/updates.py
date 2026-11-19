@@ -3,7 +3,8 @@ recebe código, então cartas novas chegam como dados publicados num release
 fixo do GitHub (tag `data`):
 
 - `manifest.json`: `{"version", "min_app", "files": {nome: sha256}}`;
-- `standard_legal.json` e `standard_catalog.json`: rotação e construtor de deck;
+- `standard_legal.json` e `standard_catalog.json`: rotação e construtor de deck
+  (e os `expanded_*` equivalentes do Expanded);
 - `effects.json`: `{"rewrites": {texto original: texto reescrito}}` — textos
   de carta reescritos com frases que os compiladores de efeito já conhecem;
 - `meta_decks.json`: `{"01_dragapult_ex.txt": decklist}` — os decks do meta
@@ -37,6 +38,8 @@ UPDATES_DIR = USER_DATA / "updates"
 BUNDLED = {
     "standard_legal.json": PACKAGE_DIR / "cards_db" / "standard_legal.json",
     "standard_catalog.json": PACKAGE_DIR / "cards_db" / "standard_catalog.json",
+    "expanded_legal.json": PACKAGE_DIR / "cards_db" / "expanded_legal.json",
+    "expanded_catalog.json": PACKAGE_DIR / "cards_db" / "expanded_catalog.json",
     "effects.json": PACKAGE_DIR / "engine" / "effects" / "effects.json",
 }
 #: gerado na hora de publicar a partir de `decks/top` (não tem cópia embutida)

@@ -39,6 +39,7 @@ from pokemon_companion.engine.effects import abilities, attacks, core, passives,
 from pokemon_companion.engine.effects.cardinfo import (
     fossil_pokemon,
     in_group,
+    is_ace_spec,
     is_basic_energy,
     is_fossil_item,
     is_fossil_pokemon,
@@ -157,7 +158,7 @@ def _can_attach(card: Card, mon: PokemonInPlay) -> bool:
 def _trainer_playable(state: GameState, pid: PlayerId, card: Card) -> bool:
     player = state.state_of(pid)
     kind = trainer_kind(card)
-    if "ACE SPEC" in card.subtypes and trainers.ace_spec_blocked(state, pid):
+    if is_ace_spec(card) and trainers.ace_spec_blocked(state, pid):
         return False
     if kind == "Supporter":
         if player.supporter_played_this_turn:

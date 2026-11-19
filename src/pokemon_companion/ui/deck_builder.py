@@ -1,4 +1,10 @@
-"""Construtor de deck: buscar no Standard, montar, validar ao vivo e salvar.
+"""Construtor de deck: buscar no Standard ou no Expandido, montar, validar
+ao vivo e salvar.
+
+O seletor de formato no topo (como o Padrão/Livre do Hearthstone ou o
+seletor de formato do MTG Arena) troca o catálogo e a validação; as cartas
+já no deck ficam, marcadas com ⛔ se não valem no formato e com ⚠ se algum
+efeito delas ainda não está implementado no jogo.
 
 Três colunas: a busca no catálogo (nome, ataque ou texto; filtros por
 categoria e tipo), a carta selecionada por inteiro (com aviso quando algum
@@ -19,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QGuiApplication, QKeySequence, QShortcut
+from PyQt6.QtGui import QColor, QGuiApplication, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -37,17 +43,29 @@ from pokemon_companion.cards_db import updates
 from pokemon_companion.cards_db.basic_energies import BASIC_ENERGIES
 from pokemon_companion.cards_db.cache import CardCache
 from pokemon_companion.cards_db.catalog import CatalogEntry, load_catalog
-from pokemon_companion.cards_db.deck_rules import DECK_SIZE, MAX_COPIES, validate_deck
+from pokemon_companion.cards_db.deck_rules import (
+    DECK_SIZE,
+    deck_format,
+    format_header,
+    max_copies,
+    validate_deck,
+)
 from pokemon_companion.cards_db.decklist_parser import load_deck
 from pokemon_companion.cards_db.models import Card, Supertype
-from pokemon_companion.cards_db.standard import load_legal, signature
-from pokemon_companion.engine.effects.cardinfo import is_basic_energy, stage_of, trainer_kind
+from pokemon_companion.cards_db.standard import FORMATS, load_legal, signature
+from pokemon_companion.engine.effects.cardinfo import (
+    is_ace_spec,
+    is_basic_energy,
+    stage_of,
+    trainer_kind,
+)
 from pokemon_companion.engine.effects.coverage import unimplemented
 from pokemon_companion.engine.effects.descriptions import describe_card
 from pokemon_companion.paths import BUNDLED_DECKS, USER_DECKS
 from pokemon_companion.ui.deck_menu import export_text
 from pokemon_companion.ui.theme import ENERGY_NAMES_PT, ui_font
 from pokemon_companion.ui.widgets import (
+    FormatToggle,
     hint_label,
     make_button,
     section_label,
@@ -109,9 +127,12 @@ def deck_cards(rows: list[DeckRow]) -> list[Card]:
     return cards
 
 
-def deck_text(name: str, rows: list[DeckRow]) -> str:
-    """Decklist no formato do Limitless, com o nome no comentário."""
+def deck_text(name: str, rows: list[DeckRow], fmt: str = "standard") -> str:
+    """Decklist no formato do Limitless, com o nome (e o formato, fora do
+    Standard) nos comentários."""
     lines = [f"# {name} — montado no construtor de deck"]
+    if format_header(fmt):
+        lines.append(format_header(fmt).rstrip("\n"))
     for section, supertype in SECTIONS:
         chosen = [row for row in rows if row.card.supertype == supertype and row.count]
         if not chosen:
@@ -142,15 +163,16 @@ class DeckBuilderDialog(QDialog):
         cache_factory: Callable[[], CardCache] = CardCache,
         edit: Path | None = None,
         parent: QWidget | None = None,
+        fmt: str = "standard",
+        catalog_loader: Callable[[str], list[CatalogEntry]] | None = None,
     ) -> None:
         super().__init__(parent)
-        self.catalog = catalog if catalog is not None else load_catalog()
         self._folder = folder
         self._cache_factory = cache_factory
-        self._legal = load_legal()
-        self._index = [(entry, search_text(entry.card)) for entry in self.catalog]
-        self._by_signature = {signature(e.card): e for e in self.catalog}
+        self._load_catalog = catalog_loader or (lambda f: load_catalog(fmt=f))
         self.rows: list[DeckRow] = []
+        self.fmt = fmt
+        self._use_catalog(fmt, catalog if catalog is not None else self._load_catalog(fmt))
         self.saved_path: Path | None = None
 
         self.setWindowTitle("Montar deck")
@@ -168,6 +190,9 @@ class DeckBuilderDialog(QDialog):
         self.name.setPlaceholderText("Nome do deck")
         self.name.textChanged.connect(lambda _: self._refresh_deck())
         header.addWidget(self.name, 1)
+        self.format_toggle = FormatToggle(fmt)
+        self.format_toggle.changed.connect(self.set_format)
+        header.addWidget(self.format_toggle)
         self.open_combo = QComboBox()
         self.open_combo.setFont(ui_font(10))
         self.open_combo.addItem("Começar de outro deck…", None)
@@ -214,7 +239,8 @@ class DeckBuilderDialog(QDialog):
     def _build_search(self) -> QVBoxLayout:
         column = QVBoxLayout()
         column.setSpacing(8)
-        column.addWidget(section_label("Cartas do Standard"))
+        self.catalog_title = section_label(f"Cartas do {FORMATS[self.fmt]}")
+        column.addWidget(self.catalog_title)
         self.query = QLineEdit()
         self.query.setFont(ui_font(11))
         self.query.setPlaceholderText("Buscar por nome, ataque ou texto…")
@@ -292,6 +318,28 @@ class DeckBuilderDialog(QDialog):
         column.addWidget(self.problems)
         return column
 
+    # -- formato ------------------------------------------------------------------
+    def _use_catalog(self, fmt: str, catalog: list[CatalogEntry]) -> None:
+        self.fmt = fmt
+        self.catalog = catalog
+        self._legal = load_legal(fmt=fmt)
+        self._index = [(entry, search_text(entry.card)) for entry in catalog]
+        self._by_signature = {signature(e.card): e for e in catalog}
+        # as cartas do deck passam a apontar para o catálogo novo quando estão nele
+        for row in self.rows:
+            row.entry = self._by_signature.get(signature(row.card), row.entry)
+
+    def set_format(self, fmt: str) -> None:
+        """Troca catálogo e validação; o deck fica como está (cartas que não
+        valem no formato novo aparecem marcadas, não somem)."""
+        self.format_toggle.set_value(fmt)
+        if fmt == self.fmt:
+            return
+        self._use_catalog(fmt, self._load_catalog(fmt))
+        self.catalog_title.setText(f"Cartas do {FORMATS[fmt]}")
+        self._run_search()
+        self._refresh_deck()
+
     # -- busca --------------------------------------------------------------------
     def matches(self, query: str, kind: Supertype | None, energy: str | None) -> list[CatalogEntry]:
         words = _fold(query).split()
@@ -329,7 +377,10 @@ class DeckBuilderDialog(QDialog):
         if item is None:
             return None
         key = item.data(Qt.ItemDataRole.UserRole)
-        return self._by_signature.get(key) if key else None
+        if not key:
+            return None
+        in_deck = next((r.entry for r in self.rows if signature(r.card) == key), None)
+        return self._by_signature.get(key) or in_deck
 
     def _show(self, item: QListWidgetItem | None) -> None:
         entry = self._entry_of(item)
@@ -365,9 +416,10 @@ class DeckBuilderDialog(QDialog):
         if is_basic_energy(card):
             return ""
         same_name = sum(row.count for row in self.rows if row.card.name == card.name)
-        if same_name >= MAX_COPIES:
-            return f"No máximo {MAX_COPIES} cópias de {card.name}."
-        if "ACE SPEC" in card.subtypes and any("ACE SPEC" in r.card.subtypes for r in self.rows):
+        limit = max_copies(card)
+        if same_name >= limit:
+            return f"No máximo {limit} {'cópias' if limit > 1 else 'cópia'} de {card.name}."
+        if is_ace_spec(card) and any(is_ace_spec(r.card) for r in self.rows):
             return "Só uma carta ACE SPEC por deck."
         return ""
 
@@ -394,7 +446,20 @@ class DeckBuilderDialog(QDialog):
         self._refresh_deck()
 
     def problems_now(self) -> list[str]:
-        return validate_deck(deck_cards(self.rows), self._legal)
+        return validate_deck(deck_cards(self.rows), self._legal, self.fmt)
+
+    def row_marks(self, row: DeckRow) -> list[str]:
+        """Avisos da linha do deck, como o deck do Hearthstone marca as cartas
+        que não valem no formato: ⛔ fora do formato, ⚠ efeito não implementado."""
+        marks = []
+        card = row.card
+        legal = self._legal
+        if legal is not None and not is_basic_energy(card) and signature(card) not in legal:
+            marks.append(f"⛔ não vale no {FORMATS[self.fmt]}")
+        missing = unimplemented(card)
+        if missing:
+            marks.append("⚠ ainda sem efeito no jogo: " + ", ".join(missing))
+        return marks
 
     def _refresh_deck(self, select: CatalogEntry | None = None) -> None:
         self.deck_list.clear()
@@ -402,8 +467,15 @@ class DeckBuilderDialog(QDialog):
         self.rows.sort(key=lambda r: (order[r.card.supertype], _row_rank(r), r.card.name))
         selected_row = -1
         for index, row in enumerate(self.rows):
-            item = QListWidgetItem(f"{row.count}×  {row.card.name}")
+            marks = self.row_marks(row)
+            icons = "".join(mark[0] for mark in marks)
+            item = QListWidgetItem(
+                f"{row.count}×  {row.card.name}" + (f"  {icons}" if icons else "")
+            )
             item.setData(Qt.ItemDataRole.UserRole, signature(row.card))
+            if marks:
+                item.setToolTip("\n".join(marks))
+                item.setForeground(QColor("#ff8a7a" if icons.startswith("⛔") else "#ffd27a"))
             self.deck_list.addItem(item)
             if row.entry is select:
                 selected_row = index
@@ -431,6 +503,7 @@ class DeckBuilderDialog(QDialog):
     def load_deck_file(self, path: Path) -> None:
         """Começa a partir de uma lista existente (as cartas precisam estar no
         cache local — decks já jogados ou importados)."""
+        self.set_format(deck_format(path.read_text(encoding="utf-8")))
         with self._cache_factory() as cache:
             cards, errors = load_deck(path, cache, _CacheOnly())
         by_name_energy = {e.card.name: e for e in self.catalog if is_basic_energy(e.card)}
@@ -450,9 +523,8 @@ class DeckBuilderDialog(QDialog):
             self.name.setText(path.stem.replace("_", " ").title())
         note = f"Aberto: {path.name}."
         if missing or errors:
-            note += " Ficaram de fora (fora do Standard ou ainda não baixadas): " + ", ".join(
-                sorted(missing) or ["cartas não encontradas no cache"]
-            )
+            note += f" Ficaram de fora (fora do {FORMATS[self.fmt]} ou ainda não baixadas): "
+            note += ", ".join(sorted(missing) or ["cartas não encontradas no cache"])
         self.status.setText(note)
         self._refresh_deck()
 
@@ -477,7 +549,7 @@ class DeckBuilderDialog(QDialog):
             return None
         self._folder.mkdir(parents=True, exist_ok=True)
         path = self._folder / f"{slugify(name)}.txt"
-        path.write_text(deck_text(name, self.rows), encoding="utf-8")
+        path.write_text(deck_text(name, self.rows, self.fmt), encoding="utf-8")
         with self._cache_factory() as cache:
             for row in self.rows:
                 if not is_basic_energy(row.card):

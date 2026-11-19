@@ -31,8 +31,9 @@ from pokemon_companion.cards_db import limitless
 from pokemon_companion.cards_db.limitless import Archetype
 from pokemon_companion.paths import USER_DECKS
 from pokemon_companion.ui.theme import FELT_DEEP, FELT_LIT, display_font, ui_font
+from pokemon_companion.ui.widgets import FormatToggle
 
-SearchFn = Callable[[str], list[Archetype]]
+SearchFn = Callable[[str, str], list[Archetype]]
 DownloadFn = Callable[[Archetype], tuple[str, str, int]]
 UrlFn = Callable[[str], tuple[str, str, int]]
 
@@ -60,7 +61,7 @@ class DeckImportDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self._folder = folder
-        self._search = search or limitless.search_archetypes
+        self._search = search or (lambda q, fmt: limitless.search_archetypes(q, fmt=fmt))
         self._download = download or limitless.archetype_decklist
         self._from_url = from_url or limitless.deck_text_from_url
         self._results: list[Archetype] = []
@@ -78,9 +79,15 @@ class DeckImportDialog(QDialog):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(10)
 
+        title_row = QHBoxLayout()
         title = QLabel("Importar deck")
         title.setFont(display_font(17))
-        layout.addWidget(title)
+        title_row.addWidget(title, 1)
+        self.format_toggle = FormatToggle()
+        self.format_toggle.setToolTip("Formato do deck: muda a busca no Limitless e a validação")
+        self.format_toggle.changed.connect(lambda _: self.results.clear())
+        title_row.addWidget(self.format_toggle)
+        layout.addLayout(title_row)
         layout.addWidget(self._hint("Procure o arquétipo pelo nome, ou cole um link do Limitless."))
 
         search_row = QHBoxLayout()
@@ -164,7 +171,7 @@ class DeckImportDialog(QDialog):
         self.results.clear()
         self.status.setText("Procurando no Limitless…")
         try:
-            self._results = self._search(query)
+            self._results = self._search(query, self.format_toggle.value())
         except Exception as exc:  # noqa: BLE001 - erro de rede vira mensagem
             self._results = []
             self.status.setText(f"Não deu para buscar: {exc}")
@@ -189,6 +196,7 @@ class DeckImportDialog(QDialog):
         super().accept()
 
     def _import(self) -> Path | None:
+        fmt = self.format_toggle.value()
         pasted = self.paste.toPlainText().strip()
         typed = self.query.text().strip()
         name = self.name.text().strip()
@@ -196,11 +204,11 @@ class DeckImportDialog(QDialog):
             if not name:
                 self.status.setText("Dê um nome ao deck colado.")
                 return None
-            return limitless.save_deck(self._folder, name, "colado por você", pasted)
+            return limitless.save_deck(self._folder, name, "colado por você", pasted, fmt=fmt)
         if typed.startswith("http"):
             self.status.setText("Baixando a lista…")
             title, text, total = self._from_url(typed)
-            return limitless.save_deck(self._folder, name or title, title, text, typed)
+            return limitless.save_deck(self._folder, name or title, title, text, typed, fmt)
         row = self.results.currentRow()
         if not (0 <= row < len(self._results)):
             self.status.setText("Procure um arquétipo ou cole uma decklist.")
@@ -209,4 +217,4 @@ class DeckImportDialog(QDialog):
         self.status.setText(f"Baixando {archetype.name}…")
         title, text, total = self._download(archetype)
         source = f"{limitless.BASE}/decks/{archetype.deck_id}"
-        return limitless.save_deck(self._folder, name or archetype.name, title, text, source)
+        return limitless.save_deck(self._folder, name or archetype.name, title, text, source, fmt)

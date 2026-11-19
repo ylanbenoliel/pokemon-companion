@@ -1,7 +1,7 @@
 """Classificação de cartas usada pelos efeitos ("Regra de Prêmio", Tera,
 Antigo/Futuro, Pokémon de treinador como "Team Rocket's", estágio...).
 
-A TCGdex não marca Tera/Antigo/Futuro, então esses grupos vêm do pacote de
+A TCGdex não marca Tera/Antigo/Futuro nem as ACE SPEC antigas, então esses grupos vêm do pacote de
 dados (`effects.json`, chave "groups", por assinatura da carta), que chega
 atualizado pelo endpoint. Isso importa: Pokémon Tera no Banco não recebem
 dano de ataques (`passives.damage_prevented`) e liberam banco de 8 com Area
@@ -52,6 +52,16 @@ def is_ancient(card: Card) -> bool:
 
 def is_future(card: Card) -> bool:
     return signature(card) in pack.group("Future")
+
+
+def is_ace_spec(card: Card) -> bool:
+    """A TCGdex só marca as ACE SPEC novas (raridade); as de Black & White
+    vêm do grupo "ACE SPEC" do pacote de dados."""
+    return "ACE SPEC" in card.subtypes or signature(card) in pack.group("ACE SPEC")
+
+
+def is_prism_star(card: Card) -> bool:
+    return "◇" in card.name or "Prism Star" in card.subtypes
 
 
 def in_group(card: Card, prefix: str) -> bool:

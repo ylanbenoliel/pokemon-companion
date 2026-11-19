@@ -119,3 +119,39 @@ def test_open_existing_deck_into_the_builder(builder, catalog, tmp_path):
 def test_deck_text_and_slug():
     assert slugify("Meu Dragapult — v2!") == "meu_dragapult_v2"
     assert deck_text("X", []).startswith("# X")
+
+
+def test_format_toggle_swaps_catalog_and_flags_cards_outside_it(qtbot, tmp_path, catalog):
+    import dataclasses
+
+    from pokemon_companion.cards_db.catalog import CatalogEntry
+    from pokemon_companion.cards_db.models import Ability
+
+    from .conftest import make_basic_pokemon
+
+    card = make_basic_pokemon("Zoroark-GX", 210, "Darkness")
+    card = dataclasses.replace(card, abilities=[Ability(name="Habilidade Inventada", text="?")])
+    zoroark = CatalogEntry(card, "SLG", "53")
+    expanded = [zoroark, *catalog]
+    dialog = DeckBuilderDialog(
+        catalog=catalog,
+        folder=tmp_path / "decks",
+        cache_factory=lambda: CardCache(tmp_path / "cache.db"),
+        catalog_loader=lambda fmt: expanded if fmt == "expanded" else catalog,
+    )
+    qtbot.addWidget(dialog)
+
+    dialog.format_toggle.buttons["expanded"].click()
+    assert dialog.fmt == "expanded" and dialog.catalog is expanded
+    assert dialog.catalog_title.text() == "Cartas do Expandido"
+    dialog.add(zoroark, 1)
+
+    dialog.set_format("standard")
+    assert [m[0] for m in dialog.row_marks(dialog.rows[0])] == ["⛔", "⚠"]
+    assert "⛔" in dialog.deck_list.item(0).text()
+    assert any("fora da rotação do Standard" in p for p in dialog.problems_now())
+
+    dialog.name.setText("Zoro")
+    dialog.set_format("expanded")
+    path = dialog.save()
+    assert path is not None and "# formato: expanded" in path.read_text()

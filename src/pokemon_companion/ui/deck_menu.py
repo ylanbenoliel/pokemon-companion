@@ -32,8 +32,10 @@ from PyQt6.QtWidgets import (
 
 from pokemon_companion.cards_db import updates
 from pokemon_companion.cards_db.cache import CardCache
+from pokemon_companion.cards_db.deck_rules import deck_format
 from pokemon_companion.cards_db.decklist_parser import load_deck
 from pokemon_companion.cards_db.models import Card
+from pokemon_companion.cards_db.standard import FORMATS
 from pokemon_companion.paths import BUNDLED_DECKS, USER_DECKS
 from pokemon_companion.ui.art import ArtProvider
 from pokemon_companion.ui.deck_import import DeckImportDialog
@@ -74,6 +76,7 @@ class DeckEntry:
     title: str
     subtitle: str
     group: str
+    fmt: str = "standard"
 
 
 def _pretty(stem: str) -> str:
@@ -94,7 +97,8 @@ def read_entry(path: Path) -> DeckEntry:
     (`# Dragapult — #1 do meta (11% dos pontos)`)."""
     title, subtitle = _pretty(path.stem), ""
     first = ""
-    for line in path.read_text(encoding="utf-8").splitlines():
+    text = path.read_text(encoding="utf-8")
+    for line in text.splitlines():
         if line.startswith("#"):
             first = line.lstrip("# ").strip()
             break
@@ -102,7 +106,13 @@ def read_entry(path: Path) -> DeckEntry:
         head, _, tail = first.partition("—")
         title = head.strip() or title
         subtitle = tail.strip()
-    return DeckEntry(path=path, title=title, subtitle=subtitle, group=_group(path.parent))
+    return DeckEntry(
+        path=path,
+        title=title,
+        subtitle=subtitle,
+        group=_group(path.parent),
+        fmt=deck_format(text),
+    )
 
 
 def _group(folder: Path) -> str:
@@ -167,6 +177,20 @@ class _DeckCard(QFrame):
         self.name.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         layout.addWidget(self.art)
         layout.addWidget(self.name)
+        # selo do formato no canto, como o ícone de deck Livre do Hearthstone
+        self.badge = QLabel(self)
+        self.badge.setFont(ui_font(7.5, QFont.Weight.Bold))
+        self.badge.setStyleSheet(
+            "color: #20242b; background: #ffb199; border-radius: 6px; padding: 1px 6px;"
+        )
+        self._update_badge()
+
+    def _update_badge(self) -> None:
+        fmt = self.entry.fmt if self.entry else "standard"
+        self.badge.setVisible(fmt != "standard")
+        self.badge.setText(FORMATS[fmt].upper())
+        self.badge.adjustSize()
+        self.badge.move(self.width() - self.badge.width() - 8, 8)
 
     def set_art(self, pixmap: QPixmap | None, accent: QColor) -> None:
         self._accent = accent
@@ -222,6 +246,7 @@ class DeckHero(_DeckCard):
         self.entry = entry
         self.name.setText(entry.title)
         self.detail.setText(entry.subtitle or entry.group)
+        self._update_badge()
         self._restyle()
 
     def _restyle(self) -> None:

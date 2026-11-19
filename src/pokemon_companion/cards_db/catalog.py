@@ -1,11 +1,11 @@
-"""Catálogo do Standard para o construtor de deck: uma entrada por carta
-distinta (mesmo nome, ataques e Habilidades = mesma carta para o jogo), com
-o código oficial do set e o número no formato das listas do Limitless
-("PFL 13"), para o deck salvo abrir em qualquer lugar.
+"""Catálogo de um formato (Standard ou Expanded) para o construtor de deck:
+uma entrada por carta distinta (mesmo nome, ataques e Habilidades = mesma
+carta para o jogo), com o código oficial do set e o número no formato das
+listas do Limitless ("PFL 13"), para o deck salvo abrir em qualquer lugar.
 
-O catálogo vai no pacote (`standard_catalog.json`, ~1 MB) — o construtor
-funciona sem internet — e é refeito por `tools/maintenance.py --refresh`
-junto com o pool legal.
+Os catálogos vão no pacote (`standard_catalog.json`, ~1 MB, e
+`expanded_catalog.json`) — o construtor funciona sem internet — e são
+refeitos por `tools/maintenance.py --refresh` junto com os pools legais.
 """
 
 from __future__ import annotations
@@ -97,10 +97,15 @@ def build_catalog(pool: list[Card], set_codes: dict[str, str]) -> list[CatalogEn
     return sorted(chosen, key=lambda e: (str(e.card.supertype), e.card.name))
 
 
+#: séries do Black & White em diante, da mais antiga à mais nova
+_SERIES = ("bw", "xy", "sm", "swsh", "sv", "me")
+
+
 def _set_age(set_id: str) -> int:
-    """Ordem aproximada de lançamento: Mega Evolução (me) > Escarlate e
-    Violeta (sv) > o resto; dentro da série, pelo número."""
-    series = 2 if set_id.startswith("me") else 1 if set_id.startswith("sv") else 0
+    """Ordem aproximada de lançamento: pela série (`_SERIES`; as outras, como
+    coleções especiais, contam como as mais antigas) e, dentro dela, pelo número."""
+    prefix = re.match(r"[a-z]*", set_id)
+    series = _SERIES.index(prefix.group()) + 1 if prefix and prefix.group() in _SERIES else 0
     digits = re.findall(r"\d+(?:\.\d+)?", set_id)
     return series * 1000 + int(float(digits[0]) * 10 if digits else 0)
 
@@ -113,8 +118,12 @@ def save_catalog(entries: list[CatalogEntry], path: Path = CATALOG_FILE) -> None
     path.write_text(json.dumps(rows, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
 
-def load_catalog(path: Path | None = None) -> list[CatalogEntry]:
-    path = path or updates.data_file("standard_catalog.json")
+def catalog_file(fmt: str) -> Path:
+    return Path(__file__).with_name(f"{fmt}_catalog.json")
+
+
+def load_catalog(path: Path | None = None, fmt: str = "standard") -> list[CatalogEntry]:
+    path = path or updates.data_file(f"{fmt}_catalog.json")
     if not path.exists():
         return []
     rows = json.loads(path.read_text(encoding="utf-8"))

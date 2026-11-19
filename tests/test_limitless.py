@@ -171,3 +171,15 @@ def test_save_deck_creates_missing_folders(tmp_path):
     path = limitless.save_deck(folder, "Meu Deck", "Título", "texto")
 
     assert path.exists()
+
+
+def test_expanded_search_and_save_use_the_format(monkeypatch, tmp_path):
+    from pokemon_companion.cards_db.deck_rules import deck_format
+
+    urls = []
+    monkeypatch.setattr(limitless, "fetch", lambda url: urls.append(url) or ARCHETYPES_PAGE)
+    limitless.search_archetypes("", fmt="expanded")
+    assert urls == [f"{limitless.BASE}/decks?format=expanded"]
+
+    path = limitless.save_deck(tmp_path, "Zoroark", "t", "4 Zoroark BKT 91", fmt="expanded")
+    assert deck_format(path.read_text()) == "expanded"

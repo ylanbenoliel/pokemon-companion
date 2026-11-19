@@ -12,7 +12,7 @@ ARCHETYPES = [Archetype(1, "45", "Dragapult ex", 36.2), Archetype(2, "12", "Gard
 def _dialog(tmp_path, **fakes):
     return DeckImportDialog(
         folder=tmp_path,
-        search=fakes.get("search", lambda q: ARCHETYPES),
+        search=fakes.get("search", lambda q, fmt: ARCHETYPES),
         download=fakes.get("download", lambda a: (a.name, "texto", 60)),
         from_url=fakes.get("from_url", lambda u: ("Lista via link", "texto", 60)),
     )
@@ -32,7 +32,7 @@ def test_search_fills_the_results_list(qtbot, tmp_path):
 
 
 def test_search_with_no_matches_shows_a_message(qtbot, tmp_path):
-    dialog = _dialog(tmp_path, search=lambda q: [])
+    dialog = _dialog(tmp_path, search=lambda q, fmt: [])
     qtbot.addWidget(dialog)
     dialog.query.setText("nada")
 
@@ -43,7 +43,7 @@ def test_search_with_no_matches_shows_a_message(qtbot, tmp_path):
 
 
 def test_search_failure_becomes_a_status_message(qtbot, tmp_path):
-    def boom(query: str) -> list[Archetype]:
+    def boom(query: str, fmt: str) -> list[Archetype]:
         raise RuntimeError("sem rede")
 
     dialog = _dialog(tmp_path, search=boom)

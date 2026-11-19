@@ -179,3 +179,16 @@ def test_importing_nothing_leaves_the_menu_untouched(qtbot, decks, tmp_path):
     menu.import_button.click()
 
     assert menu.selection(PLAYER) == before
+
+
+def test_expanded_decks_carry_a_format_badge(qtbot, tmp_path):
+    from pokemon_companion.ui.deck_menu import DeckThumb
+
+    path = tmp_path / "zoroark.txt"
+    path.write_text("# Zoroark\n# formato: expanded\nPokémon (1)\n4 Zorua BKT 90\n")
+    entry = read_entry(path)
+    thumb = DeckThumb(entry)
+    qtbot.addWidget(thumb)
+
+    assert entry.fmt == "expanded"
+    assert not thumb.badge.isHidden() and thumb.badge.text() == "EXPANDIDO"

@@ -18,6 +18,17 @@ seguem [SemVer](https://semver.org/lang/pt-BR/).
 - Relógio de turno opcional (Configurações → Partida: 1, 2 ou 3 minutos). O
   tempo aparece no botão de passar o turno, só corre na sua vez (para nas
   animações e na pausa) e, ao zerar, passa o turno sozinho.
+- Formato **Expandido** (Black & White em diante, sem as banidas) ao lado do
+  Standard. O seletor Standard | Expandido fica no construtor de deck e na
+  importação (a busca no Limitless passa a trazer os arquétipos do
+  Expandido). O formato fica gravado no deck, que ganha um selo
+  "EXPANDIDO" na tela inicial e é validado com as regras dele: só uma cópia
+  de cada carta Prism Star (◇), e as ACE SPEC antigas também contam no
+  limite de uma. Muitas cartas antigas ainda não têm efeito no jogo.
+- No construtor, as cartas do deck mostram ⛔ quando não valem no formato
+  escolhido e ⚠ quando algum efeito delas ainda não está implementado; o
+  motivo aparece ao passar o mouse. Trocar de formato mantém o deck e só
+  marca o que deixou de valer.
 
 ## [0.2.0] - 2026-11-18
 

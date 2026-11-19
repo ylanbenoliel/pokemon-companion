@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pokemon_companion import net
+from pokemon_companion.cards_db.deck_rules import format_header
 
 BASE = "https://limitlesstcg.com"
 HEADERS = {"User-Agent": "Mozilla/5.0 (pokemon-companion deck import)"}
@@ -84,10 +85,13 @@ def _normalize(text: str) -> str:
     return "".join(c for c in plain if not unicodedata.combining(c))
 
 
-def search_archetypes(query: str, page: str | None = None) -> list[Archetype]:
-    """Arquétipos do formato atual cujo nome casa com `query` (sem acento e
-    sem caixa). Sem `query`, devolve o ranking inteiro."""
-    archetypes = parse_archetypes(page if page is not None else fetch(f"{BASE}/decks"))
+def search_archetypes(
+    query: str, page: str | None = None, fmt: str = "standard"
+) -> list[Archetype]:
+    """Arquétipos do formato (`standard` ou `expanded`) cujo nome casa com
+    `query` (sem acento e sem caixa). Sem `query`, devolve o ranking inteiro."""
+    url = f"{BASE}/decks" if fmt == "standard" else f"{BASE}/decks?format={fmt}"
+    archetypes = parse_archetypes(page if page is not None else fetch(url))
     if not query.strip():
         return archetypes
     words = _normalize(query).split()
@@ -122,12 +126,16 @@ def slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", plain).strip("_") or "deck"
 
 
-def save_deck(folder: Path, name: str, title: str, text: str, source: str = "") -> Path:
-    """Grava a decklist em `folder/<nome>.txt` com um cabeçalho de origem."""
+def save_deck(
+    folder: Path, name: str, title: str, text: str, source: str = "", fmt: str = "standard"
+) -> Path:
+    """Grava a decklist em `folder/<nome>.txt` com um cabeçalho de origem e,
+    fora do Standard, o formato."""
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{slug(name)}.txt"
     header = f"# {name}\n# {title}\n"
     if source:
         header += f"# fonte: {source}\n"
+    header += format_header(fmt)
     path.write_text(header + text.strip() + "\n", encoding="utf-8")
     return path

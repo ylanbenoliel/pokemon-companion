@@ -1,4 +1,4 @@
-"""Formato Standard: quais cartas estão na rotação atual.
+"""Formatos Standard e Expanded: quais cartas valem em cada um.
 
 A TCGdex marca cada impressão com `legal.standard`. Pela regra oficial, uma
 impressão antiga continua valendo se existir uma reimpressão legal com o
@@ -9,6 +9,9 @@ ataques + Habilidades), não pelo id da impressão.
   offline pela validação de deck;
 - `data/standard_pool.json` (cache local): todas as cartas legais completas,
   usadas pela cobertura de efeitos (`tools/maintenance.py`).
+
+O Expanded (Black & White em diante) usa os mesmos arquivos com o prefixo
+`expanded_`; a TCGdex já tira as banidas (`legal.expanded` falso).
 """
 
 from __future__ import annotations
@@ -27,8 +30,20 @@ from pokemon_companion.cards_db.models import Card, signature
 from pokemon_companion.cards_db.tcgdex_client import BASE_URL, tcgdex_card_to_card
 from pokemon_companion.engine.effects.cardinfo import is_basic_energy
 
+#: formato → nome mostrado na tela
+FORMATS = {"standard": "Standard", "expanded": "Expandido"}
 LEGAL_FILE = Path(__file__).with_name("standard_legal.json")
 POOL_FILE = Path("data/standard_pool.json")
+
+
+def legal_file(fmt: str) -> Path:
+    return Path(__file__).with_name(f"{fmt}_legal.json")
+
+
+def pool_file(fmt: str) -> Path:
+    return Path(f"data/{fmt}_pool.json")
+
+
 TIMEOUT = 60
 MIN_CARDS_IN_ROTATION = 20
 
@@ -38,12 +53,12 @@ def _get(url: str, params: dict[str, str] | None = None) -> object:
 
 
 def fetch_pool(
-    workers: int = 16, get: Callable[..., object] = _get
+    workers: int = 16, get: Callable[..., object] = _get, fmt: str = "standard"
 ) -> tuple[list[Card], list[str]]:
-    """Todas as impressões legais no Standard e as marcas de regulação vistas."""
-    briefs = get(f"{BASE_URL}/cards", {"legal.standard": "true"})
+    """Todas as impressões legais no formato e as marcas de regulação vistas."""
+    briefs = get(f"{BASE_URL}/cards", {f"legal.{fmt}": "true"})
     if not isinstance(briefs, list) or not briefs:
-        raise RuntimeError("A TCGdex não devolveu nenhuma carta legal no Standard.")
+        raise RuntimeError(f"A TCGdex não devolveu nenhuma carta legal no {FORMATS[fmt]}.")
 
     def detail(card_id: str) -> dict:
         data = get(f"{BASE_URL}/cards/{card_id}")
@@ -93,7 +108,10 @@ def missing_sets(
 
 
 def save_pool(
-    cards: list[Card], marks: list[str], pool_file: Path = POOL_FILE, legal_file: Path = LEGAL_FILE
+    cards: list[Card],
+    marks: list[str],
+    pool_file: Path = POOL_FILE,
+    legal_file: Path = LEGAL_FILE,
 ) -> None:
     pool_file.parent.mkdir(parents=True, exist_ok=True)
     pool_file.write_text(
@@ -112,15 +130,15 @@ def load_pool(pool_file: Path = POOL_FILE) -> list[Card]:
     return [card_from_json(json.dumps(item)) for item in raw]
 
 
-def load_legal(legal_file: Path | None = None) -> set[str] | None:
-    legal_file = legal_file or updates.data_file("standard_legal.json")
+def load_legal(legal_file: Path | None = None, fmt: str = "standard") -> set[str] | None:
+    legal_file = legal_file or updates.data_file(f"{fmt}_legal.json")
     if not legal_file.exists():
         return None
     return set(json.loads(legal_file.read_text(encoding="utf-8"))["signatures"])
 
 
 def illegal_cards(cards: list[Card], legal: set[str]) -> list[str]:
-    """Nomes das cartas do deck fora da rotação atual (energia básica sempre vale)."""
+    """Nomes das cartas do deck fora do formato (energia básica sempre vale)."""
     names = {
         card.name for card in cards if not is_basic_energy(card) and signature(card) not in legal
     }

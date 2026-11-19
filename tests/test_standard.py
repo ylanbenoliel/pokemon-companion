@@ -122,3 +122,45 @@ def test_missing_sets_warns_only_about_sets_newer_than_the_rotation():
 
     found = missing_sets(pool, datetime.date(2026, 11, 18), get)
     assert found == [("me06", "Delta Reign", "2026-11-06")]
+
+
+def test_fetch_pool_asks_the_tcgdex_for_the_chosen_format():
+    asked = []
+
+    def fake_get(url: str, params: dict[str, str] | None = None) -> object:
+        asked.append(params)
+        return [{"id": "bw7-137"}] if params else {"id": "bw7-137", "name": "Computer Search"}
+
+    cards, _ = standard.fetch_pool(workers=1, get=fake_get, fmt="expanded")
+    assert asked[0] == {"legal.expanded": "true"}
+    assert [c.name for c in cards] == ["Computer Search"]
+
+
+def test_deck_format_comes_from_the_comment_and_defaults_to_standard():
+    from pokemon_companion.cards_db.deck_rules import deck_format, format_header
+
+    assert deck_format("# Meu deck\n" + format_header("expanded") + "4 Zoroark BKT 91\n") == (
+        "expanded"
+    )
+    assert deck_format("4 Dreepy TWM 128\n") == "standard"
+    assert deck_format("# formato: inventado\n") == "standard"
+    assert format_header("standard") == ""
+
+
+def test_expanded_rules_ban_extra_prism_stars_and_name_the_format():
+    lunala = make_basic_pokemon("Lunala ◇", 160, "Psychic", attack_name="Full Moon Star")
+    deck = [lunala] * 2 + [BASIC_ENERGIES["Psychic"]] * 58
+
+    problems = validate_deck(deck, legal=set(), fmt="expanded")
+    assert "2 cópias de Lunala ◇ (máximo 1)" in problems
+    assert "fora do Expandido (ou banidas): Lunala ◇" in problems
+
+
+def test_old_ace_specs_count_through_the_data_pack_group(monkeypatch):
+    from pokemon_companion.engine.effects import pack
+
+    monkeypatch.setattr(pack, "group", lambda name: frozenset({"Computer Search"}))
+    deck = [_trainer("Computer Search"), _trainer("Computer Search")]
+    deck += [make_basic_pokemon("Zorua", 60, "Darkness")] + [BASIC_ENERGIES["Darkness"]] * 57
+
+    assert validate_deck(deck) == ["2 cartas ACE SPEC (máximo 1)"]

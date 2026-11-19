@@ -1,13 +1,15 @@
-"""Manutenção das regras: mantém o motor em dia com a rotação do Standard.
+"""Manutenção das regras: mantém o motor em dia com a rotação do Standard
+(e com o pool do Expanded).
 
     uv run python tools/maintenance.py            # usa o pool já baixado
     uv run python tools/maintenance.py --refresh  # baixa pool legal + meta atual
 
-1. baixa todas as cartas legais no Standard (TCGdex) e regrava as
-   assinaturas de legalidade (`cards_db/standard_legal.json`);
+1. baixa todas as cartas legais no Standard e no Expanded (TCGdex) e
+   regrava legalidade e catálogo de cada formato (`cards_db/<formato>_*.json`);
 2. atualiza os decks do meta (Limitless, `src/pokemon_companion/decks/top`);
 3. mede a cobertura de efeitos no pool inteiro e nos decks do meta, e
-   procura cartas fora da rotação nos decks.
+   procura cartas fora da rotação nos decks. A cobertura do Expanded entra
+   no relatório só como informação: não faz a rotina falhar.
 
 Grava `data/maintenance_report.md`. Sai com código 1 se algum deck do meta
 tiver texto sem efeito ou carta fora da rotação — o sinal para agir.
@@ -40,17 +42,23 @@ REPORT = Path("data/maintenance_report.md")
 TOOLS = Path(__file__).parent
 
 
-def refresh() -> None:
-    print("Baixando o pool legal do Standard (TCGdex)…")
-    cards, marks = standard.fetch_pool()
-    standard.save_pool(cards, marks)
+def refresh_format(fmt: str) -> list[Card]:
+    """Baixa o pool legal do formato e regrava legalidade e catálogo."""
+    print(f"Baixando o pool legal do {standard.FORMATS[fmt]} (TCGdex)…")
+    cards, marks = standard.fetch_pool(fmt=fmt)
+    standard.save_pool(cards, marks, standard.pool_file(fmt), standard.legal_file(fmt))
     print(f"  {len(cards)} impressões, marcas {', '.join(marks)}")
     set_ids = {parts[0] for card in cards if (parts := catalog.split_id(card.id))}
     entries = catalog.build_catalog(cards, catalog.fetch_set_codes(set_ids))
-    catalog.save_catalog(entries)
+    catalog.save_catalog(entries, catalog.catalog_file(fmt))
     print(f"  catálogo do construtor de deck: {len(entries)} cartas distintas")
-    print("Atualizando os grupos Tera/Ancient/Future (pokemontcg.io)…")
-    update_groups({signature(card) for card in cards})
+    return cards
+
+
+def refresh() -> None:
+    pool = [card for fmt in standard.FORMATS for card in refresh_format(fmt)]
+    print("Atualizando os grupos Tera/Ancient/Future/ACE SPEC (pokemontcg.io)…")
+    update_groups({signature(card) for card in pool})
     print("Atualizando os decks do meta (Limitless)…")
     subprocess.run(
         [sys.executable, str(TOOLS / "fetch_top_decks.py"), "--top", "25", "--clean"],
@@ -65,9 +73,9 @@ def update_groups(pool: set[str]) -> None:
     effects_file = BUNDLED["effects.json"]
     data = json.loads(effects_file.read_text(encoding="utf-8"))
     client = PokemonTcgApiClient(timeout=120, max_retries=5)
-    for subtype in ("Tera", "Ancient", "Future"):
+    for subtype in ("Tera", "Ancient", "Future", "ACE SPEC"):
         try:
-            marked = client.signatures_with_subtype(subtype)
+            marked = client.signatures_with_subtype(f'"{subtype}"')
         except (requests.RequestException, RuntimeError) as exc:
             print(f"  {subtype}: API indisponível ({exc}); grupo mantido")
             continue
@@ -95,6 +103,7 @@ def report(
     decks: dict[str, list[Card]],
     legal: set[str],
     missing_sets: list[tuple[str, str, str]] | None = None,
+    expanded: list[Card] | None = None,
 ) -> tuple[str, bool]:
     pool_total, pool_missing = missing_effects(pool)
     meta_cards = [card for cards in decks.values() for card in cards]
@@ -108,6 +117,7 @@ def report(
         "",
         f"- Pool legal: {len(pool)} impressões; cobertura {implemented}/"
         f"{sum(pool_total.values())} textos-impressão ({len(pool_missing)} textos distintos faltando)",
+        *_expanded_summary(expanded),
         f"- Decks do meta: {len(decks)}; textos faltando: {len(meta_missing)}; "
         f"decks com carta fora da rotação: {len(illegal)}",
         *_missing_sets_lines(missing_sets),
@@ -120,8 +130,42 @@ def report(
         "",
         "## Faltando no pool legal (por impressões)",
         *[f"- {count}× {name}" for name, count in _by_category(pool_missing)],
+        *_expanded_lines(expanded),
     ]
     return "\n".join(lines) + "\n", bool(meta_missing or illegal)
+
+
+EXPANDED_TOP = 50
+
+
+def _expanded_summary(pool: list[Card] | None) -> list[str]:
+    if pool is None:
+        return ["- Pool do Expandido: não baixado (rode com --refresh)"]
+    total, missing = missing_effects(pool)
+    implemented = sum(total.values()) - sum(missing.values())
+    share = implemented / max(1, sum(total.values()))
+    return [
+        f"- Pool do Expandido: {len(pool)} impressões; cobertura {implemented}/"
+        f"{sum(total.values())} textos-impressão ({share:.0%}; "
+        f"{len(missing)} textos distintos faltando)"
+    ]
+
+
+def _expanded_lines(pool: list[Card] | None) -> list[str]:
+    if pool is None:
+        return []
+    total, missing = missing_effects(pool)
+    by_kind = Counter(name.split(" ", 1)[0] for name in missing.elements())
+    return [
+        "",
+        "## Expandido",
+        "",
+        "Cópias por categoria: " + ", ".join(f"{k} {v}" for k, v in sorted(total.items())),
+        "Faltando por categoria: " + ", ".join(f"{k} {v}" for k, v in sorted(by_kind.items())),
+        "",
+        f"### Os {EXPANDED_TOP} textos que mais faltam (por impressões)",
+        *[f"- {count}× {name}" for name, count in missing.most_common(EXPANDED_TOP)],
+    ]
 
 
 def _missing_sets_lines(sets: list[tuple[str, str, str]] | None) -> list[str]:
@@ -155,7 +199,9 @@ def main() -> None:
         new_sets: list[tuple[str, str, str]] | None = standard.missing_sets(pool)
     except requests.RequestException:
         new_sets = None
-    text, needs_work = report(pool, meta_decks(), legal, new_sets)
+    expanded_file = standard.pool_file("expanded")
+    expanded = standard.load_pool(expanded_file) if expanded_file.exists() else None
+    text, needs_work = report(pool, meta_decks(), legal, new_sets, expanded)
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(text, encoding="utf-8")
     print(text.split("\n## Faltando no pool")[0])
